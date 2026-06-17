@@ -2,7 +2,9 @@
 
 from datetime import UTC, datetime
 
+from agentx_contracts.enums import MaturityLevel, Ring, TenantAuth
 from agentx_contracts.faculty import FacultyBinding
+from agentx_contracts.jsontypes import JsonSchema
 from agentx_contracts.mandate import (
     Charter,
     Condition,
@@ -14,7 +16,14 @@ from agentx_contracts.mandate import (
 )
 from agentx_contracts.protocols import Adapter
 from agentx_contracts.security import Credential
-from agentx_contracts.syscall import GatewayContext, Health, SyscallRequest, SyscallResult, VerifyOutcome
+from agentx_contracts.syscall import (
+    GatewayContext,
+    Health,
+    SyscallRequest,
+    SyscallResult,
+    SyscallTestCase,
+    VerifyOutcome,
+)
 from agentx_contracts.trigger import DeadlineTrigger
 from agentx_kernel.bootstrap import build_phase1_runinvoker
 
@@ -56,21 +65,21 @@ def _mandate() -> MandateType:
     )
 
 
-def _instance(ring: str) -> InstanceBinding:
+def _instance(ring: Ring) -> InstanceBinding:
     return InstanceBinding(instance_id="inst_a", type_ref="lead-finder@0.1.0", ring=ring, heap_region_id="heap_a")
 
 
 class DraftAdapter:
-    name = "stub_draft"
-    category = "draft_email"
-    maturity_level = 1
-    risk_class = "external_message"
-    required_ring = "L2"
-    tenant_auth = "manual"
-    input_schema: dict[str, object] = {}
-    output_schema: dict[str, object] = {}
-    fixtures = []
-    is_terminal_fallback = False
+    name: str = "stub_draft"
+    category: str = "draft_email"
+    maturity_level: MaturityLevel = 1
+    risk_class: str = "external_message"
+    required_ring: Ring = "L2"
+    tenant_auth: TenantAuth = "manual"
+    input_schema: JsonSchema = {}
+    output_schema: JsonSchema = {}
+    fixtures: list[SyscallTestCase] = []
+    is_terminal_fallback: bool = False
 
     def can_handle(self, req: SyscallRequest, ctx: GatewayContext) -> bool:
         return req.name == "draft_email" and ctx.instance_id == "inst_a"
@@ -101,16 +110,16 @@ class DraftAdapter:
 
 class SingleAdapterRegistry:
     def __init__(self) -> None:
-        self._adapter = DraftAdapter()
+        self._adapter: Adapter = DraftAdapter()
 
     def register(self, adapter: Adapter) -> None:
-        self._adapter = adapter  # type: ignore[assignment]
+        self._adapter = adapter
 
     def adapters(self) -> list[Adapter]:
-        return [self._adapter]  # type: ignore[list-item]
+        return [self._adapter]
 
     def resolve(self, req: SyscallRequest, ctx: GatewayContext) -> Adapter:
-        return self._adapter  # type: ignore[return-value]
+        return self._adapter
 
 
 async def test_phase1_runinvoker_parks_l1_draft_email_before_registry_resolution() -> None:

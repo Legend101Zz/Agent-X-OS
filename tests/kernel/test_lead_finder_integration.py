@@ -2,10 +2,19 @@
 
 from datetime import UTC, datetime
 
+from agentx_contracts.enums import MaturityLevel, Ring, TenantAuth
+from agentx_contracts.jsontypes import JsonSchema
 from agentx_contracts.mandate import InstanceBinding
 from agentx_contracts.protocols import Adapter
 from agentx_contracts.security import Credential
-from agentx_contracts.syscall import GatewayContext, Health, SyscallRequest, SyscallResult, VerifyOutcome
+from agentx_contracts.syscall import (
+    GatewayContext,
+    Health,
+    SyscallRequest,
+    SyscallResult,
+    SyscallTestCase,
+    VerifyOutcome,
+)
 from agentx_contracts.trigger import DeadlineTrigger
 from agentx_kernel.bootstrap import build_phase1_runinvoker
 from agentx_mandate.library.lead_finder import build_lead_finder_type
@@ -14,16 +23,16 @@ NOW = datetime(2026, 6, 17, tzinfo=UTC)
 
 
 class DraftAdapter:
-    name = "stub_draft"
-    category = "draft_email"
-    maturity_level = 1
-    risk_class = "external_message"
-    required_ring = "L2"
-    tenant_auth = "manual"
-    input_schema: dict[str, object] = {}
-    output_schema: dict[str, object] = {}
-    fixtures = []
-    is_terminal_fallback = False
+    name: str = "stub_draft"
+    category: str = "draft_email"
+    maturity_level: MaturityLevel = 1
+    risk_class: str = "external_message"
+    required_ring: Ring = "L2"
+    tenant_auth: TenantAuth = "manual"
+    input_schema: JsonSchema = {}
+    output_schema: JsonSchema = {}
+    fixtures: list[SyscallTestCase] = []
+    is_terminal_fallback: bool = False
 
     def can_handle(self, req: SyscallRequest, ctx: GatewayContext) -> bool:
         return req.name == "draft_email"
@@ -54,19 +63,19 @@ class DraftAdapter:
 
 class DraftRegistry:
     def __init__(self) -> None:
-        self._adapter = DraftAdapter()
+        self._adapter: Adapter = DraftAdapter()
 
     def register(self, adapter: Adapter) -> None:
-        self._adapter = adapter  # type: ignore[assignment]
+        self._adapter = adapter
 
     def adapters(self) -> list[Adapter]:
-        return [self._adapter]  # type: ignore[list-item]
+        return [self._adapter]
 
     def resolve(self, req: SyscallRequest, ctx: GatewayContext) -> Adapter:
-        return self._adapter  # type: ignore[return-value]
+        return self._adapter
 
 
-def _instance(ring: str) -> InstanceBinding:
+def _instance(ring: Ring) -> InstanceBinding:
     return InstanceBinding(
         instance_id="inst_a",
         type_ref="lead-finder@0.1.0",

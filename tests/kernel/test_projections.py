@@ -116,7 +116,9 @@ async def test_watch_registered_then_fired_projection() -> None:
         )
     )
     await proj.apply(reg)
-    assert (await store.get("watch", "watch_1"))["status"] == "pending"
+    pending = await store.get("watch", "watch_1")
+    assert pending is not None
+    assert pending["status"] == "pending"
     fired = await journal.append(
         WatchFired(
             event_id="w2", seq=0, ts=NOW, instance_id="inst_a", run_id="run_1",

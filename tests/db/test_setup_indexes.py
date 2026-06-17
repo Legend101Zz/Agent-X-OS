@@ -8,7 +8,14 @@ class FakeCollection:
     def __init__(self) -> None:
         self.created: list[dict[str, object]] = []
 
-    async def create_index(self, keys, *, name: str, unique: bool = False, sparse: bool = False) -> str:
+    async def create_index(
+        self,
+        keys: list[tuple[str, int]],
+        *,
+        name: str,
+        unique: bool = False,
+        sparse: bool = False,
+    ) -> str:
         self.created.append({"keys": keys, "name": name, "unique": unique, "sparse": sparse})
         return name
 

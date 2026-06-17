@@ -26,7 +26,7 @@ class MongoJournalStore:
         seq = await self.max_seq(event.instance_id) + 1
         stamped = event.model_copy(update={"seq": seq})
         try:
-            await self._collection.insert_one(stamped.model_dump(mode="json"))
+            await self._collection.insert_one(stamped.model_dump(mode="json", exclude_none=True))
         except DuplicateKeyError as exc:
             if key is not None:
                 raise DuplicateIdempotencyKey(key) from exc

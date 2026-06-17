@@ -16,9 +16,15 @@ class FakeCursor:
     def __init__(self, docs: list[dict[str, object]]) -> None:
         self._docs = docs
 
-    def sort(self, key: str, direction: int):
+    def sort(self, key: str, direction: int) -> "FakeCursor":
         reverse = direction < 0
-        self._docs.sort(key=lambda doc: doc.get(key, 0), reverse=reverse)
+
+        def sort_key(doc: dict[str, object]) -> int:
+            value = doc.get(key, 0)
+            assert isinstance(value, int)
+            return value
+
+        self._docs.sort(key=sort_key, reverse=reverse)
         return self
 
     async def to_list(self, length: int | None = None) -> list[dict[str, object]]:
@@ -30,8 +36,11 @@ class FakeCollection:
         self.docs: list[dict[str, object]] = []
 
     async def insert_one(self, doc: dict[str, object]) -> None:
-        idem = doc.get("idempotency_key")
-        if idem is not None and any(existing.get("idempotency_key") == idem for existing in self.docs):
+        if "idempotency_key" in doc and any(
+            existing.get("idempotency_key") == doc["idempotency_key"]
+            for existing in self.docs
+            if "idempotency_key" in existing
+        ):
             raise DuplicateKeyError("duplicate idempotency")
         self.docs.append(dict(doc))
 

@@ -2,16 +2,25 @@
 
 from datetime import UTC, datetime
 
+from agentx_contracts.enums import MaturityLevel, Ring, TenantAuth
+from agentx_contracts.jsontypes import JsonSchema
 from agentx_contracts.protocols import Adapter
 from agentx_contracts.security import Credential
-from agentx_contracts.syscall import GatewayContext, Health, SyscallRequest, SyscallResult, VerifyOutcome
+from agentx_contracts.syscall import (
+    GatewayContext,
+    Health,
+    SyscallRequest,
+    SyscallResult,
+    SyscallTestCase,
+    VerifyOutcome,
+)
 from agentx_kernel.gateway import Gateway
 from agentx_kernel.stores.memory import InMemoryJournalStore, InMemoryVault
 
 NOW = datetime(2026, 6, 17, tzinfo=UTC)
 
 
-def _ctx(ring: str = "L1") -> GatewayContext:
+def _ctx(ring: Ring = "L1") -> GatewayContext:
     return GatewayContext(instance_id="inst_a", run_id="run_1", tenant_id="tenant_a", ring=ring, now=NOW)
 
 
@@ -20,16 +29,16 @@ def _req(name: str, idem: str = "idem-1") -> SyscallRequest:
 
 
 class StubAdapter:
-    name = "stub_research"
-    category = "lead_research_batch"
-    maturity_level = 2
-    risk_class = "read"
-    required_ring = "L0"
-    tenant_auth = "api_key"
-    input_schema: dict[str, object] = {}
-    output_schema: dict[str, object] = {}
-    fixtures = []
-    is_terminal_fallback = False
+    name: str = "stub_research"
+    category: str = "lead_research_batch"
+    maturity_level: MaturityLevel = 2
+    risk_class: str = "read"
+    required_ring: Ring = "L0"
+    tenant_auth: TenantAuth = "api_key"
+    input_schema: JsonSchema = {}
+    output_schema: JsonSchema = {}
+    fixtures: list[SyscallTestCase] = []
+    is_terminal_fallback: bool = False
 
     def __init__(self) -> None:
         self.calls = 0

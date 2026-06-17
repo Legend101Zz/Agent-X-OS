@@ -12,7 +12,17 @@ The pod holds NO credentials and NO durable state — this module imports only t
 from datetime import UTC, datetime
 
 from agentx_contracts import Fact, HydrationSnapshot, Provenance, SyscallRequest
-from agentx_mandate.harness import Call, Claim, FacultyContext, Finish, OwnHarness, Think
+from agentx_contracts.enums import RiskClass
+from agentx_mandate.harness import (
+    Call,
+    Claim,
+    FacultyContext,
+    Finish,
+    HarnessAction,
+    OwnHarness,
+    OwnHarnessSession,
+    Think,
+)
 
 NOW = datetime(2026, 6, 17, tzinfo=UTC)
 
@@ -24,10 +34,10 @@ def _ctx() -> FacultyContext:
     )
 
 
-def _req(name: str, risk: str, idem: str) -> SyscallRequest:
+def _req(name: str, risk: RiskClass, idem: str) -> SyscallRequest:
     return SyscallRequest(
         name=name, instance_id="inst_a", run_id="run_1", idempotency_key=idem,
-        ring="L1", risk_class=risk,  # type: ignore[arg-type]
+        ring="L1", risk_class=risk,
     )
 
 
@@ -39,8 +49,8 @@ def _draft_call() -> Call:
     return Call(request=_req("draft_email", "external_message", "idem-draft"))
 
 
-async def _session(actions: list[object]):
-    harness = OwnHarness(recorded=actions)  # type: ignore[arg-type]
+async def _session(actions: list[HarnessAction]) -> OwnHarnessSession:
+    harness = OwnHarness(recorded=actions)
     return harness.start(context=_ctx(), faculties=[])
 
 
@@ -71,14 +81,14 @@ async def test_exhausted_session_returns_finish() -> None:
 
 async def test_session_is_resumable_at_a_saved_cursor() -> None:
     # Drive to the draft_email, "park", then rebuild + resume at the parked cursor (deterministic replay).
-    actions = [Think(summary="plan"), _draft_call()]
+    actions: list[HarnessAction] = [Think(summary="plan"), _draft_call()]
     session = await _session(actions)
     await session.step(None)  # Think  -> cursor 1
     parked = await session.step(None)  # draft_email -> cursor 2
     assert isinstance(parked, Call)
     resume_cursor = session.cursor - 1  # re-execute the parked call on resume
 
-    harness = OwnHarness(recorded=actions)  # type: ignore[arg-type]
+    harness = OwnHarness(recorded=actions)
     resumed = harness.start(context=_ctx(), faculties=[], cursor=resume_cursor)
     again = await resumed.step(None)
     assert isinstance(again, Call) and again.request.name == "draft_email"

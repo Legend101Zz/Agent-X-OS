@@ -45,4 +45,6 @@ async def test_commit_appends_one_runsettled_and_projects_facts_to_heap() -> Non
     assert [item.kind for item in events] == ["run_settled"]
     heap_doc = await projection_store.get("heap_fact", "f1")
     assert heap_doc is not None
-    assert heap_doc["provenance"]["run_id"] == "run_1"
+    provenance = heap_doc["provenance"]
+    assert isinstance(provenance, dict)
+    assert provenance["run_id"] == "run_1"
