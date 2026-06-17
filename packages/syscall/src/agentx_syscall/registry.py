@@ -1,17 +1,54 @@
-"""Phase-1 syscall registry bootstrap (STUB — Codex implements in Session B, PROMPT 2).
+"""Phase-1 syscall registry bootstrap."""
 
-``build_phase1_registry`` returns a ``SyscallRegistry`` populated with the Phase-1 adapters and the
-HumanTaskAdapter as the guaranteed terminal fallback (``is_terminal_fallback=True``) — so
-``resolve`` never fails to return an adapter (invariant #5).
-"""
+from agentx_contracts import Adapter, GatewayContext, SyscallRegistry, SyscallRequest
 
-from agentx_contracts import SyscallRegistry
+from agentx_syscall.adapters import (
+    DraftEmailAdapter,
+    HumanTaskAdapter,
+    LeadResearchBatchAdapter,
+    ManualTaskStore,
+    MarkOutcomeAdapter,
+    QueueManualActionAdapter,
+    ReadUrlAdapter,
+    build_configured_research_providers,
+)
+
+
+class Phase1SyscallRegistry:
+    """Fulfillment-ladder resolver with a guaranteed human-task tail."""
+
+    def __init__(self, *, terminal_fallback: Adapter | None = None) -> None:
+        self._adapters: list[Adapter] = []
+        self._terminal_fallback: Adapter = terminal_fallback or HumanTaskAdapter()
+        if not self._terminal_fallback.is_terminal_fallback:
+            raise ValueError("terminal fallback adapter must set is_terminal_fallback=True")
+        if self._terminal_fallback.name != "human_task":
+            raise ValueError("terminal fallback adapter must be human_task")
+
+    def register(self, adapter: Adapter) -> None:
+        if adapter.is_terminal_fallback:
+            raise ValueError("registry already has a terminal fallback adapter")
+        self._adapters.append(adapter)
+
+    def adapters(self) -> list[Adapter]:
+        return [*self._adapters, self._terminal_fallback]
+
+    def resolve(self, req: SyscallRequest, ctx: GatewayContext) -> Adapter:
+        capable = [adapter for adapter in self._adapters if adapter.can_handle(req, ctx)]
+        if capable:
+            return sorted(capable, key=lambda adapter: adapter.maturity_level, reverse=True)[0]
+        return self._terminal_fallback
 
 
 def build_phase1_registry() -> SyscallRegistry:
-    """Build the live Phase-1 ladder: lead_research_batch, read_url, draft_email, queue_manual_action,
-    mark_outcome, + HumanTaskAdapter (tail). Session B implements; Session A raises."""
-    raise NotImplementedError(
-        "agentx_syscall.registry.build_phase1_registry: Codex implements the Adapter framework, "
-        "the Phase-1 adapters, and the HumanTaskAdapter tail (invariant #5). Build vs FROZEN contracts."
-    )
+    """Build the live Phase-1 syscall ladder."""
+
+    store = ManualTaskStore()
+    providers = build_configured_research_providers()
+    registry = Phase1SyscallRegistry(terminal_fallback=HumanTaskAdapter(store=store))
+    registry.register(LeadResearchBatchAdapter(providers=providers))
+    registry.register(ReadUrlAdapter(providers=providers))
+    registry.register(DraftEmailAdapter())
+    registry.register(QueueManualActionAdapter(store=store))
+    registry.register(MarkOutcomeAdapter(store=store))
+    return registry
