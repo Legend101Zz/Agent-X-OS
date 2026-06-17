@@ -29,8 +29,18 @@ class Settings(BaseSettings):
     mongodb_uri: SecretStr = SecretStr("")
     mongodb_db_name: str = "agentx"
 
-    # --- LLM for the faculties (default: Claude / Anthropic) ---
-    anthropic_api_key: SecretStr = SecretStr("")
+    # --- Faculties: the Hermes harness drives Minimax DIRECTLY (your Minimax API key) ---
+    minimax_api_key: SecretStr | None = None
+    faculty_model_base_url: str = ""  # Minimax OpenAI-compatible endpoint, e.g. https://api.minimax.io/v1 (confirm)
+    faculty_model_id: str = ""  # e.g. "MiniMax-M2"
+    hermes_endpoint: str | None = None  # how the kernel reaches Hermes (if a service); build agent confirms
+
+    # --- promptfoo JUDGE: via OpenRouter (one key, any model) — a DIFFERENT model than the faculties ---
+    openrouter_api_key: SecretStr | None = None
+    judge_model_id: str = ""  # OpenRouter slug, e.g. "anthropic/claude-sonnet-4"
+
+    # Optional: a direct GLM/Zhipu key, if you swap the faculty model off Minimax.
+    zhipu_api_key: SecretStr | None = None
 
     # --- Research provider (Codex lane) — set at least one ---
     exa_api_key: SecretStr | None = None
