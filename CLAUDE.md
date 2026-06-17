@@ -3,6 +3,36 @@
 You are the brain building the **kernel** and **mandate** halves of Agent-X. Hold the architecture;
 dispatch subagents for bounded parallel work; integrate.
 
+> ## ⚡ Session C (2026-06-18) — integration & go-live status (READ THIS)
+> Phase 1 is past "passes on doubles": it has been **run live end-to-end**. Current reality:
+> - **Checks all green:** `uv run mypy --strict packages db tests` (config is already `strict=true`),
+>   `ruff`, `pytest` (now 65 passed + 1 live-gated skip), `lint-imports` 3/3. The seam proof passes on the
+>   OwnHarness double.
+> - **LOCKED read-semantics decision (invariant #2):** read-class research is **harness-native** (the
+>   faculty emits the `lead_research_batch` READ intent; in sim the kernel fulfils it natively OFF-gateway
+>   with *clearly-synthetic* fixtures — `run_loop._fulfill_sim_native_read`; native reads use NO per-tenant
+>   credential and are still traced). **Keyed providers (Exa/Firecrawl) + every write go through the
+>   gateway** with a kernel-injected credential; the pod holds no secret. The research faculty NO LONGER
+>   fabricates leads (`faculties/research.py` emits intent only).
+> - **Vault is real:** `agentx_kernel.vault.ConfigVault` resolves `vault://{tenant}/{adapter}` to a real
+>   config-backed `Credential` (api_key for research, manual otherwise). Pod never sees it (kernel-side only).
+> - **Journal seq hardened:** `MongoJournalStore.append` retries on `(instance_id,seq)` collisions and
+>   distinguishes them from idempotency violations (new `JournalSeqContention`). Indexes in `db/indexes.py`.
+> - **Live path PROVEN:** `scripts/run_lead_finder.py` (mode="live") drives Hermes→Minimax (as the
+>   `Reasoner`) + live registry + ConfigVault + Mongo. A real dogfood run produced **real Firecrawl leads**,
+>   parked at L1, was approved, and **settled with provenance-stamped facts in Mongo** (see findings.md).
+>   `RUN_LIVE_HERMES=1 uv run pytest tests/kernel/test_hermes_client.py` proves Hermes↔Minimax.
+> - **Swarm proven end-to-end (sim):** `tests/integration/test_swarm_end_to_end.py` — SimAdapters bound →
+>   run on kernel via RunInvoker → promptfoo Judge (offline fallback) grades the real trace → PromotionGate
+>   **bars synthetic-only**. The real Judge shells `npx promptfoo` over OpenRouter when keys are set.
+> - **KNOWN REMAINING GAP (T2, deferred):** the run loop still drives faculty `propose()` directly and
+>   appends `draft_email` in-loop — it does **not** yet drive `HarnessSession.step(observation)`, and the
+>   live Hermes integration is a single reasoning *note*, not a `HarnessRunner` emitting structured actions.
+>   Scaffolding exists (`OwnHarness.start/step`, `Playbook`). Finishing it = drive `step()`, move the
+>   trajectory into a lead-finder playbook, and have Minimax emit actions via tool-calling.
+> - This was a **single-agent whole-repo integration pass** (lanes no longer split across agents), but the
+>   import-linter lane isolation + credential boundary remain enforced — keep them green.
+
 ## Read first (canonical docs live in `docs/`)
 - **`docs/BLUEPRINT.md` — CANONICAL. When any doc conflicts, this wins.** Then `docs/MANDATE.md`, `docs/SYSCALLS.md`, `docs/ARCHITECTURE.md`, `docs/README.md`, `docs/BUILD-KIT.md`.
 - `BUILD-PLAN.md` — your task graph, the CLAUDE/CODEX split, and each task's definition-of-done.

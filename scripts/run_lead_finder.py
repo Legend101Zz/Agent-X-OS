@@ -10,7 +10,6 @@ import asyncio
 from datetime import UTC, datetime
 from importlib.util import find_spec
 from time import perf_counter
-from typing import cast
 
 import agentx_db.collections as c
 from agentx_contracts.config import Settings
@@ -28,7 +27,8 @@ from agentx_kernel.hydration import HydrationLoader
 from agentx_kernel.projections import Projections
 from agentx_kernel.run_loop import Phase1RunInvoker
 from agentx_kernel.settlement import SettlementCommitter
-from agentx_kernel.stores.mongo import MongoJournalStore, MongoProjectionStore, MongoVault
+from agentx_kernel.stores.mongo import MongoJournalStore, MongoProjectionStore
+from agentx_kernel.vault import ConfigVault
 from agentx_kernel.verifier import RulesVerifier
 from agentx_mandate.library.lead_finder import build_lead_finder_type
 from agentx_mandate.settlement import build_settlement
@@ -107,7 +107,7 @@ async def main() -> int:
         journal = MongoJournalStore(database)
         projection_store = MongoProjectionStore(database)
         projections = Projections(projection_store, journal)
-        gateway = Gateway(journal=journal, vault=MongoVault(database), registry=build_phase1_registry())
+        gateway = Gateway(journal=journal, vault=ConfigVault(settings), registry=build_phase1_registry())
         hydration = HydrationLoader(projection_store, journal)
         settlement = SettlementCommitter(journal=journal, projections=projections)
         invoker = Phase1RunInvoker(
@@ -151,7 +151,7 @@ async def main() -> int:
         draft = await gateway.invoke(
             SyscallRequest(
                 name="draft_email",
-                args=cast(JsonObject, raw_args),
+                args=raw_args,
                 instance_id=instance_id,
                 run_id=parked.run_id,
                 idempotency_key=idem,

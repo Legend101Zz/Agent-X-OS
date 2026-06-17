@@ -24,5 +24,18 @@ class DuplicateIdempotencyKey(KernelError):
         super().__init__(f"duplicate idempotency_key: {key!r}")
 
 
+class JournalSeqContention(KernelError):
+    """Per-instance ``seq`` assignment kept colliding under concurrency past the retry budget.
+
+    The journal assigns ``seq = max_seq + 1`` then inserts under a UNIQUE ``(instance_id, seq)`` index.
+    A concurrent appender can win the seq between the read and the insert; the store retries with a
+    freshly recomputed ``seq``. This is raised only if every retry lost the race (extreme contention).
+    """
+
+    def __init__(self, instance_id: str) -> None:
+        self.instance_id = instance_id
+        super().__init__(f"journal seq contention exhausted for instance {instance_id!r}")
+
+
 class ConfigError(KernelError):
     """A required setting (e.g. a connection string, a faculty model id) is missing at startup."""

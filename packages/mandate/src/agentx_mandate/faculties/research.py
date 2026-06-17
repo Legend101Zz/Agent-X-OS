@@ -22,11 +22,6 @@ FACULTY = Faculty(
 )
 
 
-def _target_str(target: JsonObject, key: str, default: str) -> str:
-    value = target.get(key)
-    return value if isinstance(value, str) else default
-
-
 def _target_count(target: JsonObject, default: int = 3) -> int:
     value = target.get("count")
     if isinstance(value, int) and value > 0:
@@ -35,24 +30,22 @@ def _target_count(target: JsonObject, default: int = 3) -> int:
 
 
 def propose(ctx: FacultyContext) -> list[HarnessAction]:
-    count = _target_count(ctx.target)
-    icp = _target_str(ctx.target, "icp", "target")
-    location = _target_str(ctx.target, "location", "unknown")
-    leads: list[JsonObject] = [
-        {
-            "id": f"lead_{index}",
-            "company": f"{icp} lead {index}",
-            "location": location,
-            "evidence": [f"lead_research_batch:{ctx.run_id}:{index}"],
-        }
-        for index in range(1, count + 1)
-    ]
-    ctx.scratchpad["leads"] = leads
+    """Emit the lead-research READ INTENT only — never fabricate leads (invariant: LLM proposes,
+    deterministic code disposes; real leads come from the harness/gateway, not from the faculty).
+
+    Real leads are produced where the read is FULFILLED: in live mode the gateway routes this intent to
+    the Exa/Firecrawl adapter (kernel-injected credential); in sim mode the kernel fulfills it natively
+    with clearly-synthetic fixtures. Either way the leads land in ``ctx.scratchpad['leads']`` for the
+    judgment + memory-craft faculties downstream.
+    """
+    target = dict(ctx.target)
+    count = _target_count(target)
+    criteria: JsonObject = {key: value for key, value in target.items() if key != "count"}
     return [
         Call(
             request=SyscallRequest(
                 name="lead_research_batch",
-                args=dict(ctx.target),
+                args={"criteria": criteria, "count": count},
                 instance_id=ctx.instance_id,
                 run_id=ctx.run_id,
                 idempotency_key=f"{ctx.run_id}:research:lead_research_batch",

@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import pytest
 from agentx_contracts.journal import RunCreated
 from agentx_contracts.trigger import DeadlineTrigger
-from agentx_kernel.errors import DuplicateIdempotencyKey
+from agentx_kernel.errors import DuplicateIdempotencyKey, JournalSeqContention
 from agentx_kernel.stores.mongo import MongoJournalStore, MongoProjectionStore, MongoVault
 from pymongo.errors import DuplicateKeyError
 
@@ -116,3 +116,81 @@ async def test_mongo_projection_store_upsert_get_find_and_vault_stub() -> None:
 
     cred = await MongoVault(database).get(ref="vault://stub", tenant_id="tenant_a")
     assert cred is not None and cred.kind == "manual"
+
+
+def _seq_dup_key_error(instance_id: str, seq: int) -> DuplicateKeyError:
+    """A DuplicateKeyError shaped like a real (instance_id, seq) unique-index violation."""
+    return DuplicateKeyError(
+        f"E11000 duplicate key error collection: agentx.journal index: ix_journal_instance_seq dup key: "
+        f"{{ instance_id: '{instance_id}', seq: {seq} }}",
+        11000,
+        {"keyPattern": {"instance_id": 1, "seq": 1}, "keyValue": {"instance_id": instance_id, "seq": seq}},
+    )
+
+
+class SeqRaceOnceCollection(FakeCollection):
+    """Simulates ONE concurrent writer stealing our seq between max_seq() and insert_one()."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._raced = False
+
+    async def insert_one(self, doc: dict[str, object]) -> None:
+        instance_id = str(doc.get("instance_id"))
+        seq = doc.get("seq")
+        assert isinstance(seq, int)
+        if not self._raced:
+            self._raced = True
+            # A concurrent writer already committed our seq; record it, then reject our insert.
+            self.docs.append({"event_id": "competitor", "instance_id": instance_id, "seq": seq})
+            raise _seq_dup_key_error(instance_id, seq)
+        if any(d.get("instance_id") == instance_id and d.get("seq") == seq for d in self.docs):
+            raise _seq_dup_key_error(instance_id, seq)
+        self.docs.append(dict(doc))
+
+
+class SeqRaceForeverCollection(FakeCollection):
+    """Every insert collides on (instance_id, seq) — exhausts the retry budget."""
+
+    async def insert_one(self, doc: dict[str, object]) -> None:
+        instance_id = str(doc.get("instance_id"))
+        seq = doc.get("seq")
+        assert isinstance(seq, int)
+        raise _seq_dup_key_error(instance_id, seq)
+
+
+class SeqRaceDatabase(FakeDatabase):
+    def __init__(self, collection: FakeCollection) -> None:
+        super().__init__()
+        self._journal = collection
+
+    def __getitem__(self, name: str) -> FakeCollection:
+        if name == "journal":
+            return self._journal
+        return super().__getitem__(name)
+
+
+async def test_seq_collision_is_retried_and_seq_advances_not_idempotency_error() -> None:
+    store = MongoJournalStore(SeqRaceDatabase(SeqRaceOnceCollection()))
+
+    # RunCreated carries no idempotency_key, so the only possible collision is on (instance_id, seq).
+    stamped = await store.append(_run_created(event_id="rc1"))
+
+    # After the simulated race (competitor took seq=1) the store recomputes max_seq and lands on seq=2.
+    assert stamped.seq == 2
+    assert stamped.event_id == "rc1"
+
+
+async def test_seq_collision_with_idempotency_key_event_still_retries() -> None:
+    store = MongoJournalStore(SeqRaceDatabase(SeqRaceOnceCollection()))
+    event = _run_created(event_id="rc1").model_copy(update={"idempotency_key": "idem-real"})
+
+    # The collision is on seq (not idempotency_key), so it must retry, not raise DuplicateIdempotencyKey.
+    stamped = await store.append(event)
+    assert stamped.seq == 2
+
+
+async def test_seq_contention_exhausted_raises_typed_error() -> None:
+    store = MongoJournalStore(SeqRaceDatabase(SeqRaceForeverCollection()))
+    with pytest.raises(JournalSeqContention):
+        await store.append(_run_created(event_id="rc1"))
