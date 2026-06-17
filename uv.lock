@@ -94,12 +94,14 @@ source = { editable = "packages/kernel" }
 dependencies = [
     { name = "agentx-contracts" },
     { name = "agentx-db" },
+    { name = "agentx-mandate" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "agentx-contracts", editable = "packages/contracts" },
     { name = "agentx-db", editable = "db" },
+    { name = "agentx-mandate", editable = "packages/mandate" },
 ]
 
 [[package]]
