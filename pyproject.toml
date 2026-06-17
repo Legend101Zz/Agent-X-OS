@@ -50,6 +50,9 @@ dev = [
 asyncio_mode = "auto"
 addopts = "-ra"
 testpaths = ["tests"]
+markers = [
+    "live: tests that require live external services and credentials",
+]
 
 [tool.ruff]
 line-length = 120

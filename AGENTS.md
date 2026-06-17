@@ -1,3 +1,11 @@
+<!-- ───────────────────────────────────────────────────────────────────────────
+  ⚠️ ROUTER (2026-06-17): this repo has TWO build lanes.
+  • If your task is to CONTINUE THE KERNEL + MANDATE build (Session B handoff),
+    STOP reading this file — read `HANDOFF-CODEX.md` then `CLAUDE.md`. The lane
+    spec below does NOT apply to that task.
+  • The spec below is the SYSCALL + SWARM lane, kept for when that work is done.
+─────────────────────────────────────────────────────────────────────────── -->
+
 # AGENTS.md — Agent-X-OS (Codex: the SYSCALL + SWARM lane)
 
 You build the **syscall** and **swarm** halves of Agent-X Phase 1, against the FROZEN
