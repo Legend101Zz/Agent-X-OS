@@ -10,9 +10,13 @@ from agentx_contracts.security import Credential
 from pydantic import TypeAdapter
 from pymongo.errors import DuplicateKeyError
 
-from ..errors import DuplicateIdempotencyKey
+from ..errors import DuplicateIdempotencyKey, JournalSeqContention
 
 _JOURNAL_EVENT: TypeAdapter[JournalEvent] = TypeAdapter(JournalEvent)
+
+# How many times to recompute seq and retry when a concurrent appender wins the (instance_id, seq)
+# race. Contention is per-instance and brief, so a small budget is ample; exhausting it is pathological.
+_MAX_SEQ_RETRIES = 8
 
 
 class MongoJournalStore:
@@ -22,16 +26,29 @@ class MongoJournalStore:
         self._collection = database[c.JOURNAL]
 
     async def append(self, event: JournalEvent) -> JournalEvent:
+        """Assign a per-instance ``seq`` and insert under the UNIQUE ``(instance_id, seq)`` +
+        UNIQUE ``idempotency_key`` indexes.
+
+        ``seq = max_seq + 1`` is read-then-write, so a concurrent appender can take our seq between the
+        read and the insert. The unique index turns that race into a ``DuplicateKeyError`` on
+        ``ix_journal_instance_seq``; we recompute and retry. A collision on ``ix_journal_idem`` instead
+        means the same effect was already journaled → raise ``DuplicateIdempotencyKey`` (at-most-once).
+        """
         key = event.idempotency_key
-        seq = await self.max_seq(event.instance_id) + 1
-        stamped = event.model_copy(update={"seq": seq})
-        try:
-            await self._collection.insert_one(stamped.model_dump(mode="json", exclude_none=True))
-        except DuplicateKeyError as exc:
-            if key is not None:
-                raise DuplicateIdempotencyKey(key) from exc
-            raise
-        return stamped
+        for _attempt in range(_MAX_SEQ_RETRIES):
+            seq = await self.max_seq(event.instance_id) + 1
+            stamped = event.model_copy(update={"seq": seq})
+            try:
+                await self._collection.insert_one(stamped.model_dump(mode="json", exclude_none=True))
+            except DuplicateKeyError as exc:
+                if _is_idempotency_violation(exc, has_key=key is not None):
+                    assert key is not None  # idempotency index only matches events that set the key
+                    raise DuplicateIdempotencyKey(key) from exc
+                # Otherwise the (instance_id, seq) unique index rejected us: a concurrent writer won
+                # this seq. Recompute against the now-higher max and retry.
+                continue
+            return stamped
+        raise JournalSeqContention(event.instance_id)
 
     async def read_instance(self, instance_id: str) -> list[JournalEvent]:
         docs = await self._collection.find({"instance_id": instance_id}).sort("seq", 1).to_list(length=None)
@@ -77,6 +94,31 @@ class MongoVault:
 
     async def get(self, ref: str, tenant_id: str) -> Credential | None:
         return Credential(ref=ref, kind="manual", material=None)
+
+
+def _is_idempotency_violation(exc: DuplicateKeyError, *, has_key: bool) -> bool:
+    """Decide whether a DuplicateKeyError came from the idempotency index vs the (instance_id, seq) index.
+
+    Prefers the structured ``details`` (``keyPattern``/``keyValue`` — always present from a real server),
+    then falls back to the index name in the error message. When neither is conclusive we default to a
+    seq collision UNLESS the event carries an idempotency_key (in which case we conservatively treat it
+    as an idempotency violation so a retried effect can never double-execute).
+    """
+    details = getattr(exc, "details", None)
+    if isinstance(details, dict):
+        for field in ("keyPattern", "keyValue"):
+            pattern = details.get(field)
+            if isinstance(pattern, dict):
+                if "idempotency_key" in pattern:
+                    return True
+                if "seq" in pattern or "instance_id" in pattern:
+                    return False
+    message = str(exc)
+    if "ix_journal_idem" in message or "idempotency_key" in message:
+        return True
+    if "ix_journal_instance_seq" in message or "seq" in message:
+        return False
+    return has_key
 
 
 def _parse_event(doc: dict[str, object]) -> JournalEvent:

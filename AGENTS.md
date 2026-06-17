@@ -12,6 +12,27 @@ You build the **syscall** and **swarm** halves of Agent-X Phase 1, against the F
 `packages/contracts`. Hold the syscall/swarm architecture in the main thread; use git worktrees +
 subagents for bounded parallel work (e.g. one adapter per worktree).
 
+> ## ⚡ Session C (2026-06-18) — integration & go-live status (READ THIS)
+> Phase 1 was integrated and **run live end-to-end** in a single whole-repo pass. For your lane:
+> - **Research adapters proven LIVE:** a real dogfood run hit Firecrawl through
+>   `LeadResearchBatchAdapter` and returned **real leads** (real company/source names + evidence), which
+>   settled as provenance-stamped facts in Mongo. `build_phase1_registry()` wires the live ladder; the
+>   `HumanTaskAdapter` tail and `draft_email` (draft-only, `sent:false`) are exercised.
+> - **LOCKED read-semantics (invariant #2):** read-class research is **harness-native** — fulfilled
+>   off-gateway with NO per-tenant credential, but still traced. **Keyed providers (Exa/Firecrawl) + all
+>   writes go through the gateway** with a kernel-injected credential. The mandate faculty no longer
+>   fabricates leads; in sim the kernel supplies *clearly-synthetic* fixtures off-gateway.
+> - **Credential injection is real:** the kernel now uses `ConfigVault` (config-backed) — your adapters
+>   receive a real `Credential` at `execute(req, cred)` for keyed refs. (Phase-1 providers still read their
+>   key from settings kernel-side; consuming `cred.material` in the provider is a clean future step.)
+> - **Swarm proven end-to-end (sim):** `tests/integration/test_swarm_end_to_end.py` runs a candidate ON the
+>   kernel via `RunInvoker`, the **promptfoo Judge** grades the real trace (offline fallback path when
+>   `OPENROUTER_API_KEY`/`JUDGE_MODEL_ID` are unset — it shells `npx promptfoo` over OpenRouter when set),
+>   and the **`PromotionGate` bars synthetic-only** promotion (allows with real + human). Scenario pack
+>   `indian_b2b_leads_v1` loads (10–30 synthetic cases).
+> - **Checks green:** `pytest` 65 passed + 1 live-gated skip, `mypy --strict`, `ruff`, `lint-imports` 3/3.
+>   Lane isolation + credential boundary remain enforced — do not import the kernel/mandate lane.
+
 ## Commands (lead with these)
 ```bash
 # setup

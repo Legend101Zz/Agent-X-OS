@@ -44,7 +44,9 @@ def test_get_faculty_returns_library_entry_and_rejects_unknown_name() -> None:
         get_faculty("unknown")
 
 
-def test_research_proposes_read_intent_and_caches_candidate_leads() -> None:
+def test_research_proposes_read_intent_without_fabricating_leads() -> None:
+    """Research emits ONLY the read intent. Real leads are produced where the read is fulfilled
+    (live gateway → Exa/Firecrawl, or sim native fixtures), NEVER fabricated by the faculty itself."""
     ctx = _ctx()
 
     actions = propose("research", ctx)
@@ -57,21 +59,13 @@ def test_research_proposes_read_intent_and_caches_candidate_leads() -> None:
     assert action.request.instance_id == "inst_a"
     assert action.request.run_id == "run_1"
     assert action.request.ring == "L1"
-    assert action.request.args == ctx.target
-    assert ctx.scratchpad["leads"] == [
-        {
-            "id": "lead_1",
-            "company": "independent dental clinics lead 1",
-            "location": "Pune",
-            "evidence": ["lead_research_batch:run_1:1"],
-        },
-        {
-            "id": "lead_2",
-            "company": "independent dental clinics lead 2",
-            "location": "Pune",
-            "evidence": ["lead_research_batch:run_1:2"],
-        },
-    ]
+    # Args carry research CRITERIA (count split out for the provider), not pre-built leads.
+    assert action.request.args == {
+        "criteria": {"icp": "independent dental clinics", "location": "Pune"},
+        "count": 2,
+    }
+    # The faculty must NOT fabricate leads into scratch — that was the bug this kills.
+    assert "leads" not in ctx.scratchpad
 
 
 def test_judgment_scores_cached_leads_in_scratchpad() -> None:

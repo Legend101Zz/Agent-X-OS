@@ -233,7 +233,10 @@ class Phase1RunInvoker:
             return None
 
         if action.request.risk_class == "read" and mode == "sim":
-            _trace(trace, trigger.ts, "thought", f"native read: {action.request.name}", action.request.args)
+            # Read-class intents are fulfilled NATIVELY (off-gateway) and never surface to a ring check.
+            # In sim the kernel supplies deterministic, clearly-synthetic data (mirrors the live harness's
+            # native web-search fulfilment, but unmistakably synthetic so it can't pose as real research).
+            _fulfill_sim_native_read(ctx, action.request, trace, trigger.ts)
             return None
 
         outcome = await self.gateway.invoke(
@@ -355,6 +358,49 @@ def _apply_read_result(ctx: FacultyContext, request_name: str, output: JsonObjec
     normalized = _normalize_leads(output.get("leads"))
     if normalized:
         ctx.scratchpad["leads"] = normalized
+
+
+def _fulfill_sim_native_read(ctx: FacultyContext, request: SyscallRequest, trace: Trace, ts: datetime) -> None:
+    """Fulfil a READ-class intent natively in sim (off-gateway), then trace it.
+
+    Only ``lead_research_batch`` yields leads; other reads (e.g. ``read_url``) are traced no-ops in sim.
+    """
+    if request.name != "lead_research_batch":
+        _trace(trace, ts, "thought", f"native read (sim): {request.name}", request.args)
+        return
+    leads = _synthetic_sim_leads(ctx, request.args)
+    ctx.scratchpad["leads"] = leads
+    _trace(
+        trace,
+        ts,
+        "thought",
+        "native research (sim synthetic leads)",
+        {"lead_count": len(leads), "source": "sim_native_read"},
+    )
+
+
+def _synthetic_sim_leads(ctx: FacultyContext, args: JsonObject) -> list[JsonObject]:
+    """Deterministic, unmistakably-synthetic leads for sim runs (ids/urls/evidence all flagged ``sim``)."""
+    criteria = args.get("criteria")
+    icp = "target ICP"
+    if isinstance(criteria, dict):
+        raw_icp = criteria.get("icp")
+        if isinstance(raw_icp, str) and raw_icp:
+            icp = raw_icp
+    raw_count = args.get("count")
+    count = raw_count if isinstance(raw_count, int) and 1 <= raw_count <= 10 else 3
+    leads: list[JsonObject] = []
+    for index in range(1, count + 1):
+        evidence: list[JsonValue] = [f"sim-native-read:lead_research_batch:{ctx.run_id}:{index}"]
+        leads.append(
+            {
+                "id": f"sim_lead_{index}",
+                "company": f"[sim] {icp} candidate {index}",
+                "url": f"sim://lead/{index}",
+                "evidence": evidence,
+            }
+        )
+    return leads
 
 
 def _normalize_leads(value: object) -> list[JsonObject]:
