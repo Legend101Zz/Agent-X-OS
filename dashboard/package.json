@@ -1,0 +1,23 @@
+{
+  "name": "agentx-dashboard",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Manager Dashboard — a thin TS/React (Next.js) app of projections + command buttons over the kernel's command/query API (BLUEPRINT §6). Separate from the Python workspace.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "^15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0"
+  },
+  "comment": "STUB ONLY. Phase 1 can start as internal admin tooling (Mongo Compass / Retool) — the data model IS the product, the UI is a lens. Run `npm install` in Session B; confirm current Next/React versions then. Reads the kernel command/query API (agentx_kernel, K9); never the DB directly."
+}

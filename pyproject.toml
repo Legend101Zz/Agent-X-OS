@@ -1,0 +1,73 @@
+# Agent-X-OS — uv workspace ROOT (a VIRTUAL project: deps only, never built/published).
+# Two coding agents build against packages/contracts (the frozen seam). See BUILD-PLAN.md.
+# Versions web-confirmed 2026-06-17 (see docs + BUILD-PLAN "stack" note).
+
+[project]
+name = "agent-x-os"
+version = "0.0.0"
+description = "Agent-X — the Business OS that employs AI workers accountably (Phase 1 scaffold)."
+requires-python = ">=3.12,<3.13"
+# Root depends on every workspace member so a plain `uv sync` installs the whole workspace (editable).
+dependencies = [
+    "agentx-contracts",
+    "agentx-db",
+    "agentx-kernel",
+    "agentx-mandate",
+    "agentx-syscall",
+    "agentx-swarm",
+    "agentx-operator",
+]
+
+[tool.uv]
+package = false   # virtual root: not built or installed, only its deps populate the shared venv
+
+[tool.uv.workspace]
+members = ["packages/*", "db"]
+
+[tool.uv.sources]
+agentx-contracts = { workspace = true }
+agentx-db = { workspace = true }
+agentx-kernel = { workspace = true }
+agentx-mandate = { workspace = true }
+agentx-syscall = { workspace = true }
+agentx-swarm = { workspace = true }
+agentx-operator = { workspace = true }
+
+[dependency-groups]
+# Shared dev tooling for the whole workspace (installed by `uv sync`).
+dev = [
+    "pytest>=9.1,<10",
+    "pytest-asyncio>=1.1,<2",
+    "mypy>=2.1,<3",
+    "ruff>=0.15,<0.16",
+    "import-linter>=2",
+]
+
+# ---------------------------------------------------------------------------
+# Tooling config (workspace-wide)
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "-ra"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# UP040: keep explicit `X: TypeAlias = ...` rather than PEP-695 `type X = ...`. Deliberate —
+# the verified TypeAlias form is maximally compatible with Pydantic v2 schema-building and mypy here.
+ignore = ["UP040"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true

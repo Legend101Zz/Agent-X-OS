@@ -1,0 +1,46 @@
+# import-linter — structural enforcement of the invariants and the two-lane seam.
+# Run: `uv run lint-imports`. Secondary to tests/test_credential_boundary.py (the zero-dep guard).
+
+[importlinter]
+include_external_packages = True
+root_packages =
+    agentx_contracts
+    agentx_kernel
+    agentx_mandate
+    agentx_syscall
+    agentx_swarm
+    agentx_db
+
+# INVARIANT #2 — pods hold no credentials: the mandate (user-space) package may never reach a
+# credential-bearing module.
+[importlinter:contract:mandate-holds-no-credentials]
+name = mandate holds no credentials (invariant #2)
+type = forbidden
+source_modules =
+    agentx_mandate
+forbidden_modules =
+    agentx_contracts.security
+    agentx_contracts.config
+    agentx_db
+    pymongo
+
+# THE SEAM — the two build lanes connect ONLY through agentx_contracts; neither imports the other.
+[importlinter:contract:claude-lane-not-into-codex-lane]
+name = Claude lane (kernel/mandate) never imports Codex lane (syscall/swarm)
+type = forbidden
+source_modules =
+    agentx_kernel
+    agentx_mandate
+forbidden_modules =
+    agentx_syscall
+    agentx_swarm
+
+[importlinter:contract:codex-lane-not-into-claude-lane]
+name = Codex lane (syscall/swarm) never imports Claude lane (kernel/mandate)
+type = forbidden
+source_modules =
+    agentx_syscall
+    agentx_swarm
+forbidden_modules =
+    agentx_kernel
+    agentx_mandate

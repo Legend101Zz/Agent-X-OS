@@ -1,0 +1,17 @@
+[project]
+name = "agentx-db"
+version = "0.0.1"
+description = "MongoDB setup (PyMongo async): Phase-1 collections + indexes, JournalEvent store, projection Protocols."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "agentx-contracts",
+    # PyMongo async (AsyncMongoClient). NOT Motor — Motor reached EOL 2026-05-14; see BUILD-PLAN stack note.
+    "pymongo>=4.17,<5",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentx_db"]
