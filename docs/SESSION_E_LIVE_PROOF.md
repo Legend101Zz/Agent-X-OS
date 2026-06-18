@@ -155,7 +155,62 @@ thin-runner also exercised (see end of Step 3).
 
 **Run #1 verdict: ≥1 lead passes the actionable gate with real contact + cited evidence (mechanically actionable: YES), but it is NOT a founder-sendable, ICP-correct draft (semantically actionable: NO — needs G1).**
 
-### Run #2 — _pending (buyer-shaped ICP: dental clinics, Pune)_
+### Run #2 — buyer-shaped ICP: "dental clinics looking to attract and retain new patients", Pune India, count 3
+
+`INSTANCE_ID=agentx_evald_1781781560`. 14 journal events, strictly increasing, ending `13:run_settled,
+14:watch_registered`; WATCH count=1; HEAP count=2 (one settled lead).
+
+**Trace:** identical shape — `thought` (MiniMax again told to "think briefly… then stop, do not call tools"),
+then heuristic `lead_research_batch` + 1× `read_url`, then park at L2.
+
+**Settled lead — Smile Inn Dental Clinic (Kothrud, Pune):**
+- organization: **real** — Smile Inn Dental Clinic, Kothrud, Pune.
+- contact path: **real + reachable** — WhatsApp 9420065036, smileinn@gmail.com, phone 02025285508,
+  https://smileinn.in/appointment-booking/.
+- buying signal cited: "Smile-Inn… introduces teleconsulting facility for its patients" + appointment booking
+  — a genuine patient-acquisition / tech-adoption signal (plausible buyer of a patient-finding tool).
+- ICP-fit: ✅ **correct this time** — a Pune dental clinic IS a plausible buyer, not a competitor.
+
+**Drafted (Smile Inn), sent=false, to internal review mailbox:**
+> "Hi **Dr. Anjali Srinivasan**, I noticed this signal at Smile Inn Dental Clinic: …teleconsulting facility…
+> Reference: https://api.whatsapp.com/send/?phone=919420065036. Draft only — not sent."
+
+**Honest verdict Run #2:** ✅ **1 actionable, ICP-correct lead** with a real org, a genuinely reachable
+contact (WhatsApp/email/phone), and a real signal — **close to founder-sendable**. ⚠️ But the salutation
+"Dr. Anjali Srinivasan" is **NOT present in any cited evidence string** — the named decision-maker appears
+fabricated/ungrounded (a founder would have to fix the name before sending), and one evidence string is junk
+(a `demo.tico.chat refused to connect` failed-fetch leaked in). Both are evidence-grounding failures that an
+LLM-in-the-loop (G1) would catch.
+
+### Also ran the named thin shipping runner `scripts/run_lead_finder.py` (default ICP, live)
+
+```
+INSTANCE_ID=agentx_dogfood_1781781644   RUN_ID=…:deadline:1781781644
+L1_STATE=parked → approve → DRAFT_STATUS=ok → SETTLED seq=15 → watch_registered
+HEAP_FACT_COUNT=4   SYSCALL_TRACE_ROWS=8   LATENCY l1=41.44s approval_to_settle=0.86s
+JOURNAL_KINDS=run_created,run_hydrated,(syscall_attempted,syscall_settled)x4-ish,run_parked,
+  manager_action,approval_resolved,syscall_settled,run_verified,run_settled,watch_registered
+FIRST_HEAP_FACT: Callbox (B2B lead-gen agency) — actionable gate passed, real contact sales@callboxinc.com
+```
+Confirms the actual shipping entrypoint runs green end-to-end live, persists a real MandateInstance
+(`agentx_dogfood_1781781644`, used in Step 5), and **reproduces the Run-#1 competitor finding (Callbox)** —
+so the ICP-fit gap is in the product path, not an artifact of the inspect script.
+
+### Step 3 synthesis (honest, no overclaim)
+
+| | Run #1 (lead-finder ICP) | Run #2 (dental ICP) |
+|---|---|---|
+| ≥1 lead passes actionable gate (real org + reachable contact + cited evidence) | ✅ 2 leads | ✅ 1 lead |
+| Founder-**sendable** draft (right target, grounded personalization) | ❌ competitors (Callbox/Belkins) | ⚠️ right target, but ungrounded name |
+
+**The P1-1 actionable-lead MACHINERY is real and working** — real organizations, genuinely reachable contact
+paths, evidence-cited scoring, fail-closed actionable gate, draft-only-with-approval. This is a concrete,
+verifiable improvement over Session D (content pages, no contact path). **But "reliably founder-sendable
+leads" is NOT proven** — quality is ICP-dependent and the two systemic failures (returns competitors for a
+vendor-shaped ICP; fabricates ungrounded personalization) both trace to the **same root cause: the LLM is
+deliberately side-lined ("think briefly… then stop, do not call tools"), so query formulation, relevance/
+competitor filtering, and evidence-grounded drafting are heuristic.** → **G4 cannot be closed; it is blocked
+on G1 (make the LLM actually drive the run loop).** Recorded as next session's Step A.
 
 ## Step 4 — P1-2 real promptfoo judge (npx over OpenRouter, Node v24.13.1)
 
