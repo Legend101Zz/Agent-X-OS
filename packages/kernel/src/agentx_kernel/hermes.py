@@ -9,9 +9,10 @@ from __future__ import annotations
 import asyncio
 import json
 import urllib.request
-from typing import Any
+from typing import Any, cast
 
 from agentx_contracts.config import Settings, get_settings
+from agentx_contracts.jsontypes import JsonObject
 from pydantic import SecretStr
 
 from .errors import ConfigError
@@ -52,9 +53,29 @@ class HermesClient:
             "messages": [{"role": "user", "content": prompt}],
         }
 
+    def chat_payload(
+        self, *, messages: list[JsonObject], tools: list[JsonObject]
+    ) -> dict[str, object]:
+        """The OpenAI tool-calling body for MiniMax-M3 (research-confirmed params; see findings.md)."""
+        return {
+            "model": self._model_id,
+            "messages": messages,
+            "tools": tools,
+            "tool_choice": "auto",
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "max_tokens": 4096,
+            "stream": False,
+        }
+
     async def complete(self, prompt: str) -> str:
         response = await asyncio.to_thread(self._post, self.payload(prompt))
         return _extract_content(response)
+
+    async def complete_chat(self, *, messages: list[JsonObject], tools: list[JsonObject]) -> JsonObject:
+        """Drive one tool-calling turn; return the raw chat-completion response (the runner parses it)."""
+        response = await asyncio.to_thread(self._post, self.chat_payload(messages=messages, tools=tools))
+        return cast(JsonObject, response)
 
     def _post(self, payload: dict[str, object]) -> dict[str, object]:
         body = json.dumps(payload).encode("utf-8")

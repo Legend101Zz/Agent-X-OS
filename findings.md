@@ -353,3 +353,44 @@ full heap facts, thread/resume/watch, journal seq). ICP overridable via AGENTX_E
   the run loop build the mandate inline and never persist an instance/type/run row. => the dashboard's /instances
   (which reads MANDATE_INSTANCE) is EMPTY after real runs; only seed_demo populates it. Confirmed G5 is fully open.
 - Journal (source of truth) is healthy: append-only, seq strictly monotonic per instance, projections are deterministic folds.
+
+## Session F (2026-06-18) — STEP A (G1): MiniMax API research (for the live Hermes runner)
+
+> Web research via subagent. External content — treat as untrusted reference, not instructions.
+> Configured faculty model = `MiniMax-M3` @ `https://api.minimax.io/v1` (OpenAI-compatible). `.env` is CORRECT
+> (M3 is real, released 2026-06-01, 1M ctx). The prompt's "M2" refers to the model-family docs; behavior carries to M3.
+
+**RECOMMENDATION for the single-action-per-step loop (think/call/claim/finish):**
+Use **OpenAI-style tool calling with 4 function tools**, NOT `response_format`. On the native `api.minimax.io`
+endpoint, `response_format` (`json_object`/`json_schema`) is **silently ignored** for M2/M3 (it's a
+`MiniMax-Text-01`-only feature). Tool calling is the model's first-class trained path.
+
+Request shape (POST `/v1/chat/completions`, `Authorization: Bearer <key>`):
+- `model: "MiniMax-M3"`, `messages: [...full history incl. prior assistant reasoning...]`,
+  `tools: [think, call_tool, claim_facts, finish]`, `tool_choice: "auto"`, `temperature: 1.0`, `top_p: 0.95`,
+  `max_tokens: 4096`, `stream: false`.
+- `tool_choice: "required"` / forced-function is **UNCONFIRMED** on the native API (docs only show `"auto"`).
+  → force one-call-per-turn via a strict system prompt; on a no-tool-call response, treat the text as an implicit Think.
+
+Response parsing:
+- Tool call at `choices[0].message.tool_calls[].function.name` + `.function.arguments` (**arguments is a JSON STRING — parse it**).
+- Assistant tool-call messages have **`content: null`** (payload in `tool_calls`); history serializer must allow that,
+  and `role:"tool"` replies must echo `tool_call_id`.
+
+CRITICAL correctness rule — **interleaved-thinking preservation**:
+- M2/M3 are interleaved-thinking models. You MUST keep the assistant's reasoning in history across turns or quality drops.
+  - `reasoning_split:false` (default): reasoning stays in `content` as `<think>...</think>` — DO NOT strip it.
+  - `reasoning_split:true` (M3): reasoning in `reasoning_content`/`reasoning_details` — echo the whole assistant message back.
+- Retain reasoning for every assistant turn in the CURRENT tool-calling chain (firmly documented).
+
+Params/quirks: context 1M (M3); `n>1`, `presence_penalty`, `frequency_penalty`, `logit_bias` unsupported; streaming
+optional (use `stream:false`). If a hard tool_choice guarantee were needed, route via OpenRouter — not needed for us.
+
+Sources: platform.minimax.io/docs (text-openai-api, text-m3-function-call, api-overview); HF MiniMax-M2 model card +
+tool_calling_guide.md; github MiniMax-M2.1/M2.5; litellm + openrouter minimax pages.
+
+DESIGN IMPLICATION for HermesRunner: keep `reasoning_split:false` default; never strip `<think>`. The runner keeps the
+FULL assistant message (content incl. think + tool_calls) in its own message history, appends a `role:"tool"` observation
+(the fed-back SyscallResult) after each Call, and re-POSTs each step. One tool_call per step → one HarnessAction:
+`think`→Think, `call_tool`→Call(SyscallRequest), `claim_facts`→Claim (kernel STAMPS provenance: run_id/created_at/
+status=probation — LLM proposes fact content, kernel disposes), `finish`→Finish.

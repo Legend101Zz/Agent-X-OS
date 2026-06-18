@@ -29,6 +29,7 @@ from agentx_db.setup import ensure_indexes
 from agentx_kernel.control import KernelControl
 from agentx_kernel.gateway import Gateway
 from agentx_kernel.hermes import HermesClient
+from agentx_kernel.hermes_runner import HermesRunner
 from agentx_kernel.hydration import HydrationLoader
 from agentx_kernel.projections import Projections
 from agentx_kernel.run_loop import Phase1RunInvoker
@@ -98,7 +99,8 @@ async def main() -> int:
         settlement = SettlementCommitter(journal=journal, projections=projections)
         invoker = Phase1RunInvoker(
             journal=journal, projections=projections, hydration=hydration, gateway=gateway,
-            settlement=settlement, verifier=RulesVerifier(), reasoner=HermesClient.from_settings(settings),
+            settlement=settlement, verifier=RulesVerifier(),
+            runner=HermesRunner(transport=HermesClient.from_settings(settings)),
         )
         control = KernelControl(journal=journal, projections=projections, projection_store=pstore)
 

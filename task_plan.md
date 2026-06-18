@@ -1,65 +1,60 @@
-# Task Plan — Session D: Shakedown & Evaluation (NOT a build session)
+# Task Plan — Session F · STEP A (G1): make the LLM actually drive the run loop
 
-## Goal
-Empirically exercise EVERYTHING built (lead mandate live, swarm, kernel, memory, dashboard
-contract). Judge it HONESTLY — especially lead QUALITY, not just "it ran". Produce a single
-prioritized FIX PUNCH-LIST (docs/EVAL_FINDINGS.md) + a ready-to-paste SESSION E fix prompt.
-Make ONLY trivial obvious fixes inline; everything non-trivial goes on the list. Be brutally honest.
+## Goal (one sentence)
+The live kernel stays dumb/deterministic, but its trajectory comes from `HarnessRunner.step(observation)`
+where MiniMax emits Think/Call/Claim/Finish and the kernel DISPOSES (ring-checks + journals effectful
+Calls, fulfils reads + traces, feeds SyscallResult back) — replacing the hardcoded faculty order + hardcoded
+draft. LLM proposes; deterministic code disposes (invariant #4).
 
 ## Hard constraints
-- Evaluation session: NO big builds/refactors. Trivial fixes OK but must keep gate green.
-- Don't weaken any test. Seam proof must stay green on the OwnHarness double.
-- No Phase 2–5 capabilities. draft = draft only.
-- verification-before-completion: paste REAL command output / traces / leads. No claims w/o evidence.
-- External/web content → findings.md ONLY (task_plan.md is auto-read by hooks).
+- TDD. Offline gate + seam proof GREEN at every step; commit-as-you-go; push to main after each major proof.
+- Do NOT touch `packages/contracts`. Keep `agentx_kernel` lane-pure; `lint-imports` stays 3/3.
+- `tests/integration/test_seam_proof.py` stays green on the OwnHarness double.
+- Don't weaken tests. External/web content (MiniMax API research) → findings.md ONLY.
+- Live runs cost real money (authorized). Judge lead quality HONESTLY vs the rubric; don't overclaim.
+- Integration model: push DIRECTLY to main (no PR). Working in main checkout, gate-green before each push.
 
-## Precondition — PASSED
-.env has all required: MONGODB_URI, MINIMAX_API_KEY, FACULTY_MODEL_BASE_URL, FACULTY_MODEL_ID,
-FIRECRAWL_API_KEY (keyed fallback; EXA off), OPENROUTER_API_KEY, JUDGE_MODEL_ID. Live runs authorized.
+## Architecture decisions (verified against tree)
+- Live Hermes runner lives kernel-side (`agentx_kernel`, needs creds), implements the mandate-defined
+  `HarnessRunner` Protocol (kernel→mandate import is allowed).
+- Lead-finder PLAYBOOK = a GENERATOR over the shared-by-reference `ctx`: each `yield` of a read Call
+  suspends until the run-loop fulfils it (mutating `ctx.scratchpad`), so downstream faculties see leads.
+- Move the hardcoded draft (`_first_lead_id`/`_draft_args`) OUT of run_loop INTO the mandate playbook.
+- mode selects: live → HermesRunner + live registry; sim → OwnHarness(playbook) + sim registry.
+- `OwnHarness(recorded=...)` path + all existing harness tests stay byte-for-byte green.
 
 ## Phases
-- [ ] **E0 — Baseline gate**: mypy --strict / ruff / pytest -q / lint-imports + RUN_LIVE_HERMES=1 hermes test.
-      Paste all output. Any red = first punch-list item.
-- [ ] **E1 — Run lead mandate LIVE x2**: default dogfood ICP + one DIFFERENT ICP. Paste both full traces.
-      Query Mongo for settled heap facts (subject/predicate/provenance) + draft_email BODY. Record latency/cost.
-- [ ] **E2 — JUDGE LEAD QUALITY (the crux)**: score each lead vs rubric (real org + person/role + reachable
-      URL + genuine buying signal). Actionable prospect or article/listicle/video? Would a founder send the
-      draft? pass/fail + reason per lead. Capture WHY weak (query? no read_url? no contact extraction? draft?).
-- [ ] **E3 — Stress the KERNEL**: idempotency replay (same idem key, no double-effect); rings L0/L1/L2
-      (draft_email parks <L2, executes @L2, approve→resume); unsupported intent → human_task tail;
-      event-sourcing (journal kinds, seq monotonic per instance, projections match journal).
-- [ ] **E4 — Swarm e2e**: pytest test_swarm_end_to_end.py (offline judge). Real judge if npx+keys present
-      (PromptfooJudge shells npx promptfoo over OpenRouter). Confirm gate bars synthetic-only, allows real+human.
-- [ ] **E5 — Dashboard contract**: locate dashboard/ + api/; verify KernelControl (approval_inbox,
-      instance_file, floor, approve, set_ring) + ManualTaskStore reachable. Note shape mismatches / missing reads.
-- [ ] **E6 — Memory/heap health**: settled instance facts carry provenance(run_id+evidence), on probation,
-      nothing promotes (G3 open). Note decay/GC, thread state, resume doc behavior.
-- [ ] **E7 — WRITE PUNCH-LIST → docs/EVAL_FINDINGS.md**: P0/P1/P2, each: symptom + repro cmd + file:line +
-      suggested fix + G# mapping. End w/ ready-to-paste SESSION E prompt. Update STATE_AND_ROADMAP.md if reality differs.
-- [ ] **FINAL — report**: what works, what's weak, top 3 to fix first.
-
-## Known going-in (from Session C findings.md + STATE_AND_ROADMAP G-table)
-- G1 LLM does NOT drive loop (Hermes = one decorative note; faculty order + draft hardcoded). ❌
-- G2 No scheduler/worker; no kernel resume API (script resumes draft_email by hand). ❌
-- G3 facts sit on probation; watch never fires → no promotion / real eval case. 🟡
-- G4 LIVE leads were ARTICLES/VIDEOS, not actionable prospects. 🟡  ← expect E2 to confirm poor quality
-- G5 mandate_* collections exist but no code reads/writes them; mandates inline. 🟡
-- G6 set_ring manual; no promote/demote mechanics. G7 score_lead declared, no adapter. 🟡
-- G9 Dashboard "DONE" in parallel — VERIFY contract (dashboard/ + api/ dirs exist).
-
-## Method / order
-E0 gate first (must be green or it's P0). Then E1 live runs (real API $). E2 quality verdict (most important
-output). E3/E4/E5/E6 stress + contract checks (mostly offline/fast). E7 write the doc. Trivial fixes inline only.
+- [ ] **F0 — Baseline gate** GREEN (mypy --strict / ruff / pytest -q / lint-imports). Record in proof doc.
+- [ ] **F1 — Research MiniMax API** (subagent → findings.md): tool-calling vs structured output /
+      response_format; reliable single-action-per-step JSON; reasoning/think field; M2 vs M3 on api.minimax.io.
+- [ ] **F2 — Step-driven run loop + playbook (TDD, sim/OwnHarness FIRST)**: drive `session.step(obs)`;
+      dispose Think/Call/Claim/Escalate/Finish; bound max_steps; feed SyscallResult back. Generator playbook
+      in mandate. mode-select sim path. Keep seam proof + harness tests + run_loop tests green.
+- [ ] **F3 — Live Hermes runner (kernel-side, TDD with fake transport)**: HermesRunner/HermesSession.step
+      parses MiniMax structured output → HarnessAction. System prompt = playbook-as-instructions (form query,
+      reject competitors, ground personalization in cited evidence, draft-only). Wire at edge (run_lead_finder).
+- [ ] **F4 — Offline gate + seam GREEN**; commit + push to main.
+- [ ] **F5 — LIVE PROOF (money, main thread)**: rerun 2 Session-E ICPs (run_lead_finder dogfood + _eval_d_inspect
+      with AGENTX_EVAL_ICP_JSON vendor ICP + dental ICP). Target ≥1 founder-SENDABLE draft per ICP. Judge honestly.
+- [ ] **F6 — Live Hermes gate** (RUN_LIVE_HERMES=1) + reconcile docs (flip G1; flip G4 → ✅ ONLY if truly
+      sendable, else keep honest) + append progress.md.
+- [ ] **F7 — SHIP**: full gate + seam green; push to main; emit next-session prompt.
+- [ ] **(optional) STEP B (G2)** if context/time remain: first-class kernel parked-run resume + scheduler-min worker.
 
 ## Status
-DONE+EVIDENCED: E0 gate (all green) · E1 (2 live runs, full traces+heap+draft captured) · E2 (quality judged) ·
-E3 (idempotency/rings/human-tail/event-sourcing) · E4 (swarm offline+gate proven; real judge BLOCKED by Node) ·
-E5 (dashboard contract + NEW approval-card bug) · E6 (memory health; watch/thread drop root-caused).
-Evidence all in findings.md (Session D section). NO inline code fixes made — every finding is non-trivial
-(settlement/gateway/dashboard/quality) and would risk the gate; all go on the punch-list per eval constraints.
-DONE: E7 — docs/EVAL_FINDINGS.md written (lead-quality verdict 0/6 + P0/P1/P2 punch-list + Session E prompt);
-STATE_AND_ROADMAP.md updated (G3→❌ worse, G9→built-not-truthful, header+§5 updated, EVAL_FINDINGS linked).
-FINAL gate RE-RUN GREEN: mypy --strict 85 files · ruff All checks passed (fixed import order in 1 scratch script) ·
-pytest 65p+1skip · lint-imports 3/3. Scratch instruments kept in scripts/_eval_d_*.py (pass ruff; not in gate's
-mypy scope; serve as EVAL_FINDINGS repro commands). Committed product code UNTOUCHED.
-Current phase: COMPLETE — delivering report.
+- F0 DONE: baseline gate green (mypy 91, ruff, pytest 81+2skip, lint 3/3).
+- F1 DONE: MiniMax-M3 API researched → findings.md. Use OpenAI tool-calling (4 tools, tool_choice auto);
+  preserve `<think>` reasoning across turns; parse tool_calls[].function.arguments (JSON string).
+- F2 DONE: step-driven run loop (drives HarnessRunner.step, disposes Think/Call/Claim/Escalate/Finish,
+  bound max_steps=24, feeds SyscallResult back). Lead-finder PLAYBOOK generator (mandate) + lazy
+  PlaybookHarnessSession. Draft moved out of run loop → build_outreach_call. `runner` field + bootstrap arg.
+- F3 DONE: kernel-side HermesRunner/HermesSession (HarnessRunner Protocol); MiniMax tool-calling → HarnessAction;
+  kernel stamps fact provenance. HermesClient.complete_chat transport. 3 scripts wired to runner=HermesRunner(...).
+- F4 DONE: offline gate GREEN (ruff · mypy 95 · pytest 97+2skip · lint 3/3 · seam proof green). G1 machinery
+  implemented + offline-proven. Committing + pushing to main now.
+Current phase: F5 — money-spending LIVE runs (2 ICPs) for the honest founder-sendable verdict.
+
+## Errors Encountered
+| Error | Attempt | Resolution |
+|-------|---------|------------|
+| (none yet) | | |

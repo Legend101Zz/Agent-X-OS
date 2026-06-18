@@ -1,10 +1,17 @@
-"""Phase-1 run loop implementing the ``RunInvoker`` seam."""
+"""Phase-1 run loop implementing the ``RunInvoker`` seam.
+
+G1: the run's trajectory comes from a ``HarnessRunner`` — in ``live`` mode the Hermes runner driving
+MiniMax (which emits Think/Call/Claim/Finish), in ``sim`` mode the deterministic ``OwnHarness`` following
+the lead-finder PLAYBOOK. The kernel DISPOSES every step: it ring-checks + journals effectful Calls through
+the gateway, fulfils read Calls (sim-native / via the gateway) and feeds the SyscallResult back, accumulates
+Claims for verification, and settles on Finish. The LLM proposes; deterministic code disposes (invariant #4).
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal, Protocol, cast
+from typing import Literal, cast
 
 from agentx_contracts.enums import RunMode
 from agentx_contracts.journal import RunCreated, RunHydrated, RunVerified
@@ -12,12 +19,23 @@ from agentx_contracts.jsontypes import JsonObject, JsonValue
 from agentx_contracts.mandate import InstanceBinding, MandateRun, MandateType
 from agentx_contracts.memory import Fact
 from agentx_contracts.run import ParkInfo, RunResult
-from agentx_contracts.syscall import GatewayContext, SyscallRequest
+from agentx_contracts.syscall import GatewayContext, SyscallRequest, SyscallResult
 from agentx_contracts.trigger import Trigger
 from agentx_contracts.verification import Trace, TraceEvent
-from agentx_mandate.faculties import get_faculty, propose
-from agentx_mandate.harness import Call, Claim, Escalate, FacultyContext, HarnessAction, Think
-from agentx_mandate.lead_quality import enrich_lead, is_actionable_lead
+from agentx_mandate.faculties import get_faculty
+from agentx_mandate.harness import (
+    Call,
+    Claim,
+    Escalate,
+    FacultyContext,
+    Finish,
+    HarnessAction,
+    HarnessRunner,
+    OwnHarness,
+    Think,
+)
+from agentx_mandate.lead_quality import enrich_lead
+from agentx_mandate.library.lead_finder_playbook import lead_finder_playbook
 from agentx_mandate.settlement import build_settlement
 
 from .gateway import Gateway
@@ -40,12 +58,6 @@ TraceKind = Literal[
 ]
 
 
-class Reasoner(Protocol):
-    async def complete(self, prompt: str) -> str:
-        """Return a bounded reasoning note from the live harness."""
-        ...
-
-
 @dataclass
 class Phase1RunInvoker:
     journal: JournalStore
@@ -54,7 +66,8 @@ class Phase1RunInvoker:
     gateway: Gateway
     settlement: SettlementCommitter
     verifier: RulesVerifier
-    reasoner: Reasoner | None = None
+    runner: HarnessRunner | None = None
+    max_steps: int = 24
 
     async def invoke(
         self,
@@ -114,38 +127,21 @@ class Phase1RunInvoker:
         )
         claimed_facts: list[Fact] = []
 
-        if mode == "live" and self.reasoner is not None:
-            note = await self.reasoner.complete(_reasoning_prompt(mandate, ctx))
-            _trace(trace, trigger.ts, "thought", "Hermes/Minimax reasoning", {"note": _trim(note)})
-
-        for binding in mandate.faculties:
-            for action in propose(binding.faculty_name, ctx):
-                terminal = await self._handle_action(
-                    action=action,
-                    mode=mode,
-                    instance=instance,
-                    trigger=trigger,
-                    ctx=ctx,
-                    trace=trace,
-                    claimed_facts=claimed_facts,
-                )
-                if terminal is not None:
-                    return terminal
-
-        lead_id = _first_lead_id(ctx)
-        if lead_id is not None:
-            terminal = await self._handle_action(
-                action=Call(
-                    request=SyscallRequest(
-                        name="draft_email",
-                        args=_draft_args(ctx, lead_id),
-                        instance_id=ctx.instance_id,
-                        run_id=ctx.run_id,
-                        idempotency_key=f"{ctx.run_id}:draft_email",
-                        ring=ctx.ring,
-                        risk_class="external_message",
-                    )
-                ),
+        # G1: drive the harness. live -> Hermes runner (MiniMax); sim/default -> OwnHarness + playbook.
+        runner: HarnessRunner = (
+            self.runner if self.runner is not None else OwnHarness(playbook=lead_finder_playbook)
+        )
+        session = runner.start(context=ctx, faculties=faculties, cursor=0)
+        observation: SyscallResult | None = None
+        steps = 0
+        while steps < self.max_steps:
+            steps += 1
+            action = await session.step(observation)
+            observation = None
+            if isinstance(action, Finish):
+                break
+            terminal, observation = await self._dispose(
+                action=action,
                 mode=mode,
                 instance=instance,
                 trigger=trigger,
@@ -155,6 +151,9 @@ class Phase1RunInvoker:
             )
             if terminal is not None:
                 return terminal
+        else:
+            _trace(trace, trigger.ts, "error", "harness exceeded max steps", {"max_steps": self.max_steps})
+            return RunResult(run_id=run_id, state="crashed", trace=trace, claimed_facts=claimed_facts)
 
         verify = self.verifier.verify_postconditions(mandate, claimed_facts=claimed_facts)
         if not verify.passed:
@@ -205,7 +204,7 @@ class Phase1RunInvoker:
             settlement=settlement,
         )
 
-    async def _handle_action(
+    async def _dispose(
         self,
         *,
         action: HarnessAction,
@@ -215,30 +214,29 @@ class Phase1RunInvoker:
         ctx: FacultyContext,
         trace: Trace,
         claimed_facts: list[Fact],
-    ) -> RunResult | None:
+    ) -> tuple[RunResult | None, SyscallResult | None]:
+        """Dispose one harness action. Returns (terminal RunResult | None, observation to feed back | None)."""
         if isinstance(action, Think):
             _trace(trace, trigger.ts, "thought", action.summary, action.detail)
-            return None
+            return None, None
         if isinstance(action, Claim):
             claimed_facts.extend(action.facts)
-            return None
+            return None, None
         if isinstance(action, Escalate):
             _trace(trace, trigger.ts, "error", action.reason, action.detail)
-            return RunResult(
-                run_id=ctx.run_id,
-                state="crashed",
-                trace=trace,
-                claimed_facts=claimed_facts,
+            return (
+                RunResult(run_id=ctx.run_id, state="crashed", trace=trace, claimed_facts=claimed_facts),
+                None,
             )
         if not isinstance(action, Call):
-            return None
+            return None, None
 
         if action.request.risk_class == "read" and mode == "sim":
-            # Read-class intents are fulfilled NATIVELY (off-gateway) and never surface to a ring check.
+            # Read-class intents are fulfilled NATIVELY (off-gateway) and never reach a ring check.
             # In sim the kernel supplies deterministic, clearly-synthetic data (mirrors the live harness's
             # native web-search fulfilment, but unmistakably synthetic so it can't pose as real research).
             _fulfill_sim_native_read(ctx, action.request, trace, trigger.ts)
-            return None
+            return None, None
 
         outcome = await self.gateway.invoke(
             action.request,
@@ -262,24 +260,27 @@ class Phase1RunInvoker:
                 outcome.parked.reason,
                 {"required_ring": outcome.parked.required_ring},
             )
-            return RunResult(
-                run_id=ctx.run_id,
-                state="parked",
-                trace=trace,
-                claimed_facts=claimed_facts,
-                park=ParkInfo(
-                    reason=outcome.parked.reason,
-                    awaiting=outcome.parked.awaiting,
-                    required_ring=outcome.parked.required_ring,
-                    approval_card={
-                        "syscall": action.request.name,
-                        "args": action.request.args,
-                        "idempotency_key": action.request.idempotency_key,
-                    },
+            return (
+                RunResult(
+                    run_id=ctx.run_id,
+                    state="parked",
+                    trace=trace,
+                    claimed_facts=claimed_facts,
+                    park=ParkInfo(
+                        reason=outcome.parked.reason,
+                        awaiting=outcome.parked.awaiting,
+                        required_ring=outcome.parked.required_ring,
+                        approval_card={
+                            "syscall": action.request.name,
+                            "args": action.request.args,
+                            "idempotency_key": action.request.idempotency_key,
+                        },
+                    ),
                 ),
+                None,
             )
         if outcome.result is None:
-            return None
+            return None, None
 
         _trace(
             trace,
@@ -300,11 +301,9 @@ class Phase1RunInvoker:
                 f"{action.request.name} failed",
                 {"error": outcome.result.error or "unknown"},
             )
-            return RunResult(
-                run_id=ctx.run_id,
-                state="crashed",
-                trace=trace,
-                claimed_facts=claimed_facts,
+            return (
+                RunResult(run_id=ctx.run_id, state="crashed", trace=trace, claimed_facts=claimed_facts),
+                None,
             )
         if action.request.risk_class == "read":
             if outcome.result.status != "ok":
@@ -315,60 +314,12 @@ class Phase1RunInvoker:
                     f"{action.request.name} did not return live research",
                     {"status": outcome.result.status, "fulfilled_by": outcome.result.fulfilled_by},
                 )
-                return RunResult(
-                    run_id=ctx.run_id,
-                    state="crashed",
-                    trace=trace,
-                    claimed_facts=claimed_facts,
+                return (
+                    RunResult(run_id=ctx.run_id, state="crashed", trace=trace, claimed_facts=claimed_facts),
+                    None,
                 )
             _apply_read_result(ctx, action.request, outcome.result.output)
-        return None
-
-
-def _first_lead_id(ctx: FacultyContext) -> str | None:
-    leads = ctx.scratchpad.get("leads")
-    if not isinstance(leads, list) or not leads:
-        return None
-    scores = ctx.scratchpad.get("scores")
-    scored: list[tuple[float, str]] = []
-    for lead in leads:
-        if not isinstance(lead, dict) or not is_actionable_lead(lead):
-            continue
-        lead_id = lead.get("id")
-        if not isinstance(lead_id, str):
-            continue
-        score = 0.0
-        if isinstance(scores, dict):
-            raw_score = scores.get(lead_id)
-            if isinstance(raw_score, dict):
-                value = raw_score.get("score")
-                if isinstance(value, int | float):
-                    score = float(value)
-        scored.append((score, lead_id))
-    return max(scored, default=(0.0, ""))[1] or None
-
-
-def _draft_args(ctx: FacultyContext, lead_id: str) -> JsonObject:
-    company = _lead_value(ctx, lead_id, "company", "name") or lead_id
-    contact_name = _lead_value(ctx, lead_id, "contact_name")
-    contact_role = _lead_value(ctx, lead_id, "contact_role") or "business owner"
-    contact_url = _lead_value(ctx, lead_id, "contact_url") or _lead_value(ctx, lead_id, "url") or ""
-    signal = _lead_value(ctx, lead_id, "buying_signal") or "an active growth initiative"
-    greeting = contact_name or contact_role
-    return {
-        "lead_id": lead_id,
-        "mode": "draft",
-        "to": "founder-review@agent-x.local",
-        "subject": f"Draft outreach to {company}",
-        "body": (
-            f"Hi {greeting},\n\n"
-            f"I noticed this signal at {company}: {signal.rstrip('.')}. "
-            "We are testing an accountable lead-finding workflow that researches prospects, cites the signal, "
-            "and keeps every outreach message in draft for owner approval. "
-            f"If lead follow-up is a priority, I would value a short conversation. Reference: {contact_url}\n\n"
-            "Draft only — not sent."
-        ),
-    }
+        return None, outcome.result
 
 
 def _apply_read_result(ctx: FacultyContext, request: SyscallRequest, output: JsonObject) -> None:
@@ -486,30 +437,6 @@ def _normalize_leads(value: object) -> list[JsonObject]:
     return leads
 
 
-def _lead_value(ctx: FacultyContext, lead_id: str, *keys: str) -> str | None:
-    leads = ctx.scratchpad.get("leads")
-    if not isinstance(leads, list):
-        return None
-    for lead in leads:
-        if not isinstance(lead, dict) or lead.get("id") != lead_id:
-            continue
-        for key in keys:
-            value = lead.get(key)
-            if isinstance(value, str) and value:
-                return value
-    return None
-
-
-def _lead_evidence(ctx: FacultyContext, lead_id: str) -> list[str]:
-    leads = ctx.scratchpad.get("leads")
-    if not isinstance(leads, list):
-        return []
-    for lead in leads:
-        if isinstance(lead, dict) and lead.get("id") == lead_id:
-            return _str_list(lead.get("evidence"))
-    return []
-
-
 def _str_value(value: object, default: str) -> str:
     return value if isinstance(value, str) and value else default
 
@@ -518,18 +445,6 @@ def _str_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str) and item]
-
-
-def _reasoning_prompt(mandate: MandateType, ctx: FacultyContext) -> str:
-    return (
-        "You are the Agent-X lead-finder faculty. Think briefly about the ICP, then stop. "
-        "Do not call tools and do not make commitments. "
-        f"Goal: {mandate.charter.goal}. Target: {ctx.target}."
-    )
-
-
-def _trim(value: str, limit: int = 1200) -> str:
-    return value if len(value) <= limit else value[: limit - 3] + "..."
 
 
 def _run_id(instance: InstanceBinding, trigger: Trigger) -> str:

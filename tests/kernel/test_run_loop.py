@@ -15,6 +15,7 @@ from agentx_contracts.mandate import (
     SettlementRules,
     VerificationSuite,
 )
+from agentx_contracts.memory import Fact, Provenance
 from agentx_contracts.protocols import Adapter
 from agentx_contracts.security import Credential
 from agentx_contracts.syscall import (
@@ -27,8 +28,9 @@ from agentx_contracts.syscall import (
 )
 from agentx_contracts.trigger import DeadlineTrigger
 from agentx_kernel.bootstrap import build_phase1_runinvoker
-from agentx_kernel.run_loop import _apply_read_result, _draft_args, _first_lead_id
-from agentx_mandate.harness import FacultyContext
+from agentx_kernel.run_loop import _apply_read_result, _run_id
+from agentx_mandate.harness import Call, Claim, FacultyContext, Finish, OwnHarness, Think
+from agentx_mandate.library.lead_finder_playbook import build_outreach_call, first_actionable_lead_id
 
 NOW = datetime(2026, 6, 17, tzinfo=UTC)
 
@@ -201,9 +203,61 @@ def test_read_url_enrichment_merges_by_lead_id_and_draft_uses_actionable_signal(
     )
     ctx.scratchpad["scores"] = {"clinic": {"score": 1.0, "reason": "actionable"}}
 
-    assert _first_lead_id(ctx) == "clinic"
-    draft = _draft_args(ctx, "clinic")
-    assert "Hi Dr. Asha Kulkarni" in str(draft["body"])
-    assert "accepting new patients" in str(draft["body"])
-    assert "https://galaxy.example/contact" in str(draft["body"])
-    assert "10 Best Clinics" not in str(draft["body"])
+    assert first_actionable_lead_id(ctx) == "clinic"
+    call = build_outreach_call(ctx)
+    assert call is not None
+    body = str(call.request.args["body"])
+    assert "Hi Dr. Asha Kulkarni" in body
+    assert "accepting new patients" in body
+    assert "https://galaxy.example/contact" in body
+    assert "10 Best Clinics" not in body
+
+
+async def test_runinvoker_disposes_an_injected_runner_trajectory_not_a_hardcoded_order() -> None:
+    # G1: the trajectory comes from the HarnessRunner (here a recorded `own` double), not a hardcoded
+    # faculty order. The kernel DISPOSES each step: Think -> trace, Claim -> facts, Call -> gateway, Finish.
+    # The harness stamps the CURRENT run's provenance onto claimed facts (invariant #1, enforced at settle).
+    instance = _instance("L2")
+    trigger = DeadlineTrigger(ts=NOW, reason="sweep", entity_id="lead_1")
+    run_id = _run_id(instance, trigger)
+    score_fact = Fact(
+        id=f"{run_id}:lead_1:score",
+        instance_id="inst_a",
+        subject="lead_1",
+        predicate="qualified_lead_score",
+        object="0.9",
+        confidence=0.9,
+        source="agent-inferred",
+        provenance=Provenance(run_id=run_id, evidence=["accepting new patients"]),
+        status="probation",
+        created_at=NOW,
+    )
+    runner = OwnHarness(
+        recorded=[
+            Think(summary="LLM is deciding the trajectory"),
+            Claim(facts=[score_fact]),
+            Call(
+                request=SyscallRequest(
+                    name="draft_email",
+                    args={"lead_id": "lead_1", "mode": "draft", "to": "x", "subject": "s", "body": "b"},
+                    instance_id="inst_a",
+                    run_id="seed",
+                    idempotency_key="seed:draft_email",
+                    ring="L2",
+                    risk_class="external_message",
+                )
+            ),
+            Finish(),
+        ]
+    )
+    result = await build_phase1_runinvoker(registry=SingleAdapterRegistry(), runner=runner).invoke(
+        mandate=_mandate(),
+        instance=instance,
+        trigger=trigger,
+        mode="sim",
+    )
+
+    assert result.state == "settled"
+    assert any(e.kind == "thought" and "deciding the trajectory" in e.summary for e in result.trace.events)
+    assert result.settlement is not None
+    assert any(f.predicate == "qualified_lead_score" for f in result.settlement.facts)

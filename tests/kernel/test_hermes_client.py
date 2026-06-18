@@ -18,6 +18,23 @@ def test_hermes_client_builds_openai_compatible_payload_and_endpoint() -> None:
     }
 
 
+def test_hermes_client_builds_tool_calling_chat_payload() -> None:
+    client = HermesClient(base_url="https://api.minimax.io/v1", api_key=SecretStr("secret"), model_id="MiniMax-M3")
+
+    payload = client.chat_payload(
+        messages=[{"role": "user", "content": "hi"}],
+        tools=[{"type": "function", "function": {"name": "think"}}],
+    )
+
+    assert payload["model"] == "MiniMax-M3"
+    assert payload["tool_choice"] == "auto"
+    assert payload["stream"] is False
+    assert payload["messages"] == [{"role": "user", "content": "hi"}]
+    tools = payload["tools"]
+    assert isinstance(tools, list)
+    assert tools[0]["function"]["name"] == "think"
+
+
 def test_hermes_client_from_settings_requires_key_base_url_and_model() -> None:
     settings = Settings(
         minimax_api_key=SecretStr("secret"),

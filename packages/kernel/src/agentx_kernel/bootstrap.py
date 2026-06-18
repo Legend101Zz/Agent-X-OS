@@ -1,6 +1,7 @@
 """Phase-1 kernel bootstrap — the entry point the integration seam-proof drives."""
 
 from agentx_contracts.protocols import RunInvoker, SyscallRegistry
+from agentx_mandate.harness import HarnessRunner
 
 from .gateway import Gateway
 from .hydration import HydrationLoader
@@ -16,11 +17,16 @@ from .stores.memory import (
 from .verifier import RulesVerifier
 
 
-def build_phase1_runinvoker(registry: SyscallRegistry | None = None) -> RunInvoker:
-    """Construct the Phase-1 live/sim ``RunInvoker`` wired to the syscall ``registry``.
+def build_phase1_runinvoker(
+    registry: SyscallRegistry | None = None,
+    runner: HarnessRunner | None = None,
+) -> RunInvoker:
+    """Construct the Phase-1 live/sim ``RunInvoker`` wired to the syscall ``registry`` and ``runner``.
 
     Session B: in ``sim`` mode the swarm passes a registry of SimAdapters; in ``live`` mode the kernel
-    passes the production registry. The loop is identical — only the registry differs.
+    passes the production registry. The loop is identical — only the registry differs. ``runner`` selects
+    the harness driving the trajectory (G1): when ``None``, sim falls back to ``OwnHarness`` + playbook;
+    a live caller passes the Hermes runner.
     """
     journal = InMemoryJournalStore()
     projection_store = InMemoryProjectionStore()
@@ -40,4 +46,5 @@ def build_phase1_runinvoker(registry: SyscallRegistry | None = None) -> RunInvok
         gateway=gateway,
         settlement=settlement,
         verifier=RulesVerifier(),
+        runner=runner,
     )

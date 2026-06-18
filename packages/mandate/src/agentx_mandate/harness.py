@@ -25,7 +25,7 @@ be rebuilt from the frozen snapshot and resumed at a saved ``cursor`` (Temporal-
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, runtime_checkable
@@ -129,8 +129,13 @@ class HarnessRunner(Protocol):
     ) -> HarnessSession: ...
 
 
-Playbook = Callable[[FacultyContext, list[Faculty]], list[HarnessAction]]
-"""Composes faculty proposals into the ordered trajectory for a mandate (e.g. the lead-finder)."""
+Playbook = Callable[[FacultyContext, list[Faculty]], Iterable[HarnessAction]]
+"""Composes faculty proposals into the ordered trajectory for a mandate (e.g. the lead-finder).
+
+A playbook may be a plain ``list`` or a GENERATOR. As a generator it is driven LAZILY (one ``yield`` per
+``step``) over the shared-by-reference ``FacultyContext`` — so a read Call it yields suspends until the
+run-loop fulfils it (mutating ``ctx.scratchpad``), and the next faculty's proposal sees the result.
+"""
 
 
 def _surface(actions: list[HarnessAction]) -> list[HarnessAction]:
@@ -140,7 +145,11 @@ def _surface(actions: list[HarnessAction]) -> list[HarnessAction]:
 
 @dataclass
 class OwnHarnessSession:
-    """A deterministic session over a precomputed action list. ``cursor`` is the continuation pointer."""
+    """A deterministic session over a precomputed action list. ``cursor`` is the continuation pointer.
+
+    Used for ``recorded=`` trajectories: reads were already dropped by ``_surface`` (the canned double
+    "fulfils" them by omission), so this session only ever replays surfaced actions.
+    """
 
     actions: list[HarnessAction]
     cursor: int = 0
@@ -150,6 +159,27 @@ class OwnHarnessSession:
         if self.cursor >= len(self.actions):
             return Finish()
         action = self.actions[self.cursor]
+        self.cursor += 1
+        return action
+
+
+@dataclass
+class PlaybookHarnessSession:
+    """A deterministic session that drives a playbook GENERATOR lazily (one ``yield`` per ``step``).
+
+    Unlike ``OwnHarnessSession``, reads are NOT surfaced-away: a read Call the playbook yields reaches the
+    run-loop, which fulfils it (sim-native / via the gateway) and mutates the shared ``ctx`` before the
+    generator is resumed. ``cursor`` counts surfaced actions for Temporal-style resume (Step B).
+    """
+
+    _actions: Iterator[HarnessAction]
+    cursor: int = 0
+
+    async def step(self, observation: SyscallResult | None) -> HarnessAction:
+        # Deterministic double: ignores the observation; the generator re-reads the shared ctx instead.
+        action = next(self._actions, None)
+        if action is None:
+            return Finish()
         self.cursor += 1
         return action
 
@@ -180,10 +210,13 @@ class OwnHarness:
         context: FacultyContext,
         faculties: list[Faculty],
         cursor: int = 0,
-    ) -> OwnHarnessSession:
+    ) -> HarnessSession:
         if self._recorded is not None:
-            actions = self._recorded
-        else:
-            assert self._playbook is not None
-            actions = self._playbook(context, faculties)
-        return OwnHarnessSession(actions=_surface(actions), cursor=cursor)
+            # recorded trajectory: reads are dropped (fulfilled by omission), replayed from a fixed list.
+            return OwnHarnessSession(actions=_surface(self._recorded), cursor=cursor)
+        assert self._playbook is not None
+        # playbook trajectory: stepped lazily; reads surface to the run-loop for native/gateway fulfilment.
+        actions = iter(self._playbook(context, faculties))
+        for _ in range(cursor):
+            next(actions, None)  # fast-forward for resume (Step B); deterministic replay re-fulfils reads
+        return PlaybookHarnessSession(_actions=actions, cursor=cursor)

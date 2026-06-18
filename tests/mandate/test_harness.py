@@ -9,18 +9,20 @@ The harness is where a faculty's reasoning runs. In sim we bind the deterministi
 The pod holds NO credentials and NO durable state — this module imports only the pure contracts seam.
 """
 
+from collections.abc import Iterator
 from datetime import UTC, datetime
 
 from agentx_contracts import Fact, HydrationSnapshot, Provenance, SyscallRequest
 from agentx_contracts.enums import RiskClass
+from agentx_contracts.faculty import Faculty
 from agentx_mandate.harness import (
     Call,
     Claim,
     FacultyContext,
     Finish,
     HarnessAction,
+    HarnessSession,
     OwnHarness,
-    OwnHarnessSession,
     Think,
 )
 
@@ -49,7 +51,7 @@ def _draft_call() -> Call:
     return Call(request=_req("draft_email", "external_message", "idem-draft"))
 
 
-async def _session(actions: list[HarnessAction]) -> OwnHarnessSession:
+async def _session(actions: list[HarnessAction]) -> HarnessSession:
     harness = OwnHarness(recorded=actions)
     return harness.start(context=_ctx(), faculties=[])
 
@@ -92,6 +94,29 @@ async def test_session_is_resumable_at_a_saved_cursor() -> None:
     resumed = harness.start(context=_ctx(), faculties=[], cursor=resume_cursor)
     again = await resumed.step(None)
     assert isinstance(again, Call) and again.request.name == "draft_email"
+
+
+async def test_playbook_harness_steps_a_generator_lazily_over_the_shared_context() -> None:
+    # The playbook path must be LAZY: each step re-enters the generator, which reads the SHARED ctx the
+    # run-loop mutates between steps (this is how a read-dependent trajectory works). A read Call in the
+    # playbook is NOT surfaced-away — it reaches the run-loop, which fulfils it.
+    ctx = _ctx()
+
+    def playbook(c: FacultyContext, _f: list[Faculty]) -> Iterator[HarnessAction]:
+        yield Think(summary="start")
+        yield _read_call()  # reads surface on the playbook path (unlike the recorded `_surface` path)
+        yield Think(summary=str(c.scratchpad.get("injected", "none")))
+        yield Finish()
+
+    session = OwnHarness(playbook=playbook).start(context=ctx, faculties=[])
+    a1 = await session.step(None)
+    a2 = await session.step(None)
+    ctx.scratchpad["injected"] = "fulfilled"  # the run-loop would mutate ctx here, after fulfilling the read
+    a3 = await session.step(None)
+
+    assert isinstance(a1, Think) and a1.summary == "start"
+    assert isinstance(a2, Call) and a2.request.name == "lead_research_batch"  # read surfaced, not dropped
+    assert isinstance(a3, Think) and a3.summary == "fulfilled"  # saw the mutation -> stepped lazily
 
 
 async def test_claim_action_carries_facts_with_provenance() -> None:

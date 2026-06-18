@@ -107,3 +107,19 @@
 - DOCS reconciled to proven reality: STATE_AND_ROADMAP (G3/G5/G9 → ✅; G4 → open/blocked-on-G1) + EVAL_FINDINGS
   (§5 + P0/P1 punch-list tagged with Session E outcome; P2 all still open) + this log.
 - SHIP: full ship gate rerun green; PR #3 squash-merged to main. Next session = STEP A (G1) then STEP B (G2).
+
+## Session F (2026-06-18) — STEP A (G1): make the LLM actually drive the run loop. Full proof: docs/SESSION_F_LIVE_PROOF.md
+- Working in main checkout (integration model: push directly to main, no PR). Baseline gate GREEN at 95a087e.
+- F1: MiniMax-M3 API researched (subagent → findings.md): OpenAI tool-calling (4 tools, tool_choice auto), preserve
+  `<think>` across turns, parse tool_calls[].function.arguments. M3 confirmed correct id.
+- F2 (TDD): run loop is now step-driven — drives HarnessRunner.step(obs), disposes Think/Call/Claim/Escalate/Finish,
+  bound max_steps=24, feeds SyscallResult back. Removed the decorative reasoner + hardcoded faculty order + hardcoded
+  draft. New lead-finder PLAYBOOK generator (mandate) over shared ctx; lazy PlaybookHarnessSession; draft → build_outreach_call.
+  `runner` field + bootstrap arg; mode selects live runner vs OwnHarness(playbook).
+- F3 (TDD, fake transport): kernel-side HermesRunner/HermesSession implement the mandate HarnessRunner Protocol; MiniMax
+  emits think/call_tool/claim_facts/finish → one HarnessAction; kernel stamps fact provenance (run_id, probation).
+  HermesClient.complete_chat transport. Wired run_lead_finder.py + _eval_d_inspect.py to runner=HermesRunner(...).
+- F4 OFFLINE GATE GREEN: ruff clean · mypy --strict 95 files · pytest 97 passed +2 skip (+16 new G1 tests) · lint-imports
+  3/3 · seam proof green on the OwnHarness double. Frozen contracts UNTOUCHED. Committed + pushed to main.
+- ⏳ NEXT: F5 live runs (2 ICPs, real money) for the honest founder-sendable verdict; F6 docs reconcile (flip G1; G4 only
+  if truly sendable); F7 ship. Then optional Step B (G2).

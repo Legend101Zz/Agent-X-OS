@@ -54,7 +54,7 @@ async def main() -> int:
     invoker = Phase1RunInvoker(
         journal=journal, projections=projections, hydration=HydrationLoader(store, journal),
         gateway=gateway, settlement=SettlementCommitter(journal=journal, projections=projections),
-        verifier=RulesVerifier(), reasoner=None,
+        verifier=RulesVerifier(),
     )
     control = KernelControl(journal=journal, projections=projections, projection_store=store)
 
