@@ -84,11 +84,78 @@ dashboard's reverse-scan reconstruction (`api/state.py:_drafted_effect`) returns
 is approving — not the earlier research read. Session D's "card shows wrong/null effect" bug is fixed.
 The approval inbox also carries the exact durable card (`syscall=draft_email`, args, idempotency_key).
 
-### 2c. P0-1 settlement watch (live) — _pending live `_eval_d_inspect.py` run below (Step 2c + reused in Step 3)_
+### 2c. P0-1 settlement watch (live) — ✅ FIXED (`scripts/_eval_d_inspect.py`, default ICP, live MiniMax+Firecrawl+Mongo)
+
+`INSTANCE_ID=agentx_evald_1781781401`, `RUN_ID=…:deadline:1781781401`. Full live park→approve→draft→verify→settle:
+
+```
+JOURNAL_EVENT_COUNT=16 SEQ_STRICTLY_INCREASING=True
+JOURNAL_SEQ_KINDS=1:run_created, 2:run_hydrated, 3:syscall_attempted, 4:syscall_settled,
+  5:syscall_attempted, 6:syscall_settled, 7:syscall_attempted, 8:syscall_settled,
+  9:syscall_attempted, 10:run_parked, 11:manager_action, 12:approval_resolved,
+  13:syscall_settled, 14:run_verified, 15:run_settled, 16:watch_registered
+SETTLED_EVENT=…:settled seq=15 VERIFY_PASSED=True rungs=['rules']
+
+----- WATCH docs (count=1) -----
+[ { "id": "…:watch:reality", "run_id": "…", "instance_id": "agentx_evald_1781781401",
+    "condition": "reality_outcome", "deadline": "2026-06-21T11:17:19+00:00", "status": "pending" } ]
+```
+**Verdict:** a live settle now appends `watch_registered` (seq 16, right after `run_settled` seq 15) and
+**projects exactly one WATCH doc in Mongo (count=1)** — Session D had 0. The watch is a `reality_outcome`
+condition with a 3-day deadline, `status=pending`. P0-1 fixed. (Maturation of that watch → probation→verified
+→ eval_case is the remaining half of Step D, NOT in scope here.)
+
+**P0 summary: all three Session-D correctness bugs (P0-1 watch, P0-2 replay, P0-3 card) are reproduced as FIXED.**
 
 ## Step 3 — P1-1 lead quality (2 live ICP runs + honest per-lead actionability verdict)
 
-_pending_
+Run via `_eval_d_inspect.py` (the rich runner — same live lead-finder path as `run_lead_finder.py`, but it
+also surfaces the trace, settled heap facts w/ provenance, and the rendered draft body). `run_lead_finder.py`
+thin-runner also exercised (see end of Step 3).
+
+### Run #1 — default ICP: "founders, agencies, and SMB operators buying an AI lead-finder", US+India, count 3
+
+**Trace (live):**
+```
+1. thought (MiniMax): "<think> ICP = founders/agencies/SMB operators ... pain around manual lead
+   generation ... budget $50-500/mo ..." — but prompted to "Think briefly about the ICP, then stop.
+   Do not call tools and do not make commitments."   <-- LLM does NOT drive the loop
+2. syscall_result: lead_research_batch  (ok, maturity 3)   <-- heuristic faculty issues the search
+3. syscall_result: read_url             (ok)               <-- bounded enrichment (cap 3)
+4. syscall_result: read_url             (ok)
+5. parked: draft_email requires L2
+```
+
+**Settled heap facts (count=4, status=probation, all cite evidence):**
+| subject | predicate | object | contact path cited | buying signal cited |
+|---|---|---|---|---|
+| firecrawl_1 | qualified_lead_score / actionable_lead | **Callbox** | sales@callboxinc.com, callboxinc.com | "B2B lead gen / appointment setting service" |
+| firecrawl_3 | qualified_lead_score / actionable_lead | **Belkins** | sales@belkins.io, +1 302-803-5506, belkins.io | "100–400+ qualified appointments / appointment setting" |
+
+**Drafted (highest-scoring = Belkins), kept in draft (sent=false), to internal review mailbox:**
+> Subject: "Draft outreach to Belkins" — "Hi Founder or growth lead, I noticed this signal at Belkins:
+> With personalized appointment setting and persistent follow-ups… Reference: https://belkins.io/. Draft only — not sent."
+
+**Honest per-lead actionability verdict (vs rubric: real org + person/role + reachable URL + genuine buying signal + would a founder send it?):**
+- ✅ **Machinery works.** The actionable-lead gate did its job: each settled lead has a real organization, a
+  genuinely reachable contact path (real email/phone/URL), a cited buying-signal string, and evidence; it
+  fails closed without them, scores on evidence fields, drafts only the top actionable lead, addresses a
+  role, cites the signal+URL, and keeps the message in draft for approval. This is a real, verifiable
+  improvement over Session D (where leads were content pages / no contact path).
+- ❌ **Not a sendable draft — ICP-fit is wrong.** Callbox and Belkins are themselves **B2B lead-generation
+  agencies** — i.e. competitors/vendors of the very product, NOT "founders/SMBs *buying* an AI lead-finder."
+  The cited "buying signal" is actually each company's own **sales copy**. A founder would NOT send the
+  Belkins draft: it's outreach to a competitor. "person/role" is a generic "Founder or growth lead", not a
+  named decision-maker.
+- **Root cause = G1.** The trace proves the LLM is deliberately side-lined ("think briefly… then stop, do
+  not call tools"); query formulation, relevance/ICP-fit filtering, and competitor exclusion are all done by
+  heuristic code that keyword-matches "lead generation / appointment setting" and cannot tell a *seller* of
+  that service from a *buyer*. So the pipeline returns mechanically-actionable-but-semantically-mis-targeted
+  leads. **Closing G4 (truly sendable leads) is blocked on G1 (make the LLM drive the loop).**
+
+**Run #1 verdict: ≥1 lead passes the actionable gate with real contact + cited evidence (mechanically actionable: YES), but it is NOT a founder-sendable, ICP-correct draft (semantically actionable: NO — needs G1).**
+
+### Run #2 — _pending (buyer-shaped ICP: dental clinics, Pune)_
 
 ## Step 4 — P1-2 real promptfoo judge (npx over OpenRouter, Node v24.13.1)
 
