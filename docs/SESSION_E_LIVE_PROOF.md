@@ -55,7 +55,36 @@ EXIT_CODE=0
 
 ## Step 2 — P0 repro proofs (settlement watch / faithful replay / truthful approval card)
 
-_pending_
+### 2a. P0-2 faithful idempotency replay — ✅ FIXED (`scripts/_eval_d_kernel_stress.py`, in-memory/deterministic)
+
+```
+===== 1. IDEMPOTENCY (replay must not double-effect) =====
+FIRST  status=ok body_in_output=True output={"draft_id": "draft_idem_inst:run:draft_email", "to": "x@y.z", "subject": "S", "body": "B", "mode": "draft", "sent": false, "credential_ref": "vault://tenant_idem_inst/draft_email"}
+SECOND status=ok attempted_event=None settled_event=None output={... IDENTICAL to FIRST ...}
+SyscallSettled events for idem key = 1  (expect 1 = no double effect)
+REPLAY_LOSSY = False  (True => replay drops the original output payload)
+```
+**Verdict:** replay returns the ORIGINAL full output (not `{}`), journals no second attempt/settled, and
+exactly one `SyscallSettled` exists for the idempotency key. Session D's "replay returns `{}`" bug is fixed.
+(Bonus from same script: L0/L1 park & L2 executes draft_email; unsupported intents → `human_task`
+`queued_manual` tail, nothing "unimplemented".)
+
+### 2b. P0-3 truthful approval card — ✅ FIXED (`scripts/_eval_d_dashboard.py`, sim/in-memory)
+
+```
+RUN_STATE=parked (expect parked)
+JOURNAL_KINDS_AT_PARK=['run_created', 'run_hydrated', 'syscall_attempted', 'run_parked']
+SyscallAttempted_in_journal_at_park=['draft_email']
+...
+DASHBOARD drafted_effect(events) = {"syscall": "draft_email", "args": {... full draft body ...}, "required_ring": "L2"}
+  -> shows draft_email (CORRECT)
+```
+**Verdict:** the gateway now journals a `syscall_attempted(draft_email)` BEFORE `run_parked`, so the
+dashboard's reverse-scan reconstruction (`api/state.py:_drafted_effect`) returns the real draft the manager
+is approving — not the earlier research read. Session D's "card shows wrong/null effect" bug is fixed.
+The approval inbox also carries the exact durable card (`syscall=draft_email`, args, idempotency_key).
+
+### 2c. P0-1 settlement watch (live) — _pending live `_eval_d_inspect.py` run below (Step 2c + reused in Step 3)_
 
 ## Step 3 — P1-1 lead quality (2 live ICP runs + honest per-lead actionability verdict)
 
