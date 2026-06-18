@@ -33,7 +33,7 @@ protocol-driven worker, with no script-owned reconstruction or settlement glue.
 - [x] G5 — replace bespoke resume in `run_lead_finder.py` and `_eval_d_inspect.py`.
 - [x] G6 — parked→resume→settle integration test; full offline gate; commit/push (`6347beb`).
 - [x] G7 — real parked dental/vendor resume through kernel API; worker proof; honest verdict.
-- [x] G8 — reconcile roadmap/progress/proof; final gate green; Session H handoff written; final push pending.
+- [x] G8 — reconcile roadmap/progress/proof; final gate green; Session H handoff written; pushed to `main`.
 
 ## Baseline
 - `uv run mypy --strict packages db tests` → success, 95 source files.
