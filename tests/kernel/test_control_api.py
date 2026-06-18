@@ -3,10 +3,12 @@
 from datetime import UTC, datetime
 
 from agentx_contracts.journal import SyscallAttempted
+from agentx_contracts.mandate import MandateInstance
 from agentx_kernel.control import KernelControl
 from agentx_kernel.projections import Projections
 from agentx_kernel.stores.memory import InMemoryJournalStore, InMemoryProjectionStore
 from agentx_kernel.verifier import HumanApprovalGate
+from agentx_mandate.library.lead_finder import build_lead_finder_type
 
 NOW = datetime(2026, 6, 17, tzinfo=UTC)
 
@@ -71,3 +73,22 @@ async def test_set_ring_is_journaled_and_updates_instance_file_resume_projection
     assert instance_file.resume is not None
     assert instance_file.resume["ring"] == "L2"
     assert floor.ring == "L2"
+
+
+async def test_control_registers_and_instantiates_catalog_entries() -> None:
+    control, _projection_store = await _control()
+    mandate = build_lead_finder_type()
+    instance = MandateInstance(
+        id="inst_catalog",
+        type_ref="lead-finder@0.1.0",
+        customer_id="Catalog Dental",
+        ring="L1",
+        heap_region_id="tenant_catalog",
+    )
+
+    await control.register_mandate_type(mandate)
+    await control.instantiate_mandate(instance)
+
+    assert await control.list_mandate_types() == [mandate]
+    assert await control.list_mandate_instances() == [instance]
+    assert (await control.instance_binding(instance.id)).instance_id == instance.id

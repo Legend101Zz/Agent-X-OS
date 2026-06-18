@@ -55,3 +55,35 @@ class JournalSeqContention(KernelError):
 
 class ConfigError(KernelError):
     """A required setting (e.g. a connection string, a faculty model id) is missing at startup."""
+
+
+class MandateTypeConflict(KernelError):
+    """A catalog type identity was reused with different immutable content."""
+
+    def __init__(self, identity: str) -> None:
+        self.identity = identity
+        super().__init__(f"mandate type conflicts with registered identity: {identity!r}")
+
+
+class MandateInstanceConflict(KernelError):
+    """An instance id was reused with different customer-private state."""
+
+    def __init__(self, instance_id: str) -> None:
+        self.instance_id = instance_id
+        super().__init__(f"mandate instance conflicts with registered id: {instance_id!r}")
+
+
+class UnknownMandateType(KernelError):
+    """An instance references a type+version that is not registered."""
+
+    def __init__(self, type_ref: str) -> None:
+        self.type_ref = type_ref
+        super().__init__(f"mandate type is not registered: {type_ref!r}")
+
+
+class UnknownMandateInstance(KernelError):
+    """A requested instance id is not registered."""
+
+    def __init__(self, instance_id: str) -> None:
+        self.instance_id = instance_id
+        super().__init__(f"mandate instance is not registered: {instance_id!r}")

@@ -14,9 +14,11 @@ from agentx_contracts.base import AgentXModel
 from agentx_contracts.enums import Ring
 from agentx_contracts.journal import ApprovalResolved, ManagerAction, RunParked, SyscallAttempted
 from agentx_contracts.jsontypes import JsonObject
+from agentx_contracts.mandate import InstanceBinding, MandateInstance, MandateType
 
 from .ports import JournalStore, ProjectionStore
 from .projections import Projections
+from .registry import MandateRegistry
 
 
 class ApprovalItem(AgentXModel):
@@ -51,6 +53,22 @@ class KernelControl:
         self.journal = journal
         self._projections = projections
         self._projection_store = projection_store
+        self._registry = MandateRegistry(projection_store)
+
+    async def register_mandate_type(self, mandate: MandateType) -> MandateType:
+        return await self._registry.register_type(mandate)
+
+    async def list_mandate_types(self) -> list[MandateType]:
+        return await self._registry.list_types()
+
+    async def instantiate_mandate(self, instance: MandateInstance) -> MandateInstance:
+        return await self._registry.instantiate(instance)
+
+    async def list_mandate_instances(self, *, customer_id: str | None = None) -> list[MandateInstance]:
+        return await self._registry.list_instances(customer_id=customer_id)
+
+    async def instance_binding(self, instance_id: str) -> InstanceBinding:
+        return await self._registry.binding(instance_id)
 
     async def approval_inbox(self, *, instance_id: str) -> ApprovalInbox:
         events = await self.journal.read_instance(instance_id)

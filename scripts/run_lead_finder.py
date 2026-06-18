@@ -13,10 +13,9 @@ from time import perf_counter
 
 import agentx_db.collections as c
 from agentx_contracts.config import Settings
-from agentx_contracts.enums import Ring
 from agentx_contracts.journal import RunVerified
 from agentx_contracts.jsontypes import JsonObject
-from agentx_contracts.mandate import InstanceBinding, MandateRun
+from agentx_contracts.mandate import MandateInstance, MandateRun
 from agentx_contracts.syscall import GatewayContext, SyscallRequest
 from agentx_contracts.trigger import DeadlineTrigger
 from agentx_db.setup import ensure_indexes
@@ -72,15 +71,6 @@ def _missing_research_sdks(settings: Settings) -> list[str]:
     return missing
 
 
-def _instance(instance_id: str, ring: Ring) -> InstanceBinding:
-    return InstanceBinding(
-        instance_id=instance_id,
-        type_ref="lead-finder@0.1.0",
-        ring=ring,
-        heap_region_id=f"tenant_{instance_id}",
-    )
-
-
 async def main() -> int:
     settings = Settings()
     missing = _missing_env(settings)
@@ -94,8 +84,6 @@ async def main() -> int:
 
     now = datetime.now(UTC)
     instance_id = f"agentx_dogfood_{int(now.timestamp())}"
-    mandate = build_lead_finder_type()
-    mandate.charter.target = DOGFOOD_TARGET
     trigger = DeadlineTrigger(ts=now, reason="live_dogfood_sweep", entity_id="agentx_dogfood_icp")
 
     client: AsyncMongoClient[dict[str, object]] = AsyncMongoClient(settings.mongodb_uri.get_secret_value())
@@ -125,11 +113,24 @@ async def main() -> int:
             reasoner=HermesClient.from_settings(settings),
         )
         control = KernelControl(journal=journal, projections=projections, projection_store=projection_store)
+        canonical_mandate = build_lead_finder_type()
+        await control.register_mandate_type(canonical_mandate)
+        persisted_instance = MandateInstance(
+            id=instance_id,
+            type_ref=f"{canonical_mandate.name}@{canonical_mandate.version}",
+            customer_id="Agent-X dogfood",
+            ring="L1",
+            heap_region_id=f"tenant_{instance_id}",
+        )
+        await control.instantiate_mandate(persisted_instance)
+        instance = await control.instance_binding(instance_id)
+        mandate = canonical_mandate.model_copy(deep=True)
+        mandate.charter.target = dict(DOGFOOD_TARGET)
 
         l1_started = perf_counter()
         parked = await invoker.invoke(
             mandate=mandate,
-            instance=_instance(instance_id, "L1"),
+            instance=instance,
             trigger=trigger,
             mode="live",
         )
@@ -166,7 +167,7 @@ async def main() -> int:
             GatewayContext(
                 instance_id=instance_id,
                 run_id=parked.run_id,
-                tenant_id=f"tenant_{instance_id}",
+                tenant_id=instance.heap_region_id,
                 ring="L2",
                 now=datetime.now(UTC),
             ),
@@ -196,7 +197,7 @@ async def main() -> int:
             run=MandateRun(
                 id=parked.run_id,
                 instance_id=instance_id,
-                type_ref="lead-finder@0.1.0",
+                type_ref=instance.type_ref,
                 trigger=trigger,
                 state="verifying",
                 trace=parked.trace,

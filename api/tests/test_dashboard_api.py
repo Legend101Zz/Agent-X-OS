@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 
 import pytest
+from agentx_contracts.mandate import MandateInstance
+from agentx_mandate.library.lead_finder import build_lead_finder_type
 from httpx import ASGITransport, AsyncClient
 
 from agentx_api.app import create_app
@@ -91,3 +93,43 @@ async def test_missing_core_commands_return_explicit_core_gap(client: AsyncClien
 
     gaps = (await client.get("/core-gaps")).json()["gaps"]
     assert any(gap["id"] == "command.trigger_run" for gap in gaps)
+
+
+async def test_instances_exposes_non_demo_registry_instance() -> None:
+    app = create_app(use_mongo=False, seed_demo=False)
+    dashboard = app.state.dashboard
+    mandate = build_lead_finder_type()
+    instance = MandateInstance(
+        id="inst_real_catalog",
+        type_ref="lead-finder@0.1.0",
+        customer_id="Real Dental",
+        ring="L1",
+        heap_region_id="tenant_real_catalog",
+    )
+    await dashboard.control.register_mandate_type(mandate)
+    await dashboard.control.instantiate_mandate(instance)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as test_client:
+        response = await test_client.get("/instances")
+
+    assert response.status_code == 200
+    rows = response.json()["instances"]
+    assert [row["instance"]["id"] for row in rows] == ["inst_real_catalog"]
+
+
+async def test_dashboard_close_awaits_async_database_client() -> None:
+    app = create_app(use_mongo=False, seed_demo=False)
+
+    class AsyncCloseClient:
+        closed = False
+
+        async def close(self) -> None:
+            self.closed = True
+
+    client = AsyncCloseClient()
+    app.state.dashboard.client = client
+
+    await app.state.dashboard.close()
+
+    assert client.closed
