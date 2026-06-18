@@ -1,24 +1,39 @@
-# dashboard/ — Manager Dashboard (stub)
+# dashboard/ - Agent-X Operator Dashboard
 
-A **separate** TS/React (Next.js, npm) app — NOT part of the uv Python workspace. It is a thin lens:
-**projections over the kernel's journal + a handful of command buttons** (approve / instantiate /
-set-ring / run-swarm / promote). Every manager action is itself a journaled `ManagerAction` event, so
-there is one source of truth, consistent by construction (BLUEPRINT §6).
+A separate Next.js/React application that consumes the FastAPI service in `../api`. It never reads
+Mongo or credentials directly.
 
-## Phase 1
-Stubbed. The dashboard is **not** on the Phase-1 critical path — Phase 1 can run on internal admin
-tooling (Mongo Compass / Retool). When built, it reads the kernel **command/query API** (`agentx_kernel`,
-task K9) over HTTP — never the database directly, never a credential.
+## Surfaces
 
-## Surfaces (BLUEPRINT §6, when built)
-1. **Floor** (live) + **Approval Inbox** (L0/L1 cards) + **Manual Queue** (un-automated syscalls).
-2. **Catalog** — browse MandateTypes → instantiate for a business.
-3. **Instance File** — heap (verified facts + provenance) · trust/ring history · résumé · runs · P&L.
-4. **Foundry** — eval gym · Swarm REPL · Creator · compiler · promote/canary.
-5. **Capability Registry** — syscalls · maturity (manual→api) · adapter health · queue volume.
+1. Floor with live and parked runs plus the journal stream.
+2. Approval inbox with working approve and explicit core-gap states for edit/reject.
+3. Mandate catalog and staged instance creation.
+4. Instance files with facts, provenance, trust, ring, threads, runs, and P&L.
+5. Run detail with hydration, trace, syscall, park, verification, and settlement events.
+6. Capability registry with maturity, health, credential boundary, and queue volume.
+7. Filterable audit ledger.
+8. Foundry view for real versus synthetic eval evidence and promotion status.
 
-## Setup (Session B)
+The client refreshes from the API every eight seconds and falls back to fixtures when the API is
+unavailable.
+
+## Development
+
 ```bash
-cd dashboard && npm install     # confirm current Next/React versions at install time
+npm install
 npm run dev
+```
+
+The API defaults to `http://127.0.0.1:8000`. Override it with:
+
+```bash
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000 npm run dev
+```
+
+## Verification
+
+```bash
+npm test
+npm run build
+npm audit --omit=dev
 ```
