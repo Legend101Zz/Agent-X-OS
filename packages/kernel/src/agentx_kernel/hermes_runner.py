@@ -172,10 +172,26 @@ def _system_prompt(ctx: FacultyContext) -> str:
     icp = str(target.get("icp", "qualified B2B prospects"))
     location = str(target.get("location", ""))
     count = target.get("count", 1)
+    lead_url = str(target.get("lead_url", "")).strip()
+    lead_company = str(target.get("lead_company", "")).strip()
+    task = str(target.get("task", "")).strip()
+    target_instructions = (
+        (
+            "A specific lead was supplied by the operator. Work ONLY on this lead; do not replace it with "
+            "another prospect.\n"
+            f"Lead company: {lead_company or 'unknown — determine from the supplied site'}.\n"
+            f"Lead URL: {lead_url}.\n"
+            f"Operator task: {task or 'research, qualify, and draft grounded outreach'}.\n"
+            "Start by calling read_url with lead_id='provided_lead' and the exact supplied URL. You may read "
+            "additional pages on the same organisation if needed, but do not search for unrelated leads.\n\n"
+        )
+        if lead_url
+        else f"Target ICP: {icp}. Location: {location or 'any'}. Leads wanted: {count}.\n\n"
+    )
     return (
         "You are the lead-finder faculty of Agent-X, an accountable agent OS. Find ONE genuinely "
         "founder-SENDABLE B2B lead for the target ICP and draft a grounded outreach email for owner approval.\n\n"
-        f"Target ICP: {icp}. Location: {location or 'any'}. Leads wanted: {count}.\n\n"
+        f"{target_instructions}"
         "Act ONE STEP AT A TIME — call exactly ONE tool per turn. Tools:\n"
         "  - think(summary): a brief plan / reasoning note.\n"
         "  - search_leads(query, icp, location, exclude_domains, count): web-search for real prospect "
@@ -203,6 +219,12 @@ def _system_prompt(ctx: FacultyContext) -> str:
 
 
 def _user_prompt(ctx: FacultyContext) -> str:
+    lead_url = ctx.target.get("lead_url")
+    if isinstance(lead_url, str) and lead_url.strip():
+        return (
+            "Begin. Plan briefly with think, then call read_url for lead_id='provided_lead' and the exact "
+            "operator-supplied URL. Research only this organisation, claim grounded facts, then draft for approval."
+        )
     return (
         "Begin. Plan briefly with think, then call_tool lead_research_batch with a specific query for the ICP. "
         "Take it one tool call at a time; I will return each tool's result."

@@ -42,10 +42,10 @@ from agentx_mandate.harness import Call, Claim, FacultyContext, Finish, Think
 NOW = datetime(2026, 6, 17, tzinfo=UTC)
 
 
-def _ctx() -> FacultyContext:
+def _ctx(target: JsonObject | None = None) -> FacultyContext:
     return FacultyContext(
         snapshot=HydrationSnapshot(frozen_at=NOW),
-        target={"icp": "independent dental clinics", "location": "Pune", "count": 1},
+        target=target or {"icp": "independent dental clinics", "location": "Pune", "count": 1},
         scratchpad={},
         instance_id="inst_a",
         run_id="run_1",
@@ -110,6 +110,31 @@ async def test_think_tool_call_becomes_a_think_action() -> None:
     action = await session.step(None)
     assert isinstance(action, Think)
     assert "dental clinics" in action.summary
+
+
+async def test_specific_lead_target_tells_hermes_to_read_that_url_without_replacing_it() -> None:
+    runner, transport = _runner([_tool_response("think", {"summary": "inspect the supplied company"})])
+    session = runner.start(
+        context=_ctx(
+            {
+                "lead_company": "Acme Dental",
+                "lead_url": "https://acme.example/about",
+                "task": "qualify the lead and draft a truthful email",
+            }
+        ),
+        faculties=[],
+    )
+
+    await session.step(None)
+
+    messages = transport.sent[0]
+    system = str(messages[0]["content"])
+    user = str(messages[1]["content"])
+    assert "Work ONLY on this lead" in system
+    assert "Acme Dental" in system
+    assert "https://acme.example/about" in system
+    assert "do not search for unrelated leads" in system
+    assert "lead_id='provided_lead'" in user
 
 
 async def test_search_leads_tool_becomes_a_lead_research_batch_call_with_built_criteria() -> None:
