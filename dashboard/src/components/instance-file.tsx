@@ -1,4 +1,5 @@
-import { History, KeyRound, ShieldCheck } from "lucide-react";
+import { History, KeyRound, PlayCircle, ShieldCheck } from "lucide-react";
+import { useState } from "react";
 import type { CommandResult, DashboardData, InstanceSummary } from "@/lib/types";
 import { formatCurrency, formatClock, GapNotice, Panel, ProgressBar, StatusPill } from "./shared";
 
@@ -6,20 +7,71 @@ interface InstanceFileProps {
   data: DashboardData;
   selectedInstance: InstanceSummary;
   commandResult?: CommandResult;
+  operatorToken: string;
+  apiBaseUrl: string;
   onSelectInstance: (instanceId: string) => void;
   onSelectRun: (runId: string) => void;
   onSetRing: (instanceId: string, ring: string) => void;
+  onCommandResult: (result: CommandResult) => void;
+  onRefresh: () => void;
 }
+
+type RunState = "idle" | "submitting" | "ok" | "error";
 
 export function InstanceFile({
   data,
   selectedInstance,
   commandResult,
+  operatorToken,
+  apiBaseUrl,
   onSelectInstance,
   onSelectRun,
   onSetRing,
+  onCommandResult,
+  onRefresh,
 }: InstanceFileProps) {
   const instanceRuns = data.runs.filter((run) => run.instance_id === selectedInstance.id);
+  const [runState, setRunState] = useState<RunState>("idle");
+  const [runMessage, setRunMessage] = useState<string | null>(null);
+  const disabled = !operatorToken || runState === "submitting";
+
+  async function handleRunMandate() {
+    if (!operatorToken) return;
+    setRunState("submitting");
+    setRunMessage(null);
+    try {
+      const response = await fetch(`${apiBaseUrl}/commands/trigger-run`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${operatorToken}`,
+        },
+        body: JSON.stringify({
+          instance_id: selectedInstance.id,
+          mode: "sim",
+          actor: "dashboard/operator",
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        const message = typeof body?.detail === "string" ? body.detail : response.statusText;
+        setRunState("error");
+        setRunMessage(message);
+        onCommandResult({ supported: false, message });
+        return;
+      }
+      const message = `triggered (work_id=${body.work_id})`;
+      setRunState("ok");
+      setRunMessage(message);
+      onCommandResult({ supported: true, status: "queued", message, work_id: body.work_id });
+      onRefresh();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Network error";
+      setRunState("error");
+      setRunMessage(message);
+      onCommandResult({ supported: false, message });
+    }
+  }
 
   return (
     <div className="instance-layout">
@@ -63,6 +115,18 @@ export function InstanceFile({
               <span>Cost {formatCurrency(selectedInstance.pnl.cost)}</span>
               <strong>Margin {formatCurrency(selectedInstance.pnl.margin)}</strong>
             </div>
+          </div>
+          <div className="run-mandate-row">
+            <button
+              className={disabled ? "command-button primary disabled" : "command-button primary"}
+              disabled={disabled}
+              onClick={() => void handleRunMandate()}
+              type="button"
+            >
+              <PlayCircle size={16} />
+              {runState === "submitting" ? "Triggering…" : "Run Mandate (sim)"}
+            </button>
+            {runMessage && <span className={`run-status tone-${runState}`}>{runMessage}</span>}
           </div>
           {commandResult?.gap ? <GapNotice gap={commandResult.gap} /> : null}
         </Panel>

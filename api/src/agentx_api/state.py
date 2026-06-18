@@ -1,21 +1,29 @@
+"""Dashboard state composes the lifespan-owned ``OperatorRuntime`` and exposes read-side projections.
+
+The runtime owns every stateful kernel piece. ``state.py`` only:
+- decides the backend (Mongo vs memory) based on settings + env;
+- builds the OperatorRuntime once via ``build_runtime``;
+- exposes typed read helpers that return ``dict`` payloads shaped for the dashboard;
+- wires the long-lived ``SchedulerWorker`` into a background task on ``start()``.
+
+This file is the *only* place the API state is constructed; FastAPI just calls ``create_state()``
+and stores the result on ``app.state``.
+"""
+
 from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
-from inspect import isawaitable
-from typing import Any, Literal, cast
+from datetime import UTC, datetime
+from typing import Any, Literal
 
 import agentx_db.collections as c
 from agentx_contracts.config import get_settings
 from agentx_contracts.enums import RunState
 from agentx_contracts.journal import (
-    ApprovalResolved,
     JournalEvent,
-    ManagerAction,
     RunCreated,
     RunHydrated,
-    RunParked,
     RunSettled,
     RunVerified,
     SyscallAttempted,
@@ -23,60 +31,62 @@ from agentx_contracts.journal import (
 from agentx_contracts.jsontypes import JsonObject
 from agentx_contracts.mandate import MandateInstance
 from agentx_contracts.memory import Fact, Provenance
-from agentx_contracts.syscall import SyscallRequest
-from agentx_contracts.trigger import DeadlineTrigger
+
+# Re-export so the API endpoints can construct deadlines without an extra import.
+from agentx_contracts.trigger import DeadlineTrigger  # noqa: F401
 from agentx_db.setup import ensure_indexes
-from agentx_kernel.control import KernelControl
-from agentx_kernel.ports import JournalStore, ProjectionStore
-from agentx_kernel.projections import Projections
-from agentx_kernel.stores.memory import InMemoryJournalStore, InMemoryProjectionStore
-from agentx_kernel.stores.mongo import MongoJournalStore, MongoProjectionStore
-from agentx_mandate.library.lead_finder import build_lead_finder_type
-from agentx_syscall.adapters import (
-    DraftEmailAdapter,
-    HumanTaskAdapter,
-    LeadResearchBatchAdapter,
-    ManualTaskStore,
-    MarkOutcomeAdapter,
-    QueueManualActionAdapter,
-    ReadUrlAdapter,
-    build_configured_research_providers,
-)
-from agentx_syscall.registry import Phase1SyscallRegistry
+
+from .operator import OperatorRuntime, build_runtime
 
 BackendKind = Literal["memory", "mongo"]
 
 
 @dataclass
 class DashboardState:
-    journal: JournalStore
-    store: ProjectionStore
-    projections: Projections
-    control: KernelControl
-    registry: Phase1SyscallRegistry
-    manual_tasks: ManualTaskStore
+    """The lifespan-owned composition that FastAPI holds on ``app.state.dashboard``."""
+
+    runtime: OperatorRuntime
     backend: BackendKind
     seed_demo: bool
-    database: Any | None = None
-    client: Any | None = None
-    _ready: bool = False
+    database: Any | None
+    client: Any | None
 
-    async def ready(self) -> None:
-        if self._ready:
-            return
+    # ---- convenience accessors so endpoint code is short -------------------------------
+    @property
+    def journal(self) -> Any:
+        return self.runtime.journal
+
+    @property
+    def store(self) -> Any:
+        return self.runtime.projection_store
+
+    @property
+    def projections(self) -> Any:
+        return self.runtime.projections
+
+    @property
+    def control(self) -> Any:
+        return self.runtime.control
+
+    @property
+    def registry(self) -> Any:
+        return self.runtime.registry
+
+    @property
+    def manual_tasks(self) -> Any:
+        return self.runtime.manual_tasks
+
+    # ---- lifecycle ---------------------------------------------------------------------
+    async def start(self) -> None:
         if self.database is not None:
             await ensure_indexes(self.database)
         if self.seed_demo:
-            await seed_demo_state(self)
-        self._ready = True
+            await _maybe_seed_demo(self)
 
     async def close(self) -> None:
-        close = getattr(self.client, "close", None)
-        if callable(close):
-            result = close()
-            if isawaitable(result):
-                await result
+        await self.runtime.close()
 
+    # ---- generic store helpers ---------------------------------------------------------
     async def collection(self, collection: str, query: JsonObject | None = None) -> list[dict[str, Any]]:
         docs = await self.store.find(collection, dict(query or {}))
         return [_json_doc(doc) for doc in docs]
@@ -93,13 +103,13 @@ class DashboardState:
         kind: str | None = None,
         limit: int = 100,
     ) -> list[JournalEvent]:
+        events: list[JournalEvent] = []
         if run_id is not None:
             events = await self.journal.read_run(run_id)
         elif instance_id is not None:
             events = await self.journal.read_instance(instance_id)
         else:
             instances = await self.collection(c.MANDATE_INSTANCE)
-            events = []
             for instance in instances:
                 raw_id = instance.get("id")
                 if isinstance(raw_id, str):
@@ -109,57 +119,47 @@ class DashboardState:
             events = [event for event in events if event.kind == kind]
         return events[-limit:]
 
-
 def create_state(*, use_mongo: bool | None, seed_demo: bool) -> DashboardState:
-    settings = get_settings()
-    uri = settings.mongodb_uri.get_secret_value()
-    should_use_mongo = bool(uri) if use_mongo is None else use_mongo
-    registry, manual_store = _build_registry()
+    """Build a DashboardState from settings + optional env flag.
 
+    ``use_mongo=False`` forces memory even when ``MONGODB_URI`` is set (used by tests).
+    ``use_mongo=None`` honours ``MONGODB_URI`` presence.
+    """
+    settings = get_settings()
+    uri = settings.mongodb_uri.get_secret_value() if settings.mongodb_uri is not None else ""
+    should_use_mongo = bool(uri.strip()) if use_mongo is None else use_mongo
+    database: Any | None = None
+    client: Any | None = None
     if should_use_mongo:
         from pymongo import AsyncMongoClient
 
-        client: Any = AsyncMongoClient(uri)
+        client = AsyncMongoClient(uri)
         database = client[settings.mongodb_db_name]
-        journal: JournalStore = MongoJournalStore(database)
-        store: ProjectionStore = MongoProjectionStore(database)
-        projections = Projections(store, journal)
-        return DashboardState(
-            journal=journal,
-            store=store,
-            projections=projections,
-            control=KernelControl(journal=journal, projections=projections, projection_store=store),
-            registry=registry,
-            manual_tasks=manual_store,
-            backend="mongo",
-            seed_demo=seed_demo,
-            database=database,
-            client=client,
-        )
-
-    journal = InMemoryJournalStore()
-    store = InMemoryProjectionStore()
-    projections = Projections(store, journal)
+    runtime = build_runtime(settings=settings, database=database, client=client)
     return DashboardState(
-        journal=journal,
-        store=store,
-        projections=projections,
-        control=KernelControl(journal=journal, projections=projections, projection_store=store),
-        registry=registry,
-        manual_tasks=manual_store,
-        backend="memory",
+        runtime=runtime,
+        backend="mongo" if should_use_mongo else "memory",
         seed_demo=seed_demo,
+        database=database,
+        client=client,
     )
 
 
-async def seed_demo_state(state: DashboardState) -> None:
+# ---- Optional demo seed (memory mode only) ---------------------------------------------
+
+
+async def _maybe_seed_demo(state: DashboardState) -> None:
+    """Seed the demo instance + one parked approval card when memory mode + seed_demo."""
+    if state.backend != "memory":
+        return
     existing = await state.collection(c.MANDATE_INSTANCE)
     if existing:
         return
-
     now = datetime(2026, 6, 18, 9, 30, tzinfo=UTC)
-    mandate_type = build_lead_finder_type()
-    await state.control.register_mandate_type(mandate_type)
+    from agentx_mandate.library.lead_finder import build_lead_finder_type
+
+    mandate = build_lead_finder_type()
+    await state.control.register_mandate_type(mandate)
     instance = MandateInstance(
         id="inst_demo",
         type_ref="lead-finder@0.1.0",
@@ -169,7 +169,9 @@ async def seed_demo_state(state: DashboardState) -> None:
     )
     await state.control.instantiate_mandate(instance)
 
-    settled_trigger = DeadlineTrigger(ts=now - timedelta(hours=6), reason="morning lead sweep", entity_id="lead_orbit")
+    settled_trigger = DeadlineTrigger(
+        ts=now - _td(hours=6), reason="morning lead sweep", entity_id="lead_orbit"
+    )
     await _append_and_project(
         state,
         RunCreated(
@@ -187,7 +189,7 @@ async def seed_demo_state(state: DashboardState) -> None:
         RunHydrated(
             event_id="run_demo_settled:hydrated",
             seq=0,
-            ts=settled_trigger.ts + timedelta(seconds=3),
+            ts=settled_trigger.ts + _td(seconds=3),
             instance_id=instance.id,
             run_id="run_demo_settled",
             fact_count=2,
@@ -207,14 +209,14 @@ async def seed_demo_state(state: DashboardState) -> None:
             evidence=["https://orbit.example/careers", "syscall_trace:lead_research_batch"],
             note="Demo fixture: lead matched clinic ICP and expansion signal.",
         ),
-        created_at=settled_trigger.ts + timedelta(minutes=4),
+        created_at=settled_trigger.ts + _td(minutes=4),
     )
     await _append_and_project(
         state,
         RunVerified(
             event_id="run_demo_settled:verified",
             seq=0,
-            ts=settled_trigger.ts + timedelta(minutes=5),
+            ts=settled_trigger.ts + _td(minutes=5),
             instance_id=instance.id,
             run_id="run_demo_settled",
             rungs_passed=["rules", "human"],
@@ -225,7 +227,7 @@ async def seed_demo_state(state: DashboardState) -> None:
         RunSettled(
             event_id="run_demo_settled:settled",
             seq=0,
-            ts=settled_trigger.ts + timedelta(minutes=6),
+            ts=settled_trigger.ts + _td(minutes=6),
             instance_id=instance.id,
             run_id="run_demo_settled",
             facts=[fact],
@@ -235,7 +237,9 @@ async def seed_demo_state(state: DashboardState) -> None:
         ),
     )
 
-    parked_trigger = DeadlineTrigger(ts=now - timedelta(minutes=20), reason="draft outreach", entity_id="lead_nova")
+    parked_trigger = DeadlineTrigger(
+        ts=now - _td(minutes=20), reason="draft outreach", entity_id="lead_nova"
+    )
     await _append_and_project(
         state,
         RunCreated(
@@ -253,7 +257,7 @@ async def seed_demo_state(state: DashboardState) -> None:
         RunHydrated(
             event_id="run_demo_parked:hydrated",
             seq=0,
-            ts=parked_trigger.ts + timedelta(seconds=2),
+            ts=parked_trigger.ts + _td(seconds=2),
             instance_id=instance.id,
             run_id="run_demo_parked",
             fact_count=1,
@@ -265,7 +269,7 @@ async def seed_demo_state(state: DashboardState) -> None:
         SyscallAttempted(
             event_id="run_demo_parked:syscall:draft_email",
             seq=0,
-            ts=parked_trigger.ts + timedelta(minutes=1),
+            ts=parked_trigger.ts + _td(minutes=1),
             instance_id=instance.id,
             run_id="run_demo_parked",
             syscall="draft_email",
@@ -281,12 +285,14 @@ async def seed_demo_state(state: DashboardState) -> None:
             ring_required="L2",
         ),
     )
+    from agentx_contracts.journal import ManagerAction, RunParked
+
     await _append_and_project(
         state,
         RunParked(
             event_id="run_demo_parked:parked",
             seq=0,
-            ts=parked_trigger.ts + timedelta(minutes=2),
+            ts=parked_trigger.ts + _td(minutes=2),
             instance_id=instance.id,
             run_id="run_demo_parked",
             reason="draft_email requires L2; instance currently runs at L1",
@@ -299,7 +305,7 @@ async def seed_demo_state(state: DashboardState) -> None:
         ManagerAction(
             event_id="inst_demo:manager:set_ring:L1",
             seq=0,
-            ts=now - timedelta(minutes=10),
+            ts=now - _td(minutes=10),
             instance_id=instance.id,
             actor="manager:seed",
             action="set_ring",
@@ -307,8 +313,11 @@ async def seed_demo_state(state: DashboardState) -> None:
         ),
     )
 
+    # Seed one open manual task to demonstrate the durable queue endpoint.
+    from agentx_contracts import SyscallRequest as _SyscallRequest
+
     state.manual_tasks.enqueue(
-        SyscallRequest(
+        _SyscallRequest(
             name="queue_manual_action",
             args={"action": "review_lead", "lead_id": "lead_nova", "reason": "Need owner context before outreach."},
             instance_id=instance.id,
@@ -332,6 +341,21 @@ async def seed_demo_state(state: DashboardState) -> None:
             "tags": ["indian_b2b_leads_v1"],
         },
     )
+
+
+def _td(**kwargs: int) -> Any:
+    from datetime import timedelta
+
+    return timedelta(**kwargs)
+
+
+async def _append_and_project(state: DashboardState, event: JournalEvent) -> JournalEvent:
+    stamped: JournalEvent = await state.journal.append(event)
+    await state.projections.apply(stamped)
+    return stamped
+
+
+# ---- Read-side projections -------------------------------------------------------------
 
 
 async def system_overview(state: DashboardState) -> dict[str, Any]:
@@ -434,10 +458,21 @@ async def run_detail(state: DashboardState, run_id: str) -> dict[str, Any]:
 
 
 async def approval_cards(state: DashboardState, *, instance_id: str | None = None) -> list[dict[str, Any]]:
+    """First-class /approvals view: parked approval cards, NOT manual-queue tasks.
+
+    The dashboard now uses ``approvalCards`` separately from ``manualQueue`` so the UI never mixes
+    "needs manager approval" with "the human-task adapter queued this because no API exists yet".
+    """
     cards: list[dict[str, Any]] = []
-    instances = [instance_id] if instance_id is not None else [
-        str(instance.get("id")) for instance in await state.collection(c.MANDATE_INSTANCE) if instance.get("id")
-    ]
+    instances = (
+        [instance_id]
+        if instance_id is not None
+        else [
+            str(instance.get("id"))
+            for instance in await state.collection(c.MANDATE_INSTANCE)
+            if instance.get("id")
+        ]
+    )
     for current_instance_id in instances:
         inbox = await state.control.approval_inbox(instance_id=current_instance_id)
         for item in inbox.items:
@@ -483,129 +518,134 @@ def manual_queue(state: DashboardState) -> list[dict[str, Any]]:
     return [task.to_json() for task in state.manual_tasks.list_open()]
 
 
-def _build_registry() -> tuple[Phase1SyscallRegistry, ManualTaskStore]:
-    store = ManualTaskStore()
-    providers = build_configured_research_providers()
-    registry = Phase1SyscallRegistry(terminal_fallback=HumanTaskAdapter(store=store))
-    registry.register(LeadResearchBatchAdapter(providers=providers))
-    registry.register(ReadUrlAdapter(providers=providers))
-    registry.register(DraftEmailAdapter())
-    registry.register(QueueManualActionAdapter(store=store))
-    registry.register(MarkOutcomeAdapter(store=store))
-    return registry, store
+# ---- helpers ----------------------------------------------------------------------------
 
 
-async def _append_and_project(state: DashboardState, event: JournalEvent) -> JournalEvent:
-    stamped = await state.journal.append(event)
-    await state.projections.apply(stamped)
-    return stamped
+def _ring_for_instance_sync(resume_doc: dict[str, Any] | None, default: str) -> str:
+    if resume_doc is not None and isinstance(resume_doc.get("ring"), str):
+        return str(resume_doc["ring"])
+    return default
 
 
-def _summarize_run(run_id: str, events: list[JournalEvent]) -> dict[str, Any]:
-    events = sorted(events, key=lambda event: event.seq)
-    created = next((event for event in events if isinstance(event, RunCreated)), None)
-    parked = next((event for event in reversed(events) if isinstance(event, RunParked)), None)
-    resolved = next((event for event in reversed(events) if isinstance(event, ApprovalResolved)), None)
-    settled = next((event for event in reversed(events) if isinstance(event, RunSettled)), None)
-    verified = next((event for event in reversed(events) if isinstance(event, RunVerified)), None)
-    state: RunState = "running"
-    if settled is not None:
-        state = "settled"
-    elif parked is not None and resolved is None:
-        state = "parked"
-    elif verified is not None:
-        state = "verifying"
-    elif created is not None:
-        state = "running"
-    latest = events[-1]
+async def _ring_for_instance(state: DashboardState, instance_doc: dict[str, Any]) -> str:
+    instance_id = str(instance_doc.get("id", ""))
+    if not instance_id:
+        return "L0"
+    resume_doc = await state.get_doc(c.RESUME, instance_id)
+    return _ring_for_instance_sync(resume_doc, str(instance_doc.get("ring", "L0")))
+
+
+def _latest_run(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    return rows[0] if rows else None
+
+
+def _drafted_effect(events: list[JournalEvent]) -> JsonObject:
+    """Recover the drafted effect args from a journal sequence if the approval card is missing."""
+    for event in reversed(events):
+        if isinstance(event, SyscallAttempted):
+            return {
+                "syscall": event.syscall,
+                "args": event.args,
+                "idempotency_key": event.event_id.removesuffix(":attempt"),
+            }
+    return {}
+
+
+def _summarize_run(run_id: str, events: list[JournalEvent]) -> JsonObject:
+    state_value = "created"
+    type_ref = ""
+    instance_id = ""
+    trigger_kind = ""
+    last_ts = datetime.fromtimestamp(0, tz=UTC)
+    settled: RunSettled | None = None
+    parked_reason: str | None = None
+    required_ring: str | None = None
+    for event in events:
+        last_ts = max(last_ts, event.ts)
+        instance_id = event.instance_id or instance_id
+        if isinstance(event, RunCreated):
+            state_value = "running"
+            type_ref = event.type_ref
+            trigger_kind = event.trigger.kind
+        elif isinstance(event, RunSettled):
+            state_value = "settled"
+            settled = event
+        elif event.kind == "run_parked":
+            state_value = "parked"
+            parked_reason = getattr(event, "reason", None)
+            required_ring = getattr(event, "required_ring", None)
+        elif event.kind == "approval_resolved":
+            state_value = "approved_pending_resume"
     return {
         "run_id": run_id,
-        "instance_id": latest.instance_id,
-        "type_ref": created.type_ref if created is not None else None,
-        "state": state,
-        "created_at": created.ts.isoformat() if created is not None else latest.ts.isoformat(),
-        "updated_at": latest.ts.isoformat(),
+        "instance_id": instance_id,
+        "type_ref": type_ref,
+        "trigger_kind": trigger_kind,
+        "state": state_value,
+        "park_reason": parked_reason,
+        "required_ring": required_ring,
         "event_count": len(events),
-        "park": parked.model_dump(mode="json") if parked is not None and resolved is None else None,
-        "settled": settled.model_dump(mode="json") if settled is not None else None,
+        "created_at": events[0].ts.isoformat() if events else None,
+        "updated_at": last_ts.isoformat(),
+        "settled": settled.model_dump(mode="json") if settled else None,
     }
 
 
 def _timeline_event(event: JournalEvent) -> dict[str, Any]:
+    summary = _event_summary(event)
+    payload = event.model_dump(mode="json")
     return {
-        "seq": event.seq,
-        "ts": event.ts.isoformat(),
         "kind": event.kind,
+        "ts": event.ts.isoformat(),
         "actor": event.actor,
-        "run_id": event.run_id,
-        "summary": _event_summary(event),
-        "event": event.model_dump(mode="json"),
+        "summary": summary,
+        "event": payload,
     }
 
 
 def _event_summary(event: JournalEvent) -> str:
-    if isinstance(event, RunCreated):
-        return f"created from {event.trigger.kind}"
-    if isinstance(event, RunHydrated):
-        return f"hydrated {event.fact_count} facts"
-    if isinstance(event, SyscallAttempted):
-        return f"syscall intent: {event.syscall}"
-    if isinstance(event, RunParked):
-        return event.reason
-    if isinstance(event, ApprovalResolved):
-        return f"approval {event.decision}"
-    if isinstance(event, RunVerified):
-        return f"verified via {', '.join(event.rungs_passed) or 'rules'}"
-    if isinstance(event, RunSettled):
-        return f"settled {len(event.facts)} facts"
-    if isinstance(event, ManagerAction):
-        return f"manager action: {event.action}"
-    return event.kind
+    kind = event.kind
+    if kind == "manager_action":
+        action = getattr(event, "action", "")
+        detail = getattr(event, "detail", {}) or {}
+        return f"manager: {action} {detail}"
+    if kind == "approval_resolved":
+        decision = getattr(event, "decision", "")
+        return f"approval: {decision}"
+    if kind == "run_parked":
+        reason = getattr(event, "reason", "")
+        return f"parked: {reason}"
+    if kind == "syscall_attempted":
+        return f"syscall: {getattr(event, 'syscall', '')}"
+    if kind == "syscall_settled":
+        return f"settled: {getattr(event, 'syscall', '')} status={getattr(event, 'status', '')}"
+    return kind
 
 
-def _drafted_effect(events: list[JournalEvent]) -> dict[str, Any] | None:
-    for event in reversed(events):
-        if isinstance(event, SyscallAttempted):
-            return {"syscall": event.syscall, "args": event.args, "required_ring": event.ring_required}
-    return None
+def _int(value: Any, default: int = 0) -> int:
+    return value if isinstance(value, int) else default
 
 
-async def _ring_for_instance(state: DashboardState, instance: dict[str, Any]) -> str:
-    instance_id = instance.get("id")
-    if isinstance(instance_id, str):
-        resume = await state.get_doc(c.RESUME, instance_id)
-        if resume is not None and isinstance(resume.get("ring"), str):
-            return str(resume["ring"])
-    ring = instance.get("ring")
-    return ring if isinstance(ring, str) else "L0"
+def _float(value: Any, default: float = 0.0) -> float:
+    return value if isinstance(value, (int, float)) else default
 
 
-def _latest_run(runs: list[dict[str, Any]]) -> dict[str, Any] | None:
-    return runs[0] if runs else None
+def _json_doc(doc: dict[str, Any]) -> dict[str, Any]:
+    clean = dict(doc)
+    clean.pop("_id", None)
+    return clean
 
 
-def _float(value: object) -> float:
-    if isinstance(value, int | float):
-        return float(value)
-    return 0.0
-
-
-def _int(value: object) -> int:
-    return value if isinstance(value, int) else 0
-
-
-def _json_doc(doc: dict[str, object]) -> dict[str, Any]:
-    value = _to_json_value(doc)
-    return cast(dict[str, Any], value)
-
-
-def _to_json_value(value: object) -> Any:
-    if isinstance(value, datetime):
-        return value.isoformat()
-    if isinstance(value, dict):
-        return {str(key): _to_json_value(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_to_json_value(item) for item in value]
-    if isinstance(value, str | int | float | bool) or value is None:
-        return value
-    return str(value)
+__all__ = [
+    "BackendKind",
+    "DashboardState",
+    "approval_cards",
+    "capability_rows",
+    "create_state",
+    "instance_detail",
+    "instance_rows",
+    "manual_queue",
+    "run_detail",
+    "run_summaries",
+    "system_overview",
+]

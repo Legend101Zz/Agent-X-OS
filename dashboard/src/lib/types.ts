@@ -93,7 +93,7 @@ export interface RunSummary {
   cost: number;
   expected_value: number;
   progress: number;
-  trace: TraceEvent[];
+  trace: TimelineEntry[];
 }
 
 export interface TraceEvent {
@@ -168,6 +168,41 @@ export interface CoreGap {
   detail: string;
 }
 
+export interface ApprovalCard {
+  run_id: string;
+  reason: string;
+  required_ring?: string;
+  seq: number;
+  approval_card?: unknown;
+  instance_id: string;
+  drafted_effect: {
+    syscall: string;
+    args: Record<string, unknown>;
+    idempotency_key: string;
+  } | Record<string, unknown>;
+  timeline: TimelineEntry[];
+}
+
+export interface TimelineEntry {
+  kind: string;
+  ts: string;
+  actor: string;
+  summary: string;
+  event: Record<string, unknown>;
+}
+
+export interface SchedulerWork {
+  work_id: string;
+  kind: "trigger" | "approval";
+  status: "pending" | "claimed" | "completed" | "failed";
+  attempts: number;
+  available_at: string;
+  run_id?: string;
+  instance_id?: string;
+  type_ref?: string;
+  updated_at: string;
+}
+
 export interface DashboardData {
   health: HealthStatus;
   overview: SystemOverview;
@@ -177,22 +212,54 @@ export interface DashboardData {
   journal: JournalEvent[];
   capabilities: Capability[];
   evalCases: EvalCase[];
+  approvals: ApprovalCard[];
   manualQueue: ManualTask[];
   coreGaps: CoreGap[];
 }
 
-export interface CommandPayload {
-  instance_id: string;
-  run_id?: string;
-  ring?: string;
-  actor: string;
-}
+export type CommandPayload = Record<string, unknown>;
 
 export interface CommandResult {
   supported: boolean;
   status?: string;
   receipt?: string;
-  sent?: boolean;
   message?: string;
+  work_id?: string;
+  work_enqueued?: boolean;
+  decision?: string;
+  manager_action?: Record<string, unknown>;
+  resolution?: Record<string, unknown>;
   gap?: CoreGap;
+}
+
+export interface ApprovePayload {
+  instance_id: string;
+  run_id: string;
+  actor: string;
+}
+
+export interface RejectPayload extends ApprovePayload {
+  edited?: boolean;
+}
+
+export interface InstantiatePayload {
+  type_ref: string;
+  customer_id: string;
+  business_name: string;
+  ring: string;
+  target_override?: Record<string, unknown>;
+  actor: string;
+}
+
+export interface TriggerRunPayload {
+  instance_id: string;
+  target?: Record<string, unknown>;
+  mode: string;
+  actor: string;
+}
+
+export interface SetRingPayload {
+  instance_id: string;
+  ring: string;
+  actor: string;
 }

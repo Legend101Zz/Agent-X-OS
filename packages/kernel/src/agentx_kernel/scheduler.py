@@ -99,6 +99,24 @@ class SchedulerStore(Protocol):
         """Release claimed work back to pending at ``retry_at``."""
         ...
 
+    async def status(self, work_id: str) -> SchedulerWorkStatus | None:
+        """Return the current status row for ``work_id`` (None if unknown)."""
+        ...
+
+
+class SchedulerWorkStatus(AgentXModel):
+    """Read-only status snapshot of one scheduler work row, used by the operator dashboard."""
+
+    work_id: str
+    kind: Literal["trigger", "approval"]
+    status: Literal["pending", "claimed", "completed", "failed"]
+    attempts: int
+    available_at: datetime
+    run_id: str | None = None
+    instance_id: str | None = None
+    type_ref: str | None = None
+    updated_at: datetime
+
 
 @runtime_checkable
 class ResumableRunInvoker(Protocol):
