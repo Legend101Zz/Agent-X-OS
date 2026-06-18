@@ -72,11 +72,11 @@ async def main() -> int:
     kinds = [e.kind for e in events]
     print(f"JOURNAL_KINDS_AT_PARK={kinds}")
     attempted = [e.syscall for e in events if isinstance(e, SyscallAttempted)]
-    print(f"SyscallAttempted_in_journal_at_park={attempted}  (note: NO draft_email)")
+    print(f"SyscallAttempted_in_journal_at_park={attempted}")
 
     inbox = await control.approval_inbox(instance_id=inst.instance_id)
     print(f"\nKernelControl.approval_inbox items = {[i.model_dump(mode='json') for i in inbox.items]}")
-    print("  ^ no syscall/args/draft -> a manager would approve BLIND from KernelControl alone")
+    print("  ^ approval card now carries the exact durable syscall intent")
 
     # What the dashboard reconstructs as the effect to approve:
     drafted = _drafted_effect(events)

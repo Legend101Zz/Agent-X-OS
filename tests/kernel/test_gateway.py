@@ -107,8 +107,28 @@ async def test_ring_check_parks_before_registry_resolution() -> None:
     assert outcome.parked is not None
     assert outcome.parked.awaiting == "human_approval"
     assert outcome.parked.required_ring == "L2"
+    assert outcome.attempted is not None
+    assert outcome.attempted.syscall == "draft_email"
     assert registry.resolve_calls == 0
     assert adapter.calls == 0
+    assert [event.kind for event in await journal.read_run("run_1")] == ["syscall_attempted", "run_parked"]
+
+
+async def test_approved_retry_reuses_parked_attempt_instead_of_appending_another() -> None:
+    adapter = StubAdapter()
+    registry = StubRegistry(adapter)
+    journal = InMemoryJournalStore()
+    gateway = Gateway(journal=journal, vault=InMemoryVault(), registry=registry)
+    request = _req("draft_email", idem="idem-draft")
+
+    parked = await gateway.invoke(request, _ctx(ring="L1"))
+    executed = await gateway.invoke(request, _ctx(ring="L2"))
+
+    assert parked.parked is not None
+    assert executed.result is not None and executed.result.status == "ok"
+    events = await journal.read_run("run_1")
+    assert [event.kind for event in events] == ["syscall_attempted", "run_parked", "syscall_settled"]
+    assert sum(event.kind == "syscall_attempted" for event in events) == 1
 
 
 async def test_allowed_syscall_executes_with_injected_credential_and_journals_attempt_and_settle() -> None:

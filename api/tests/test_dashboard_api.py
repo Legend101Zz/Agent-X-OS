@@ -32,6 +32,8 @@ async def test_overview_and_instance_detail_are_kernel_projection_views(client: 
     assert instance["facts"][0]["provenance"]["run_id"] == "run_demo_settled"
     assert instance["billing"]["total"] == 250.0
     assert instance["approvals"][0]["run_id"] == "run_demo_parked"
+    assert instance["approvals"][0]["drafted_effect"]["syscall"] == "draft_email"
+    assert instance["approvals"][0]["drafted_effect"]["args"]["body"]
 
 
 async def test_approve_command_calls_kernel_control_and_updates_ledger(client: AsyncClient) -> None:

@@ -443,7 +443,7 @@ async def approval_cards(state: DashboardState, *, instance_id: str | None = Non
                 {
                     **item.model_dump(mode="json"),
                     "instance_id": current_instance_id,
-                    "drafted_effect": _drafted_effect(events),
+                    "drafted_effect": item.approval_card or _drafted_effect(events),
                     "timeline": [_timeline_event(event) for event in events],
                 }
             )

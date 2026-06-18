@@ -80,6 +80,12 @@ class Gateway:
         policy = policy_for(req.name)
         stamped = req.model_copy(update={"ring": ctx.ring, "risk_class": policy.risk_class})
 
+        prior = await self._prior_outcome(stamped, ctx)
+        if prior is not None:
+            return prior
+
+        attempted = await self._ensure_attempt(stamped, policy, ctx)
+
         if _RING_ORDER[ctx.ring] < _RING_ORDER[policy.required_ring]:
             return await self._park(
                 instance_id=ctx.instance_id,
@@ -87,11 +93,8 @@ class Gateway:
                 reason=f"{req.name} requires {policy.required_ring}",
                 required_ring=policy.required_ring,
                 ctx=ctx,
+                attempted=attempted,
             )
-
-        prior = await self._prior_outcome(stamped, ctx)
-        if prior is not None:
-            return prior
 
         channel_verdict = self._channel_rule(stamped, ctx)
         if channel_verdict.decision == "park":
@@ -101,6 +104,7 @@ class Gateway:
                 reason=channel_verdict.reason or "channel rule parked syscall",
                 required_ring=channel_verdict.required_ring,
                 ctx=ctx,
+                attempted=attempted,
             )
         if channel_verdict.decision == "deny":
             return GatewayOutcome(
@@ -111,7 +115,8 @@ class Gateway:
                     fulfilled_by="gateway_policy",
                     maturity_used=0,
                     error=channel_verdict.reason or "channel rule denied syscall",
-                )
+                ),
+                attempted=attempted,
             )
 
         if self._registry is None:
@@ -121,24 +126,10 @@ class Gateway:
                 reason="no syscall registry available",
                 required_ring=None,
                 ctx=ctx,
+                attempted=attempted,
             )
 
         adapter = self._registry.resolve(stamped, ctx)
-        attempted = cast(
-            SyscallAttempted,
-            await self._journal.append(
-                SyscallAttempted(
-                    event_id=f"{stamped.idempotency_key}:attempt",
-                    seq=0,
-                    ts=ctx.now,
-                    instance_id=ctx.instance_id,
-                    run_id=ctx.run_id,
-                    syscall=stamped.name,
-                    args=stamped.args,
-                    ring_required=policy.required_ring,
-                )
-            ),
-        )
         credential = await self._vault.get(ref=f"vault://{ctx.tenant_id}/{adapter.name}", tenant_id=ctx.tenant_id)
         result = await adapter.execute(stamped, credential)
         await self._receipts.save(SyscallReceipt.from_execution(stamped, result))
@@ -169,6 +160,7 @@ class Gateway:
         reason: str,
         required_ring: Ring | None,
         ctx: GatewayContext,
+        attempted: SyscallAttempted,
     ) -> GatewayOutcome:
         parked = await self._approval_gate.park_for_approval(
             instance_id=instance_id,
@@ -177,7 +169,35 @@ class Gateway:
             required_ring=required_ring,
             now=ctx.now,
         )
-        return GatewayOutcome(parked=parked)
+        return GatewayOutcome(parked=parked, attempted=attempted)
+
+    async def _ensure_attempt(
+        self,
+        req: SyscallRequest,
+        policy: SyscallPolicy,
+        ctx: GatewayContext,
+    ) -> SyscallAttempted:
+        event_id = f"{req.idempotency_key}:attempt"
+        for event in reversed(await self._journal.read_instance(ctx.instance_id)):
+            if isinstance(event, SyscallAttempted) and event.event_id == event_id:
+                if event.run_id != ctx.run_id or event.syscall != req.name or event.args != req.args:
+                    raise IdempotencyRequestConflict(req.idempotency_key)
+                return event
+        return cast(
+            SyscallAttempted,
+            await self._journal.append(
+                SyscallAttempted(
+                    event_id=event_id,
+                    seq=0,
+                    ts=ctx.now,
+                    instance_id=ctx.instance_id,
+                    run_id=ctx.run_id,
+                    syscall=req.name,
+                    args=req.args,
+                    ring_required=policy.required_ring,
+                )
+            ),
+        )
 
     async def _prior_outcome(self, req: SyscallRequest, ctx: GatewayContext) -> GatewayOutcome | None:
         receipt = await self._receipts.get(req.idempotency_key)

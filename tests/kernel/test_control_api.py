@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 
+from agentx_contracts.journal import SyscallAttempted
 from agentx_kernel.control import KernelControl
 from agentx_kernel.projections import Projections
 from agentx_kernel.stores.memory import InMemoryJournalStore, InMemoryProjectionStore
@@ -19,6 +20,18 @@ async def _control() -> tuple[KernelControl, InMemoryProjectionStore]:
 
 async def test_approval_inbox_lists_unresolved_human_approval_and_approve_resolves_it() -> None:
     control, _projection_store = await _control()
+    await control.journal.append(
+        SyscallAttempted(
+            event_id="idem-draft:attempt",
+            seq=0,
+            ts=NOW,
+            instance_id="inst_a",
+            run_id="run_1",
+            syscall="draft_email",
+            args={"to": "owner@example.com", "subject": "Lead", "body": "Real draft body"},
+            ring_required="L2",
+        )
+    )
     await HumanApprovalGate(control.journal).park_for_approval(
         instance_id="inst_a",
         run_id="run_1",
@@ -30,6 +43,11 @@ async def test_approval_inbox_lists_unresolved_human_approval_and_approve_resolv
     inbox = await control.approval_inbox(instance_id="inst_a")
     assert len(inbox.items) == 1
     assert inbox.items[0].run_id == "run_1"
+    assert inbox.items[0].approval_card == {
+        "syscall": "draft_email",
+        "args": {"to": "owner@example.com", "subject": "Lead", "body": "Real draft body"},
+        "idempotency_key": "idem-draft",
+    }
 
     action = await control.approve(
         instance_id="inst_a",
