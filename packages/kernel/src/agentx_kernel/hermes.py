@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import urllib.error
 import urllib.request
 from typing import Any, cast
 
@@ -73,11 +74,21 @@ class HermesClient:
         return _extract_content(response)
 
     async def complete_chat(self, *, messages: list[JsonObject], tools: list[JsonObject]) -> JsonObject:
-        """Drive one tool-calling turn; return the raw chat-completion response (the runner parses it)."""
-        response = await asyncio.to_thread(self._post, self.chat_payload(messages=messages, tools=tools))
-        return cast(JsonObject, response)
+        """Drive one tool-calling turn; return the raw chat-completion response (the runner parses it).
 
-    def _post(self, payload: dict[str, object]) -> dict[str, object]:
+        M3 tool-calling gets slow as the page-markdown history grows; retry once on a transient network
+        error so a single slow turn does not abort a multi-step agentic run.
+        """
+        payload = self.chat_payload(messages=messages, tools=tools)
+        last_exc: Exception | None = None
+        for _ in range(2):
+            try:
+                return cast(JsonObject, await asyncio.to_thread(self._post, payload))
+            except (TimeoutError, urllib.error.URLError, OSError) as exc:
+                last_exc = exc
+        raise RuntimeError(f"Hermes chat call failed after retries: {last_exc}")
+
+    def _post(self, payload: dict[str, object], timeout: int = 180) -> dict[str, object]:
         body = json.dumps(payload).encode("utf-8")
         request = urllib.request.Request(
             self.chat_completions_url,
@@ -88,7 +99,7 @@ class HermesClient:
             },
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=60) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             raw = response.read().decode("utf-8")
         parsed = json.loads(raw)
         if not isinstance(parsed, dict):

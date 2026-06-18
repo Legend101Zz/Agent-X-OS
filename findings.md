@@ -394,3 +394,18 @@ FULL assistant message (content incl. think + tool_calls) in its own message his
 (the fed-back SyscallResult) after each Call, and re-POSTs each step. One tool_call per step → one HarnessAction:
 `think`→Think, `call_tool`→Call(SyscallRequest), `claim_facts`→Claim (kernel STAMPS provenance: run_id/created_at/
 status=probation — LLM proposes fact content, kernel disposes), `finish`→Finish.
+
+### F5 first live runs — root-cause findings (2 live runs, real money)
+- VENDOR ICP (run_lead_finder default): LLM called lead_research_batch 4× then finished with NO claim →
+  postcondition `claimed_facts >= 1` fails → state=crashed. (Likely honest "no buyer found" for a hard vendor ICP,
+  but represented as a crash because the mandate requires an actionable-lead fact.)
+- DENTAL ICP (Pune): TURN 1 the LLM formed a STRONG specific query ("independent dental clinic Pune Maharashtra
+  own website appointment booking" + exclude directories) — query formation WORKS. TURN 2 search returned an
+  Instagram reel as the top "lead" (social leaked in; the LLM passed exclude_domains as `{"item":[...]}` — malformed —
+  so it wasn't honored). Then the LLM called `read_url` with EMPTY args `{}` (didn't copy the url) →
+  adapter `_str_arg(args,"url")` raised ValueError → **UNCAUGHT, crashed the whole invoke with a traceback**.
+- ROOT CAUSES: (A) gateway lets an adapter exception propagate and kill the run; (B) the run loop CRASHES on any
+  syscall error / non-ok read instead of FEEDING IT BACK to the harness — so the LLM can never self-correct a bad
+  step. Fix: gateway catches adapter exceptions → error SyscallResult; run loop feeds every syscall result
+  (ok/degraded/error) back as the next observation (only Escalate + max_steps terminate). Plus prompt: spell out
+  read_url needs {lead_id,url} copied from a search lead, and exclude_domains is a flat list of hostnames.

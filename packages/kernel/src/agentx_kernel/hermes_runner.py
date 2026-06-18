@@ -66,21 +66,57 @@ _TOOLS: list[JsonObject] = [
     {
         "type": "function",
         "function": {
-            "name": "call_tool",
+            "name": "search_leads",
             "description": (
-                "Propose a syscall INTENT (the kernel executes it and returns the result). "
-                "name is one of: lead_research_batch, read_url, draft_email."
+                "Web-search for candidate prospect ORGANISATIONS. Pass a SPECIFIC query targeting real "
+                "businesses' OWN websites — never articles, 'top 10' listicles, directories, or social media."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "name": {
-                        "type": "string",
-                        "enum": ["lead_research_batch", "read_url", "draft_email"],
+                    "query": {"type": "string", "description": "the search query"},
+                    "icp": {"type": "string"},
+                    "location": {"type": "string"},
+                    "exclude_domains": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "hostnames to exclude, e.g. ['justdial.com','practo.com']",
                     },
-                    "args": {"type": "object"},
+                    "count": {"type": "integer"},
                 },
-                "required": ["name", "args"],
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_url",
+            "description": "Read ONE candidate's page. Copy lead_id and url verbatim from a search result.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "lead_id": {"type": "string", "description": "id of a lead from the last search result"},
+                    "url": {"type": "string", "description": "that lead's url"},
+                },
+                "required": ["lead_id", "url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "draft_email",
+            "description": "DRAFT (never send) personalised outreach. Parks for human approval.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "to": {"type": "string"},
+                    "subject": {"type": "string"},
+                    "body": {"type": "string"},
+                    "lead_id": {"type": "string"},
+                },
+                "required": ["subject", "body", "lead_id"],
             },
         },
     },
@@ -139,14 +175,17 @@ def _system_prompt(ctx: FacultyContext) -> str:
         "You are the lead-finder faculty of Agent-X, an accountable agent OS. Find ONE genuinely "
         "founder-SENDABLE B2B lead for the target ICP and draft a grounded outreach email for owner approval.\n\n"
         f"Target ICP: {icp}. Location: {location or 'any'}. Leads wanted: {count}.\n\n"
-        "Act ONE STEP AT A TIME — call exactly ONE tool per turn (think, call_tool, claim_facts, finish).\n"
-        "Available syscalls for call_tool:\n"
-        "  - lead_research_batch(criteria, count): web search for candidate prospect ORGANISATIONS. "
-        "criteria = {icp, location, query, exclude_domains?}. Form a SPECIFIC query targeting real "
-        "businesses' OWN websites — never articles, 'top 10' listicles, directories, or social media.\n"
-        "  - read_url(lead_id, url): read ONE candidate's official page to extract a named decision-maker "
-        "or specific role, a reachable contact path (contact/booking/mailto/tel), and a concrete buying signal.\n"
-        "  - draft_email(to, subject, body, lead_id, mode='draft'): DRAFT (never send) personalised outreach.\n\n"
+        "Act ONE STEP AT A TIME — call exactly ONE tool per turn. Tools:\n"
+        "  - think(summary): a brief plan / reasoning note.\n"
+        "  - search_leads(query, icp, location, exclude_domains, count): web-search for real prospect "
+        "businesses' OWN websites. Pass a SPECIFIC query; exclude_domains is a flat list of hostnames.\n"
+        "  - read_url(lead_id, url): read ONE candidate's page — copy lead_id and url verbatim from a "
+        "search result — to extract a named decision-maker/role, a reachable contact path, and a buying signal.\n"
+        "  - draft_email(to, subject, body, lead_id): DRAFT (never send) personalised outreach.\n"
+        "  - claim_facts(facts): commit verified facts for the chosen lead.\n"
+        "  - finish(summary): end the run.\n"
+        "If a tool returns an error or empty/irrelevant results, refine the query and retry — never repeat the "
+        "same failing call.\n\n"
         "Hard rules:\n"
         "1. Research (read-only) BEFORE drafting. Ground EVERY claim and the email in text you actually read — "
         "never invent a name, signal, or URL.\n"
@@ -156,7 +195,9 @@ def _system_prompt(ctx: FacultyContext) -> str:
         "contact URL, and a citable buying signal. If you cannot ground all four, finish and say so honestly.\n"
         "4. draft_email is DRAFT ONLY (it parks for human approval). Address the real person/role, cite the real "
         "signal, include the reachable URL.\n"
-        "5. Before finishing successfully, claim_facts for the chosen lead (actionable_lead + qualified_lead_score)."
+        "5. Claim the chosen lead's facts with claim_facts (predicates actionable_lead + qualified_lead_score, "
+        "evidence quoted from what you actually read) BEFORE you call draft_email — drafting pauses the run for "
+        "human approval, so the claims must be committed first."
     )
 
 
@@ -243,22 +284,49 @@ class HermesSession:
         if name == "claim_facts":
             raw = args.get("facts")
             return Claim(facts=self._to_facts(raw if isinstance(raw, list) else []))
-        if name == "call_tool":
-            syscall = str(args.get("name", ""))
-            self._call_index += 1
-            return Call(
-                request=SyscallRequest(
-                    name=syscall,
-                    args=_json_obj(args.get("args")),
-                    instance_id=self.ctx.instance_id,
-                    run_id=self.ctx.run_id,
-                    idempotency_key=f"{self.ctx.run_id}:{syscall}:{self._call_index}",
-                    ring=self.ctx.ring,
-                    risk_class=_RISK_BY_SYSCALL.get(syscall, "read"),
-                )
+        if name == "search_leads":
+            criteria: JsonObject = {}
+            for key in ("icp", "location", "query"):
+                value = args.get(key)
+                if isinstance(value, str) and value:
+                    criteria[key] = value
+            excluded = args.get("exclude_domains")
+            if isinstance(excluded, list):
+                criteria["exclude_domains"] = [host for host in excluded if isinstance(host, str) and host]
+            raw_count = args.get("count")
+            count = raw_count if isinstance(raw_count, int) and raw_count > 0 else 5
+            return self._call("lead_research_batch", {"criteria": criteria, "count": count})
+        if name == "read_url":
+            return self._call(
+                "read_url", {"lead_id": str(args.get("lead_id", "")), "url": str(args.get("url", ""))}
+            )
+        if name == "draft_email":
+            return self._call(
+                "draft_email",
+                {
+                    "to": str(args.get("to", "founder-review@agent-x.local")),
+                    "subject": str(args.get("subject", "")),
+                    "body": str(args.get("body", "")),
+                    "lead_id": str(args.get("lead_id", "")),
+                    "mode": "draft",
+                },
             )
         # defensive: an unrecognised tool name is recorded as a thought rather than crashing the run.
         return Think(summary=f"unrecognised tool: {name}", detail={"args": _json_obj(args)})
+
+    def _call(self, syscall: str, args: JsonObject) -> Call:
+        self._call_index += 1
+        return Call(
+            request=SyscallRequest(
+                name=syscall,
+                args=args,
+                instance_id=self.ctx.instance_id,
+                run_id=self.ctx.run_id,
+                idempotency_key=f"{self.ctx.run_id}:{syscall}:{self._call_index}",
+                ring=self.ctx.ring,
+                risk_class=_RISK_BY_SYSCALL.get(syscall, "read"),
+            )
+        )
 
     def _to_facts(self, raw_facts: list[JsonValue]) -> list[Fact]:
         facts: list[Fact] = []

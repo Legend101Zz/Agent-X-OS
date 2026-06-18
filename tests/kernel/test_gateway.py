@@ -93,6 +93,28 @@ class StubRegistry:
         return self._adapter
 
 
+class RaisingAdapter(StubAdapter):
+    async def execute(self, req: SyscallRequest, cred: Credential | None) -> SyscallResult:
+        raise ValueError("missing string arg: url")
+
+
+async def test_adapter_exception_becomes_an_error_result_not_an_uncaught_crash() -> None:
+    # An adapter that raises (e.g. bad LLM-supplied args) must NOT crash the kernel — the gateway turns it
+    # into an error SyscallResult and still journals attempted + settled, so the run loop can feed it back.
+    registry = StubRegistry(RaisingAdapter())
+    journal = InMemoryJournalStore()
+
+    outcome = await Gateway(journal=journal, vault=InMemoryVault(), registry=registry).invoke(
+        _req("lead_research_batch"),
+        _ctx(ring="L0"),
+    )
+
+    assert outcome.result is not None
+    assert outcome.result.status == "error"
+    assert "missing string arg: url" in (outcome.result.error or "")
+    assert [event.kind for event in await journal.read_run("run_1")] == ["syscall_attempted", "syscall_settled"]
+
+
 async def test_ring_check_parks_before_registry_resolution() -> None:
     adapter = StubAdapter()
     registry = StubRegistry(adapter)

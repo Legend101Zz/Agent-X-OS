@@ -111,30 +111,50 @@ async def test_think_tool_call_becomes_a_think_action() -> None:
     assert "dental clinics" in action.summary
 
 
-async def test_call_tool_becomes_a_syscall_call_with_kernel_classification() -> None:
+async def test_search_leads_tool_becomes_a_lead_research_batch_call_with_built_criteria() -> None:
+    # Concrete per-syscall tools (real param schemas) so MiniMax reliably fills args (vs a free-form blob).
     runner, _ = _runner(
-        [_tool_response("call_tool", {"name": "lead_research_batch", "args": {"criteria": {"icp": "x"}, "count": 3}})]
+        [
+            _tool_response(
+                "search_leads",
+                {"query": "dental clinic Pune", "icp": "dental clinics", "location": "Pune", "count": 5},
+            )
+        ]
     )
     session = runner.start(context=_ctx(), faculties=[])
     action = await session.step(None)
     assert isinstance(action, Call)
-    assert action.request.name == "lead_research_batch"
-    assert action.request.risk_class == "read"  # kernel-classified from the syscall name
-    assert action.request.ring == "L1"  # the instance's current ring
+    assert action.request.name == "lead_research_batch"  # mapped to the syscall name for the gateway
+    assert action.request.risk_class == "read"
+    assert action.request.ring == "L1"
     assert action.request.instance_id == "inst_a"
-    assert action.request.run_id == "run_1"
-    assert action.request.idempotency_key  # kernel-supplied, stable
+    assert action.request.idempotency_key
+    criteria = action.request.args["criteria"]
+    assert isinstance(criteria, dict)
+    assert criteria["query"] == "dental clinic Pune"
+    assert action.request.args["count"] == 5
 
 
-async def test_draft_email_call_is_classified_external_message() -> None:
+async def test_read_url_tool_becomes_a_read_url_call() -> None:
+    runner, _ = _runner([_tool_response("read_url", {"lead_id": "galaxy", "url": "https://galaxy.example"})])
+    session = runner.start(context=_ctx(), faculties=[])
+    action = await session.step(None)
+    assert isinstance(action, Call)
+    assert action.request.name == "read_url"
+    assert action.request.risk_class == "read"
+    assert action.request.args == {"lead_id": "galaxy", "url": "https://galaxy.example"}
+
+
+async def test_draft_email_tool_is_classified_external_message_and_forces_draft_mode() -> None:
     runner, _ = _runner(
-        [_tool_response("call_tool", {"name": "draft_email", "args": {"to": "x", "subject": "s", "body": "b"}})]
+        [_tool_response("draft_email", {"to": "x", "subject": "s", "body": "b", "lead_id": "galaxy"})]
     )
     session = runner.start(context=_ctx(), faculties=[])
     action = await session.step(None)
     assert isinstance(action, Call)
     assert action.request.name == "draft_email"
     assert action.request.risk_class == "external_message"
+    assert action.request.args["mode"] == "draft"
 
 
 async def test_claim_facts_become_a_claim_with_kernel_stamped_provenance() -> None:
@@ -188,7 +208,7 @@ async def test_a_response_with_no_tool_call_is_treated_as_an_implicit_think() ->
 async def test_observation_is_fed_back_as_a_tool_message_and_reasoning_is_preserved() -> None:
     runner, transport = _runner(
         [
-            _tool_response("call_tool", {"name": "lead_research_batch", "args": {"criteria": {}, "count": 1}}, "step1"),
+            _tool_response("search_leads", {"query": "dental clinic Pune", "count": 1}, "step1"),
             _tool_response("finish", {"summary": "done"}, "step2"),
         ]
     )
@@ -310,7 +330,7 @@ async def test_run_loop_drives_hermes_through_a_live_trajectory_to_an_approval_p
         "confidence": 0.9,
         "evidence": ["accepting new patients", "https://galaxy.example/contact"],
     }
-    draft_args = {
+    draft_args: dict[str, object] = {
         "to": "x",
         "subject": "Outreach to Galaxy Dental",
         "body": "Hi Dr. Asha Kulkarni, I noticed you are accepting new patients...",
@@ -319,10 +339,10 @@ async def test_run_loop_drives_hermes_through_a_live_trajectory_to_an_approval_p
     }
     responses = [
         _tool_response("think", {"summary": "plan: search Pune dental clinics"}),
-        _tool_response("call_tool", {"name": "lead_research_batch", "args": {"criteria": {"icp": "dental"}}}),
-        _tool_response("call_tool", {"name": "read_url", "args": {"lead_id": "galaxy", "url": "https://galaxy.example"}}),
+        _tool_response("search_leads", {"query": "dental clinic Pune", "icp": "dental"}),
+        _tool_response("read_url", {"lead_id": "galaxy", "url": "https://galaxy.example"}),
         _tool_response("claim_facts", {"facts": [score, actionable]}),
-        _tool_response("call_tool", {"name": "draft_email", "args": draft_args}),
+        _tool_response("draft_email", draft_args),
     ]
     runner, _ = _runner(responses)
     instance = InstanceBinding(instance_id="inst_a", type_ref="lead-finder@0.1.0", ring="L1", heap_region_id="heap_a")

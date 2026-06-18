@@ -130,8 +130,21 @@ class Gateway:
             )
 
         adapter = self._registry.resolve(stamped, ctx)
-        credential = await self._vault.get(ref=f"vault://{ctx.tenant_id}/{adapter.name}", tenant_id=ctx.tenant_id)
-        result = await adapter.execute(stamped, credential)
+        try:
+            credential = await self._vault.get(
+                ref=f"vault://{ctx.tenant_id}/{adapter.name}", tenant_id=ctx.tenant_id
+            )
+            result = await adapter.execute(stamped, credential)
+        except Exception as exc:  # noqa: BLE001 — the gateway is the boundary: an adapter/credential
+            # failure (e.g. bad LLM-supplied args) must become an error result, never crash the kernel.
+            result = SyscallResult(
+                status="error",
+                output={},
+                idempotency_key=stamped.idempotency_key,
+                fulfilled_by=adapter.name,
+                maturity_used=0,
+                error=f"{type(exc).__name__}: {exc}",
+            )
         await self._receipts.save(SyscallReceipt.from_execution(stamped, result))
         settled = cast(
             SyscallSettled,

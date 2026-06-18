@@ -121,5 +121,17 @@
   HermesClient.complete_chat transport. Wired run_lead_finder.py + _eval_d_inspect.py to runner=HermesRunner(...).
 - F4 OFFLINE GATE GREEN: ruff clean · mypy --strict 95 files · pytest 97 passed +2 skip (+16 new G1 tests) · lint-imports
   3/3 · seam proof green on the OwnHarness double. Frozen contracts UNTOUCHED. Committed + pushed to main.
-- ⏳ NEXT: F5 live runs (2 ICPs, real money) for the honest founder-sendable verdict; F6 docs reconcile (flip G1; G4 only
-  if truly sendable); F7 ship. Then optional Step B (G2).
+- F5 LIVE (real money, 5 live runs): root-caused + TDD-fixed 3 bugs the live loop exposed — (1) adapter exception
+  crashed the run → gateway now returns an error result; (2) loop crashed on syscall errors → now FEEDS them back so
+  the LLM recovers; (3) LLM sent empty args to free-form `call_tool` → replaced with CONCRETE per-syscall tools
+  (search_leads/read_url/draft_email) with real schemas. Plus: prompt orders claim_facts BEFORE draft_email; transport
+  retries once on transient MiniMax timeout (timeout 180s). After fixes BOTH Session-E ICPs produced founder-SENDABLE,
+  evidence-grounded drafts: dental = Microdent Dentistry, Pune (SETTLED, 2 provenance facts, watch registered); vendor =
+  AMP, DeKalb IL (parked→settles on approval; COMPETITOR REJECTION fixed — picked a buyer, not Callbox/Belkins). vs
+  Session E 0/6. Honest caveats: depends on search quality; dental signal partly interpretive.
+- F6: live Hermes gate (RUN_LIVE_HERMES=1) 4 passed; offline gate after fixes: ruff · mypy 95 · pytest 100+2skip ·
+  lint-imports 3/3 · seam proof green. Scratch instruments kept: scripts/_f_diag_live.py, _f_smoke_hermes_tools.py.
+- DOCS reconciled: STATE_AND_ROADMAP G1→✅, G4→✅ (Step A done, Step C sendable-proven), Phase-1 checklist updated,
+  Session F banner; SESSION_F_LIVE_PROOF.md (F0–F6 full evidence); findings.md (MiniMax API + live root-causes).
+- SHIP: pushed to main (no PR). NEXT SESSION = Step B (G2): repeatable runner + first-class kernel parked-run resume
+  + scheduler-min worker (build on Session E's SyscallReceiptStore) toward ~100 settles; then Step D maturation half.

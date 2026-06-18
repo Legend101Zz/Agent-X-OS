@@ -50,9 +50,13 @@ draft. LLM proposes; deterministic code disposes (invariant #4).
   PlaybookHarnessSession. Draft moved out of run loop → build_outreach_call. `runner` field + bootstrap arg.
 - F3 DONE: kernel-side HermesRunner/HermesSession (HarnessRunner Protocol); MiniMax tool-calling → HarnessAction;
   kernel stamps fact provenance. HermesClient.complete_chat transport. 3 scripts wired to runner=HermesRunner(...).
-- F4 DONE: offline gate GREEN (ruff · mypy 95 · pytest 97+2skip · lint 3/3 · seam proof green). G1 machinery
-  implemented + offline-proven. Committing + pushing to main now.
-Current phase: F5 — money-spending LIVE runs (2 ICPs) for the honest founder-sendable verdict.
+- F4 DONE: offline gate GREEN; G1 machinery committed + pushed to main (ca499d6).
+- F5 DONE: live runs exposed + TDD-fixed 3 bugs (gateway catches adapter exceptions; loop feeds syscall errors back;
+  concrete per-syscall tools replace free-form call_tool). Prompt orders claim-before-draft; transport retry+180s.
+  BOTH Session-E ICPs now produce founder-SENDABLE evidence-grounded drafts (dental Microdent SETTLED; vendor AMP
+  parked, competitor rejection fixed) vs Session E 0/6. Honest caveats noted.
+- F6 DONE: live Hermes gate 4 passed; offline gate green (pytest 100+2skip). Docs reconciled (G1→✅, G4→✅).
+Current phase: F7 — ship (commit + push) + emit next-session prompt. NEXT SESSION = Step B (G2).
 
 ## Errors Encountered
 | Error | Attempt | Resolution |

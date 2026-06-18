@@ -294,30 +294,17 @@ class Phase1RunInvoker:
             },
         )
         if outcome.result.status == "error":
+            # Agent-loop resilience: a failed syscall is FED BACK to the harness (an LLM can recover and
+            # retry within max_steps), not crashed. Only Escalate + the max_steps bound terminate a run.
             _trace(
                 trace,
                 trigger.ts,
                 "error",
                 f"{action.request.name} failed",
-                {"error": outcome.result.error or "unknown"},
+                {"error": outcome.result.error or "unknown", "status": outcome.result.status},
             )
-            return (
-                RunResult(run_id=ctx.run_id, state="crashed", trace=trace, claimed_facts=claimed_facts),
-                None,
-            )
-        if action.request.risk_class == "read":
-            if outcome.result.status != "ok":
-                _trace(
-                    trace,
-                    trigger.ts,
-                    "error",
-                    f"{action.request.name} did not return live research",
-                    {"status": outcome.result.status, "fulfilled_by": outcome.result.fulfilled_by},
-                )
-                return (
-                    RunResult(run_id=ctx.run_id, state="crashed", trace=trace, claimed_facts=claimed_facts),
-                    None,
-                )
+            return None, outcome.result
+        if action.request.risk_class == "read" and outcome.result.status == "ok":
             _apply_read_result(ctx, action.request, outcome.result.output)
         return None, outcome.result
 

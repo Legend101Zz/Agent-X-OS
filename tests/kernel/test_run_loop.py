@@ -113,6 +113,18 @@ class DraftAdapter:
         return Health(status="ok", checked_at=NOW)
 
 
+class ErroringDraftAdapter(DraftAdapter):
+    async def execute(self, req: SyscallRequest, cred: Credential | None) -> SyscallResult:
+        return SyscallResult(
+            status="error",
+            output={},
+            idempotency_key=req.idempotency_key,
+            fulfilled_by=self.name,
+            maturity_used=1,
+            error="provider down",
+        )
+
+
 class SingleAdapterRegistry:
     def __init__(self) -> None:
         self._adapter: Adapter = DraftAdapter()
@@ -261,3 +273,49 @@ async def test_runinvoker_disposes_an_injected_runner_trajectory_not_a_hardcoded
     assert any(e.kind == "thought" and "deciding the trajectory" in e.summary for e in result.trace.events)
     assert result.settlement is not None
     assert any(f.predicate == "qualified_lead_score" for f in result.settlement.facts)
+
+
+async def test_syscall_error_is_fed_back_to_the_harness_not_crashed() -> None:
+    # An agent loop must not crash on a failed syscall — the kernel traces it and feeds the error result
+    # back so the harness (an LLM) can recover. Here a recorded double simply proceeds to claim + finish.
+    instance = _instance("L2")
+    trigger = DeadlineTrigger(ts=NOW, reason="sweep", entity_id="lead_1")
+    run_id = _run_id(instance, trigger)
+    fact = Fact(
+        id=f"{run_id}:lead_1:score",
+        instance_id="inst_a",
+        subject="lead_1",
+        predicate="qualified_lead_score",
+        object="0.9",
+        confidence=0.9,
+        source="agent-inferred",
+        provenance=Provenance(run_id=run_id, evidence=["signal"]),
+        status="probation",
+        created_at=NOW,
+    )
+    runner = OwnHarness(
+        recorded=[
+            Call(
+                request=SyscallRequest(
+                    name="draft_email",
+                    args={"lead_id": "lead_1", "body": "b"},
+                    instance_id="inst_a",
+                    run_id="seed",
+                    idempotency_key="seed:draft_email",
+                    ring="L2",
+                    risk_class="external_message",
+                )
+            ),
+            Claim(facts=[fact]),
+            Finish(),
+        ]
+    )
+    registry = SingleAdapterRegistry()
+    registry.register(ErroringDraftAdapter())
+    result = await build_phase1_runinvoker(registry=registry, runner=runner).invoke(
+        mandate=_mandate(), instance=instance, trigger=trigger, mode="sim"
+    )
+
+    assert result.state == "settled"  # the syscall error did NOT crash the run
+    assert any(e.kind == "error" and "draft_email" in e.summary for e in result.trace.events)
+    assert result.settlement is not None and any(f.predicate == "qualified_lead_score" for f in result.settlement.facts)

@@ -88,4 +88,76 @@ G1 machinery is implemented + offline-proven. **Next: F5 — money-spending LIVE
 LLM-driven loop now produces a founder-SENDABLE lead per ICP (the honest quality verdict).**
 
 ---
-<!-- F5..F7 live evidence appended below -->
+## F5 — LIVE runs (real money) + bugs found & fixed + the honest quality verdict
+
+Driving the loop live exposed real defects that only appear when the LLM (not a deterministic faculty)
+forms the trajectory. Each was root-caused (systematic-debugging) and fixed with TDD:
+
+1. **Adapter exception crashed the whole run.** The LLM called `read_url` with empty args; the adapter raised
+   `ValueError: missing string arg: url`, propagating UNCAUGHT and killing the run. Fix: the gateway now turns
+   any adapter/credential exception into an error `SyscallResult` (test:
+   `test_adapter_exception_becomes_an_error_result_not_an_uncaught_crash`).
+2. **The loop crashed on syscall errors instead of letting the LLM recover.** An agent loop must FEED a failed
+   syscall back so the model can retry. Fix: `_dispose` feeds every result (ok/degraded/error) back as the next
+   observation; only Escalate + the max_steps bound terminate (test:
+   `test_syscall_error_is_fed_back_to_the_harness_not_crashed`).
+3. **The LLM sent empty args to a free-form `call_tool(name, args)`.** MiniMax won't reliably fill a schema-less
+   `args` blob (research: it honors the *function parameters* schema). Fix: replaced `call_tool` with CONCRETE
+   per-syscall tools (`search_leads` / `read_url` / `draft_email`) with real parameter schemas. After this the
+   model reliably passed specific queries and copied lead_id+url verbatim.
+4. **The LLM drafted before claiming.** `draft_email` parks (terminal), so claims after it never happened. Fix:
+   prompt orders `claim_facts` BEFORE `draft_email`.
+5. **Transient MiniMax timeout aborted a run.** M3 tool-calling slows as page-markdown history grows; the 60s
+   `urllib` timeout fired and crashed. Fix: `complete_chat` retries once on a transient network error; timeout 180s.
+
+### ICP #2 — independent dental clinics, Pune (the grounding test) — ✅ SENDABLE, SETTLED
+
+Full LLM-driven trajectory (`scripts/_eval_d_inspect.py`, run `agentx_evald_1781798034`): `think` → `search_leads`
+(specific query + exclude_domains) → `read_url` (naikdental) → `read_url` (smileuday) → `search_leads` (REFINED:
+Kothrud/Aundh/Baner/Hinjewadi) → `read_url` (gobestdentist) → `read_url` (microdentdentistry.com) → `claim_facts`
+(2) → `draft_email` → **parked** (L1<L2) → approved → resumed → `VERIFY_PASSED=True` → **SETTLED (seq 21)**.
+
+The lead — **Microdent Dentistry, Karve Road (Kothrud), Pune** — judged honestly vs the rubric:
+- real org ✅ (verified on the clinic's own homepage); decision-maker grounded in evidence ✅
+  (*"He is the founder of Microdent Dentistry®"* — Dr. Rohit Joshi, quoted in the `actionable_lead` fact provenance);
+- reachable URL ✅ (enquiry form `https://microdentdentistry.com/enquiry/` + phone, read from the page);
+- citable buying signal ✅ (active patient-education blog + a manual "Download Treatment Cost Sheet" lead-magnet +
+  "5000+ patients / 11+ years" — all quoted in provenance). The signal is partly *interpretive* (fit/readiness,
+  not a hard "we're hiring/expanding"), and `qualified_lead_score=0.86` honestly notes it did not confirm a direct
+  email. **A founder could send this draft.** 2 provenance-stamped heap facts (probation), WATCH registered (72h),
+  resume trust_score=1. This is a clear, honest improvement over Session E (0 sendable; competitors / ungrounded
+  salutation). Targets (a) better query and (c) grounded personalization: MET.
+
+### ICP #1 — vendor-shaped dogfood ICP (the competitor-rejection test)
+
+First attempt cut short by the transient MiniMax timeout (fixed, item 5). Trajectory before the timeout showed
+**competitor-rejection WORKING**: the LLM planned to target "SMBs/founders/agencies that would BUY an AI
+lead-finder (NOT other lead-gen vendors)", searched for a company hiring an SDR, rejected a "Top 100 Agencies"
+listicle, and was reading a real small agency (digitaldrewsem.com) — i.e. it sought a BUYER, not a competitor
+(Session E returned competitors Callbox/Belkins). Target (b) competitor rejection: behaviourally MET.
+Clean rerun (`scripts/_f_diag_live.py`, run `agentx_f_1781798424`) AFTER the retry fix — ✅ SENDABLE:
+trajectory `think` ("exclude lead-gen vendors (competitors)") → `search_leads` → `read_url` (AMP careers) →
+`read_url` (AMP CEO's-Corner blog) → `search_leads` (find contact page) → `read_url` (AMP contact) →
+`claim_facts` (2, before drafting) → `draft_email` → **parked** (would settle on approval, as the dental run did).
+
+The lead — **American Marketing & Publishing, LLC (AMP), DeKalb IL** — a 350-employee SMB with a 19-state
+outside-sales operation (a genuine BUYER of a lead-finder, NOT a competitor). Judged vs the rubric: real org ✅;
+decision-maker grounded ✅ (CEO Abe Andrzejewski, *"written by: Abe Andrzejewski"*); reachable URL ✅ (contact
+form + phone (815) 756-2840, read from the contact page); genuine buying signal ✅✅ (*"the highest volume of
+digital sales ever made in AMP's history"* + *"discuss how to double the size of AMP over the next four years"* —
+quoted from the CEO blog). qualified_lead_score=0.82. **A founder could send this.** Competitor rejection (the
+exact Session-E failure, Callbox/Belkins) is now demonstrably fixed.
+
+### F5 honest verdict
+The LLM now genuinely drives the loop and **both Session-E ICPs produced ≥1 founder-sendable, evidence-grounded
+draft** (dental = Microdent, settled; vendor = AMP, parked→settles on approval) — vs Session E's **0/6**. Targets
+(a) better query, (b) competitor rejection, (c) grounded personalization: all MET. Honest caveats: quality still
+depends on search results (the LLM had to refine queries and read 3–4 pages each run; some results were junk it
+correctly skipped); the dental "buying signal" is partly interpretive (fit/readiness) while the vendor one is a
+hard growth signal; runs are slow (~2–3 min, multi-step) and the page-markdown history grows each turn. Not
+bulletproof, but a real, repeatable improvement — G4 is now achievable because G1 landed.
+
+## F6 — Live Hermes gate
+`RUN_LIVE_HERMES=1 uv run pytest tests/kernel/test_hermes_client.py` → **4 passed** (real MiniMax-M3 call). A live
+tool-calling smoke (`scripts/_f_smoke_hermes_tools.py`) confirmed M3 returns OpenAI `tool_calls` + `<think>` as
+designed. Offline gate (post-fixes): ruff · mypy 95 · pytest 100 passed +2 skip · lint-imports 3/3 · seam proof green.
