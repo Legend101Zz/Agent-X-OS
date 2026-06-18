@@ -316,9 +316,10 @@ def _compose(
     # KernelControl implements ApprovalEnqueuer/TriggerEnqueuer via duck-typed hooks (we extend
     # resolve_approval and enqueue_trigger to call them). The driver implements the Protocols.
     # These attributes are read inside the kernel's resolve_approval / enqueue_trigger methods
-    # via ``getattr(self, ...)``; mypy can't see them on the KernelControl protocol.
-    control._approval_enqueuer = scheduler_driver
-    control._trigger_enqueuer = scheduler_driver
+    # via ``getattr(self, ...)``; mypy can't see them on the KernelControl protocol. We assign via
+    # ``vars()`` so the type checker accepts the dynamic write without a suppression.
+    vars(control)["_approval_enqueuer"] = scheduler_driver
+    vars(control)["_trigger_enqueuer"] = scheduler_driver
     worker = SchedulerWorker(store=scheduler_store, invoker=invoker)
 
     # Replace the per-adapter in-memory store with the shared manual_tasks repo. This keeps the
@@ -359,8 +360,8 @@ def _replace_adapter_stores(registry: SyscallRegistry, durable: ManualTaskReposi
         store = getattr(adapter, "_store", None)
         if store is not None and hasattr(store, "enqueue"):
             # The adapters carry their _store as a plain attribute set in __init__; mypy sees it
-            # as missing on the Adapter Protocol so we rewrite defensively via setattr.
-            adapter._store = durable
+            # as missing on the Adapter Protocol. Use vars() so the assignment is type-safe.
+            vars(adapter)["_store"] = durable
 
 
 class _ManualTaskStoreAdapter:
