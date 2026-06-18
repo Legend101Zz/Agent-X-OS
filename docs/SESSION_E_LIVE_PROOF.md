@@ -276,9 +276,18 @@ ONE /instances ROW (as the dashboard renders it):
 with its settled run, facts, and registered watch. P1-3 proven. (The instance carries the customer-target
 `ring=L1` copy; the canonical type is registered separately in `mandate_type`.)
 
-## Step 6 — Live Hermes gate
+## Step 6 — Live Hermes gate — ✅ GREEN
 
-_pending_
+```
+$ RUN_LIVE_HERMES=1 uv run pytest tests/kernel/test_hermes_client.py -v
+tests/kernel/test_hermes_client.py::test_hermes_client_builds_openai_compatible_payload_and_endpoint PASSED [ 33%]
+tests/kernel/test_hermes_client.py::test_hermes_client_from_settings_requires_key_base_url_and_model PASSED [ 66%]
+tests/kernel/test_hermes_client.py::test_live_hermes_chat_completion PASSED [100%]
+============================== 3 passed in 2.39s ===============================
+EXIT=0
+```
+`test_live_hermes_chat_completion` ran live (PASSED, not SKIPPED) against MiniMax with the configured
+`MINIMAX_API_KEY`/`FACULTY_MODEL_*`. The same client backed every `thought` step in the Step-3 live runs.
 
 ## Step 7 — Final ship gate + merge
 
