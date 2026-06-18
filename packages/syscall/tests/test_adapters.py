@@ -15,6 +15,8 @@ from agentx_syscall.adapters import (
     ResearchLead,
     ResearchPage,
     ResearchProvider,
+    _parse_page,
+    _parse_search_results,
 )
 
 
@@ -100,8 +102,22 @@ async def test_read_url_uses_provider() -> None:
 
 
 @pytest.mark.asyncio
+async def test_read_url_preserves_lead_identity_for_enrichment_merge() -> None:
+    provider: ResearchProvider = FakeResearchProvider()
+    adapter = ReadUrlAdapter(providers=[provider])
+
+    result = await adapter.execute(
+        _req("read_url", {"lead_id": "lead_7", "url": "https://clinic.example"}),
+        cred=None,
+    )
+
+    assert result.output["lead_id"] == "lead_7"
+
+
+@pytest.mark.asyncio
 async def test_draft_email_never_sends() -> None:
     adapter = DraftEmailAdapter()
+    assert adapter.required_ring == "L2"
 
     result = await adapter.execute(
         _req(
@@ -153,3 +169,28 @@ async def test_human_task_adapter_is_bottom_rung_for_every_intent() -> None:
     assert result.status == "queued_manual"
     assert result.fulfilled_by == "human_task"
     assert result.output["task_id"] in {task.id for task in store.list_open()}
+
+
+def test_firecrawl_v2_search_and_page_metadata_are_normalized() -> None:
+    response = {
+        "web": [
+            {
+                "markdown": "# Galaxy Dental Clinic\nAccepting new patients.",
+                "metadata": {
+                    "title": "Galaxy Dental Clinic | Pune",
+                    "sourceURL": "https://galaxydental.example",
+                    "description": "Independent dental clinic in Pune",
+                },
+                "links": ["https://galaxydental.example/contact"],
+            }
+        ]
+    }
+
+    leads = _parse_search_results(response, provider="firecrawl", count=1)
+    page = _parse_page(response["web"][0], url="https://fallback.example", provider="firecrawl")
+
+    assert leads[0].name == "Galaxy Dental Clinic | Pune"
+    assert leads[0].url == "https://galaxydental.example"
+    assert "Accepting new patients" in leads[0].evidence[-1]
+    assert page.title == "Galaxy Dental Clinic | Pune"
+    assert page.url == "https://galaxydental.example"

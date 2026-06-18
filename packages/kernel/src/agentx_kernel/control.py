@@ -12,11 +12,13 @@ from typing import cast
 import agentx_db.collections as c
 from agentx_contracts.base import AgentXModel
 from agentx_contracts.enums import Ring
-from agentx_contracts.journal import ApprovalResolved, ManagerAction, RunParked
+from agentx_contracts.journal import ApprovalResolved, ManagerAction, RunParked, SyscallAttempted
 from agentx_contracts.jsontypes import JsonObject
+from agentx_contracts.mandate import InstanceBinding, MandateInstance, MandateType
 
 from .ports import JournalStore, ProjectionStore
 from .projections import Projections
+from .registry import MandateRegistry
 
 
 class ApprovalItem(AgentXModel):
@@ -24,6 +26,7 @@ class ApprovalItem(AgentXModel):
     reason: str
     required_ring: Ring | None = None
     seq: int
+    approval_card: JsonObject | None = None
 
 
 class ApprovalInbox(AgentXModel):
@@ -50,23 +53,60 @@ class KernelControl:
         self.journal = journal
         self._projections = projections
         self._projection_store = projection_store
+        self._registry = MandateRegistry(projection_store)
+
+    async def register_mandate_type(self, mandate: MandateType) -> MandateType:
+        return await self._registry.register_type(mandate)
+
+    async def list_mandate_types(self) -> list[MandateType]:
+        return await self._registry.list_types()
+
+    async def instantiate_mandate(self, instance: MandateInstance) -> MandateInstance:
+        return await self._registry.instantiate(instance)
+
+    async def list_mandate_instances(self, *, customer_id: str | None = None) -> list[MandateInstance]:
+        return await self._registry.list_instances(customer_id=customer_id)
+
+    async def instance_binding(self, instance_id: str) -> InstanceBinding:
+        return await self._registry.binding(instance_id)
 
     async def approval_inbox(self, *, instance_id: str) -> ApprovalInbox:
         events = await self.journal.read_instance(instance_id)
         resolved = {event.run_id for event in events if isinstance(event, ApprovalResolved)}
-        items = [
-            ApprovalItem(
-                run_id=event.run_id or "",
-                reason=event.reason,
-                required_ring=event.required_ring,
-                seq=event.seq,
+        items: list[ApprovalItem] = []
+        for index, event in enumerate(events):
+            if (
+                not isinstance(event, RunParked)
+                or event.awaiting != "human_approval"
+                or event.run_id is None
+                or event.run_id in resolved
+            ):
+                continue
+            attempted = next(
+                (
+                    prior
+                    for prior in reversed(events[:index])
+                    if isinstance(prior, SyscallAttempted) and prior.run_id == event.run_id
+                ),
+                None,
             )
-            for event in events
-            if isinstance(event, RunParked)
-            and event.awaiting == "human_approval"
-            and event.run_id is not None
-            and event.run_id not in resolved
-        ]
+            card: JsonObject | None = None
+            if attempted is not None:
+                idempotency_key = attempted.event_id.removesuffix(":attempt")
+                card = {
+                    "syscall": attempted.syscall,
+                    "args": attempted.args,
+                    "idempotency_key": idempotency_key,
+                }
+            items.append(
+                ApprovalItem(
+                    run_id=event.run_id,
+                    reason=event.reason,
+                    required_ring=event.required_ring,
+                    seq=event.seq,
+                    approval_card=card,
+                )
+            )
         return ApprovalInbox(instance_id=instance_id, items=items)
 
     async def instance_file(self, *, instance_id: str) -> InstanceFile:

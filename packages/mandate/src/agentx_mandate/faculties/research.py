@@ -29,6 +29,15 @@ def _target_count(target: JsonObject, default: int = 3) -> int:
     return default
 
 
+def _prospect_subject(icp: str) -> str:
+    normalized = icp.lower()
+    if "dental" in normalized or "clinic" in normalized:
+        return "dental clinic"
+    if "agency" in normalized or "lead-finder" in normalized or "lead generation" in normalized:
+        return "lead generation agency"
+    return icp
+
+
 def propose(ctx: FacultyContext) -> list[HarnessAction]:
     """Emit the lead-research READ INTENT only — never fabricate leads (invariant: LLM proposes,
     deterministic code disposes; real leads come from the harness/gateway, not from the faculty).
@@ -41,6 +50,20 @@ def propose(ctx: FacultyContext) -> list[HarnessAction]:
     target = dict(ctx.target)
     count = _target_count(target)
     criteria: JsonObject = {key: value for key, value in target.items() if key != "count"}
+    icp = str(criteria.get("icp", "qualified B2B prospects"))
+    location = str(criteria.get("location", "")).strip()
+    subject = _prospect_subject(icp)
+    criteria["query"] = " ".join(
+        part for part in (location, subject, "official website contact book appointment consultation") if part
+    )
+    criteria["exclude_domains"] = [
+        "youtube.com",
+        "instagram.com",
+        "facebook.com",
+        "linkedin.com",
+        "reddit.com",
+        "medium.com",
+    ]
     return [
         Call(
             request=SyscallRequest(

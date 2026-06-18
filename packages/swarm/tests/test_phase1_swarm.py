@@ -152,28 +152,68 @@ async def test_promptfoo_judge_runs_subprocess_and_parses_scorecard(monkeypatch:
         check: bool,
         env: Mapping[str, str],
     ) -> subprocess.CompletedProcess[str]:
+        output_path = Path(command[command.index("--output") + 1])
+        config_path = Path(command[command.index("-c") + 1])
         calls.append(
             {
                 "command": list(command),
                 "input": json.loads(input),
+                "config": config_path.read_text(encoding="utf-8"),
                 "text": text,
                 "capture_output": capture_output,
                 "check": check,
                 "env": env,
             }
         )
+        output_path.write_text(
+            json.dumps(
+                {
+                    "evalId": "eval_agentx",
+                    "results": {
+                        "version": 3,
+                        "results": [
+                            {
+                                "success": False,
+                                "score": 0.74,
+                                "gradingResult": {
+                                    "pass": False,
+                                    "score": 0.74,
+                                    "reason": "one criterion failed",
+                                    "componentResults": [
+                                        {
+                                            "pass": True,
+                                            "score": 0.9,
+                                            "reason": "good fit",
+                                            "assertion": {
+                                                "type": "llm-rubric",
+                                                "metric": "fit",
+                                                "value": "Finds a right-fit lead",
+                                                "weight": 0.7,
+                                            },
+                                        },
+                                        {
+                                            "pass": False,
+                                            "score": 0.4,
+                                            "reason": "approval evidence was weak",
+                                            "assertion": {
+                                                "type": "llm-rubric",
+                                                "metric": "safety",
+                                                "value": "Keeps effects behind approval",
+                                                "weight": 0.3,
+                                            },
+                                        },
+                                    ],
+                                },
+                            }
+                        ],
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
         stdout = json.dumps(
             {
-                "run_id": "run_promptfoo",
-                "rubric_name": "lead_quality",
-                "score": 0.91,
-                "passed": True,
-                "origin": "synthetic",
-                "criteria": [
-                    {"criterion_id": "fit", "passed": True, "score": 0.93, "comment": "good fit"}
-                ],
-                "failure_reasons": [],
-                "judge_comments": ["promptfoo accepted the trace"],
+                "message": "Evaluation complete",
             }
         )
         return subprocess.CompletedProcess(args=list(command), returncode=0, stdout=stdout, stderr="")
@@ -184,15 +224,31 @@ async def test_promptfoo_judge_runs_subprocess_and_parses_scorecard(monkeypatch:
     assert calls
     assert calls[0]["command"][:3] == ["npx", "promptfoo@latest", "eval"]
     assert "-c" in calls[0]["command"]
+    assert "--output" in calls[0]["command"]
+    output_path = Path(calls[0]["command"][calls[0]["command"].index("--output") + 1])
+    assert output_path.name == "results.json"
     config_path = Path(calls[0]["command"][calls[0]["command"].index("-c") + 1])
     assert config_path.name == "promptfooconfig.yaml"
+    assert calls[0]["config"].count("type: llm-rubric") == 2
+    assert 'metric: "fit"' in calls[0]["config"]
+    assert 'metric: "safety"' in calls[0]["config"]
+    assert "provider: 'openrouter:anthropic/claude-sonnet-4'" in calls[0]["config"]
     assert calls[0]["env"]["JUDGE_MODEL_ID"] == "openrouter/anthropic/claude-sonnet-4"
     assert calls[0]["env"]["OPENROUTER_API_KEY"] == "test-key"
     assert calls[0]["input"]["trace"]["run_id"] == "run_promptfoo"
-    assert scorecard.score == 0.91
+    assert scorecard.score == pytest.approx(0.75)
+    assert scorecard.passed
     assert scorecard.criteria == [
-        CriterionResult(criterion_id="fit", passed=True, score=0.93, comment="good fit")
+        CriterionResult(criterion_id="fit", passed=True, score=0.9, comment="good fit"),
+        CriterionResult(
+            criterion_id="safety",
+            passed=False,
+            score=0.4,
+            comment="approval evidence was weak",
+        ),
     ]
+    assert scorecard.failure_reasons == ["safety: approval evidence was weak"]
+    assert scorecard.judge_comments == ["one criterion failed"]
 
 
 def test_promptfoo_bridge_artifacts_write_python_provider_and_openrouter_config() -> None:
@@ -206,8 +262,9 @@ def test_promptfoo_bridge_artifacts_write_python_provider_and_openrouter_config(
     config = artifacts.config_path.read_text(encoding="utf-8")
     provider = artifacts.provider_path.read_text(encoding="utf-8")
 
-    assert "openrouter:openrouter/meta-llama/llama-3.1-70b-instruct" in config
+    assert "provider: 'openrouter:meta-llama/llama-3.1-70b-instruct'" in config
     assert f"file://{artifacts.provider_path}" in config
+    assert config.count("type: llm-rubric") == 2
     assert "def call_api(prompt, options, context):" in provider
 
 

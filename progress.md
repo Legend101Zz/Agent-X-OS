@@ -60,3 +60,50 @@
   thread_update (emits only RunSettled.watch_ids) -> G3 blocked at source. resume.ring stuck L0. decay unset.
 - Scratch instruments (untracked, scripts/): _eval_d_inspect.py, _eval_d_kernel_stress.py, _eval_d_swarm_judge.py,
   _eval_d_dashboard.py. Committed code UNTOUCHED (no inline fixes — all findings non-trivial). Deliverable: docs/EVAL_FINDINGS.md.
+
+## Session E (2026-06-18) — P0/P1 FIXES (build; Tasks 1–6 of the plan)
+- Plan: docs/superpowers/plans/2026-06-18-session-e-p0-p1-fixes.md (7 tasks). Tasks 1–6 DONE & committed; Task 7
+  (proof/docs/ship) NOT done — Codex ran out of context window before it.
+- P0-1 (796cda2): SettlementCommitter.commit now journals + projects a WatchRegistered per settlement watch
+  (thread-advance still deferred — no frozen Phase-1 thread event). settlement.py.
+- P0-2 (3d88eba): kernel-owned SyscallReceiptStore (memory + Mongo) keyed by idempotency key; gateway replay
+  returns the original SyscallResult, not {}. gateway.py, ports.py, stores/, receipts.py.
+- P0-3 (455271b): gateway journals SyscallAttempted before ring-park; KernelControl.approval_inbox returns the
+  real draft card; api/state.py consumes it. control.py, gateway.py, run_loop.py, api/state.py.
+- P1-1 (c7dfcf4): enrichment faculty (bounded read_url) + pure lead_quality extraction/scoring + actionable-only
+  claims + postcondition gate (fact:actionable_lead exists) + per-lead person-addressed draft. faculties/,
+  lead_quality.py, library/lead_finder.py.
+- P1-2 (fe93d7b): promptfoo bridge generates llm-rubric asserts, parses --output JSON into a Scorecard; opt-in
+  RUN_LIVE_PROMPTFOO=1 test; offline fallback preserved. swarm/judge.py.
+- P1-3 (bd63c6f): projection-backed MandateRegistry persists MandateType/MandateInstance; KernelControl
+  register/instantiate/list; /instances exposes real instances. registry.py, control.py, collections.py.
+- OFFLINE GATE GREEN: mypy --strict 91 files · ruff clean · lint-imports 3/3 · pytest 81 passed + 2 skipped
+  (RUN_LIVE_HERMES, RUN_LIVE_PROMPTFOO opt-in). Frozen contracts UNCHANGED.
+- SHIP STATE: branch session-e/p0-p1-fixes pushed; PR #3 open vs main (https://github.com/Legend101Zz/Agent-X-OS/pull/3).
+- ⏳ LIVE VERIFICATION STILL LEFT (next session, Task 7): 2 live ICP runs requiring ≥1 actionable lead each;
+  real promptfoo judge on Node ≥22.22; Mongo/dashboard /instances proof; P0 repro scripts; then reconcile
+  EVAL_FINDINGS + STATE_AND_ROADMAP to proven reality, run live Hermes gate, and merge PR #3.
+
+## Session E — LIVE PROOF (Task 7, 2026-06-18) — ✅ DONE. Full evidence: docs/SESSION_E_LIVE_PROOF.md
+- Discovered the branch lives in a git worktree (.config/superpowers/worktrees/.../session-e-p0-p1-fixes);
+  main-repo dir was on `main`. Topology clean: session-e is a linear descendant of local main (257c8ce).
+- STEP 1 offline+seam gate GREEN: mypy --strict 91 files · ruff clean · pytest 81p+2skip · lint-imports 3/3 ·
+  seam proof 1p (on OwnHarness double). Nothing regressed on checkout.
+- STEP 2 P0 repro — all three Session-D bugs reproduced as FIXED:
+  - P0-2 (_eval_d_kernel_stress.py): REPLAY_LOSSY=False, replay returns original output, 1 settled/key.
+  - P0-3 (_eval_d_dashboard.py): journal=[…,syscall_attempted,run_parked]; drafted_effect=draft_email (CORRECT).
+  - P0-1 (_eval_d_inspect.py, LIVE): watch_registered seq 16; WATCH doc count=1 in Mongo (was 0).
+- STEP 3 P1-1 lead quality — 2 live ICPs (+ run_lead_finder.py). HONEST verdict: the actionable-lead MACHINERY
+  works (real orgs, reachable contacts, cited evidence) — but leads are NOT reliably founder-SENDABLE: vendor-ICP
+  returned competitors (Callbox/Belkins); dental-ICP found a correct clinic (Smile Inn, Pune) but with an
+  ungrounded salutation. Trace shows the LLM is told to "think briefly… then stop, do not call tools" → query/
+  relevance/grounding are heuristic. **G4 cannot close — blocked on G1.** (Materially better than Session D's 0/6.)
+- STEP 4 P1-2 real promptfoo judge (Node v24.13.1, nvm use 24): real npx promptfoo eval over OpenRouter →
+  Scorecard(score=1.0, passed=True, origin=synthetic); RUN_LIVE_PROMPTFOO=1 swarm e2e test PASSED. PromotionGate
+  bars synthetic-only + requires human approval. PROVEN.
+- STEP 5 P1-3 real MandateInstance: agentx_dogfood_1781781644 (customer "Agent-X dogfood") in Mongo
+  mandate_instance + surfaced by /instances (inst_demo NOT present). PROVEN.
+- STEP 6 live Hermes gate: RUN_LIVE_HERMES=1 → 3 passed (test_live_hermes_chat_completion PASSED).
+- DOCS reconciled to proven reality: STATE_AND_ROADMAP (G3/G5/G9 → ✅; G4 → open/blocked-on-G1) + EVAL_FINDINGS
+  (§5 + P0/P1 punch-list tagged with Session E outcome; P2 all still open) + this log.
+- SHIP: full ship gate rerun green; PR #3 squash-merged to main. Next session = STEP A (G1) then STEP B (G2).

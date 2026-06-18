@@ -3,12 +3,17 @@
 *Companion to [BLUEPRINT.md](./BLUEPRINT.md) (canonical). This doc is the living snapshot: **what is built
 today**, **what is left**, and **how to tackle it**. When this and the blueprint disagree on intent, the
 blueprint wins; when they disagree on *what currently exists in code*, this doc wins (it's verified against
-the tree). Last verified: 2026-06-18, after Session C (branch `session-c/integration-go-live`) and the
+the tree). Last verified: 2026-06-18, after Session C (branch `session-c/integration-go-live`), the
 **Session D shakedown/eval** — see [EVAL_FINDINGS.md](./EVAL_FINDINGS.md) for the evidence-based P0/P1/P2
 punch-list (lead quality is poor, and three correctness bugs were found: lossy idempotency replay, settlement
-dropping the watch, and a non-truthful approval card).*
+dropping the watch, and a non-truthful approval card) — and **Session E P0/P1 fixes** (branch
+`session-e/p0-p1-fixes`, PR #3). Session E **implemented and then LIVE-PROVED** all P0/P1 items (see
+[SESSION_E_LIVE_PROOF.md](./SESSION_E_LIVE_PROOF.md)): the three P0 correctness bugs are reproduced as fixed;
+P1-2 (real promptfoo judge) and P1-3 (real mandate instance on `/instances`) are live-proven; P1-1 (actionable
+leads) machinery is live-proven on 2 ICPs but **reliably-sendable leads are NOT proven and remain blocked on
+G1**. Items below marked ✅ are now live-proven; remaining 🟢/🟡 are proven-but-incomplete (see notes).*
 
-> **Status legend:** ✅ built & proven · 🟡 partial / scaffolded · ❌ not built · 🏗️ in progress (parallel agent)
+> **Status legend:** ✅ built & proven (live) · 🟢 implemented + live-proven but blocked/incomplete · 🟡 partial / scaffolded · ❌ not built · 🏗️ in progress (parallel agent)
 
 ---
 
@@ -50,7 +55,7 @@ dropping the watch, and a non-truthful approval card).*
                   ▼                   │   PERSISTENCE (agentx_db, MongoDB async)
    reality: Firecrawl/Exa (live) ✅   │   journal·heap_fact·thread·resume·watch·
    email send ❌(P2) · WhatsApp ❌(P5)│   syscall_trace·billing_line·eval_case  ✅ wired
-                                      │   mandate_type·mandate_instance·mandate_run 🟡 schema only
+                                      │   mandate_type·mandate_instance·mandate_run ✅ persists (Session E, live /instances proven)
 ```
 
 **Read this diagram as:** the **online kernel, the syscall ladder, the memory/event-sourcing, and the swarm
@@ -109,13 +114,13 @@ scheduler/resume to run it repeatedly**.
 |---|---|---|---|---|
 | G1 | **LLM drives the run loop** via `step()` (proposes; kernel disposes) | ❌ | This is what makes it an *agent* OS vs a deterministic pipeline. Today Hermes emits one decorative note; trajectory is hardcoded faculty order + hardcoded draft | §2.3, §4.5 |
 | G2 | **Scheduler / worker loop + kernel parked-run RESUME** | ❌ | Runs are invoked by hand; the script resumes draft_email with bespoke code. Needed to reach the "~100 settles" finish line | §4 (scheduler), §2.4 |
-| G3 | **Deferred-settle / WATCH → gym** | ❌ (worse than thought) | Session D: the watch is **never registered** — `build_settlement` computes a `Watch`+`ThreadUpdate` but `SettlementCommitter.commit` keeps only `watch_ids` and emits no `WatchRegistered`, so `WATCH` docs = 0. The reality rung can't fire even in principle (EVAL_FINDINGS P0-1) | §2.7, §5 |
-| G4 | **Real, actionable lead quality** | 🟡 | The live run returned articles/videos, not real prospect companies/people with a contact path | §7 WIN |
-| G5 | **Mandate registry / Catalog persistence** | 🟡 | `mandate_type`/`mandate_instance`/`mandate_run` collections + indexes exist but **no code reads/writes them**; mandates are code objects passed inline | §1, §6 (Catalog) |
+| G3 | **Deferred-settle / WATCH → gym** | ✅ source bug fixed + live-proven; loop still ❌ | **Session E P0-1** fixed the source bug: `SettlementCommitter.commit` now journals + projects a `WatchRegistered` per watch (thread-advance still deferred — no frozen Phase-1 thread event). **Live-proven (Session E proof):** a live settle appends `watch_registered` (seq 16, right after `run_settled`) and projects **one `WATCH` doc in Mongo (count=1, was 0)**. The **full deferred-settle maturation loop** (watch matures → probation→verified → emit real `eval_case`, Step D) is still **not built** | §2.7, §5 |
+| G4 | **Real, actionable lead quality** | 🟢 pipeline live-proven; sendable leads NOT proven — blocked on G1 | **Session E P1-1** added the actionable-lead pipeline: bounded `read_url` enrichment, pure `lead_quality` extraction/scoring, actionable-only claims + a postcondition gate (`fact:actionable_lead exists`), per-lead person-addressed draft. **Live-proven on 2 ICPs (Session E proof):** the machinery produces leads with real orgs, genuinely reachable contact paths, and cited evidence (a real improvement over Session D's content pages). **But "reliably founder-sendable" is NOT proven**: for a vendor-shaped ICP it returned competitors (Callbox/Belkins, themselves lead-gen agencies) citing their own sales copy; for a clean buyer ICP (dental clinics, Pune) it found a correct, reachable lead but fabricated an ungrounded salutation. Root cause: the LLM is side-lined ("think briefly… then stop, do not call tools"), so query/relevance/grounding are heuristic. **G4 cannot close — it is blocked on G1** | §7 WIN |
+| G5 | **Mandate registry / Catalog persistence** | ✅ implemented + live-proven | **Session E P1-3** added a projection-backed `MandateRegistry` that persists `MandateType`/`MandateInstance` and exposes register/instantiate/list via `KernelControl`; live edge persists a real instance. **Live-proven (Session E proof):** a real non-`inst_demo` instance (`agentx_dogfood_…`, customer "Agent-X dogfood") is in Mongo `mandate_instance` and is surfaced by `/instances` with its settled run, facts, and watch ids | §1, §6 (Catalog) |
 | G6 | **Trust-ladder promote/demote automation** | 🟡 | `set_ring` is manual; no "N clean → propose promote / verified failure → demote" mechanics | §4 trust ladder |
 | G7 | **`score_lead` syscall** | 🟡 | Declared in gateway policy but has no adapter (judgment scores in-pod). Harmless, but inconsistent with §7 | §7 |
 | G8 | **Swarm REPL command surface** (`/create /run /watch /patch /promote`) | ❌ | Pieces work; no interactive loop for the founder to iterate a candidate | §5 |
-| G9 | **Manager Dashboard** | 🟡 **built, not truthful** | Session D: `agentx_api` + Next dashboard are built and honest about missing commands (`gaps.py`), BUT on a **real** parked run the approval card shows the wrong/empty effect (manager approves blind — EVAL_FINDINGS P0-3), and `/instances` is empty without `seed_demo` (depends on G5) | §6 |
+| G9 | **Manager Dashboard** | ✅ truthfulness fixed + live-proven (API path) | `agentx_api` + Next dashboard are built and honest about missing commands (`gaps.py`). **Session E P0-3** made the approval card truthful (gateway journals `SyscallAttempted` before the park; `approval_inbox` returns the real draft card). **Live-proven (Session E proof):** at park the journal kinds are `[…, syscall_attempted, run_parked]`, so the dashboard reconstruction `api/state.py:_drafted_effect` returns `draft_email` (CORRECT) with the full draft body — was null/wrong in Session D; and `/instances` (Mongo-backed, no `seed_demo`) returns the real registry instance. (The React UI itself was not browser-opened this session — proof is at the API/contract code path that backs it.) | §6 |
 | G10 | **Creator Mandate** (assemble a Type from a description) | ❌ | On-plan as *later*; Phase-1 Foundry-min is the swarm only | §5 |
 | G11 | **Operator Agent** (founder's chief-of-staff over the control surface) | ❌ | Later; needs the dashboard command/query API as its tool surface | §6.1 |
 | G12 | **Compiler (GEPA growth loop)** | ❌ | Later; needs a full gym of real cases first | §5 |
@@ -131,7 +136,7 @@ and the seam proof passing on the OwnHarness double at every step.
 
 ```text
   ── PHASE 1 COMPLETION (close the WIN: "one instance settles vs reality ~100×") ──────────────
-  STEP A  G1  The real agent loop
+  STEP A  G1  The real agent loop                                  ❌ NOT STARTED (the big one)
               • web-research Minimax-M2 tool-calling / structured output FIRST (don't guess)
               • Hermes HarnessRunner.step(observation): Minimax emits Think/Call/Claim/Finish;
                 kernel disposes (ring-check + journal effectful Calls, fulfil reads natively+traced,
@@ -139,28 +144,28 @@ and the seam proof passing on the OwnHarness double at every step.
               • mode selects: live→Hermes runner+live registry; sim→OwnHarness(playbook)+sim registry.
               • TDD against OwnHarness first; seam proof stays green on the double; bound max steps.
 
-  STEP B  G2  Repeatable runner + kernel resume
+  STEP B  G2  Repeatable runner + kernel resume                    ❌ NOT STARTED (P0-2 receipt store is a building block)
               • first-class kernel resume: resume a parked run from its approval card THROUGH the loop.
               • scheduler-min worker (behind Protocols): trigger→run; ApprovalResolved→resume→settle.
               • keep kernel lane-pure (wire syscall registry at the edge, not inside agentx_kernel).
 
-  STEP C  G4  Real, actionable leads (multi-step research)
+  STEP C  G4  Real, actionable leads (multi-step research)         🟢 SESSION E pipeline live-proven (2 ICPs); mechanically-actionable leads w/ real contacts, but reliably-SENDABLE leads NOT proven → blocked on G1 (Step A)
               • search → pick real candidate COMPANIES → read_url top picks → extract
                 {company, decision-maker/role, buying signal, source URL} → judgment on real signals →
                 memory-craft real provenance → draft_email = usable per-lead outreach.
               • add a postcondition barring non-actionable "leads" (require real URL + org-name + cited signal).
 
-  STEP D  G3  Deferred-settle / WATCH → gym
+  STEP D  G3  Deferred-settle / WATCH → gym                        🟡 watch now registers + live-proven (Session E P0-1: WATCH doc count=1); maturation→promote→eval_case loop NOT built (the only remaining half of Step D)
               • watch matures (or mark_outcome) → promote probation→verified, update résumé/trust,
                 emit run as graded eval_case origin="real" (PromotionGate already needs a real origin).
 
-  STEP E  G5  Mandate registry + Catalog
+  STEP E  G5  Mandate registry + Catalog                           ✅ SESSION E LANDED + live-proven (MandateRegistry persists type/instance via KernelControl; real instance on /instances)
               • persist/load MandateType (mandate_type, unique name+version), InstanceBinding
                 (mandate_instance), run rows (mandate_run). MandateRegistry behind a Protocol +
                 KernelControl: register_type / list_catalog / instantiate / get_instance_file.
               • script loads the Type by type_ref instead of building it inline.
 
-  STEP F  G6/G7  Trust ladder mechanics + score_lead tidy-up (smaller; do after A–E)
+  STEP F  G6/G7  Trust ladder mechanics + score_lead tidy-up (smaller; do after A–E)   ❌ NOT STARTED
 
   ── BEYOND PHASE 1 (use BLUEPRINT §5–7 + this doc; only after A–E settle repeatedly) ──────────
   G8  Swarm REPL command surface (CLI is fine; don't build MiroFish / don't depend on Hermes Swarm)
@@ -179,12 +184,12 @@ Concretely, Phase 1 is done when:
 
 ```text
 [✅] one lead-finder mandate runs end-to-end and settles with provenance facts        (done once)
-[  ] the LLM actually drives the run (G1) — not a deterministic pipeline
-[  ] runs are repeatable without hand-wiring (G2) — toward ~100 settles
-[  ] leads are actionable: real orgs/people/URLs + usable drafts (G4)
-[  ] reality grades runs back into the gym (G3) — probation→verified, real eval cases
-[🏗️] manager can approve from a dashboard surface (G9 — parallel)
-[  ] (nice) mandates live in a catalog, not in code (G5)
+[  ] the LLM actually drives the run (G1) — not a deterministic pipeline               ❌ not started
+[  ] runs are repeatable without hand-wiring (G2) — toward ~100 settles                ❌ not started
+[🟢] leads are actionable: real orgs/people/URLs + usable drafts (G4)                  pipeline live-proven 2 ICPs (Session E): mechanically-actionable leads w/ real contacts+evidence, but reliably-SENDABLE not proven → blocked on G1
+[🟢] reality grades runs back into the gym (G3)                                        watch registers + live-proven (Session E: WATCH count=1); maturation→promote→eval_case loop still ❌
+[✅] manager can approve from a dashboard surface (G9)                                 approval card truthful + live-proven at API path (Session E); React UI not browser-tested
+[✅] (nice) mandates live in a catalog, not in code (G5)                               registry persists + real instance live on /instances (Session E)
 ```
 
 **Kill-conditions to keep honest (BLUEPRINT §8):** if owners won't tap Approve, the trust ladder's bottom rung
@@ -197,6 +202,13 @@ rise with heap depth, context-gravity is fiction. Watch these as real data arriv
 1. ~~**Now:** run the evaluation/shakedown session~~ ✅ **DONE (Session D, 2026-06-18)** → see
    [EVAL_FINDINGS.md](./EVAL_FINDINGS.md): lead quality judged (0/6 actionable), kernel/swarm/dashboard/memory
    exercised live, prioritized P0/P1/P2 punch-list + a ready-to-paste **Session E** prompt produced.
-2. **Now:** run **Session E** (the fix prompt in EVAL_FINDINGS §4) — clear P0 (settlement watch, idempotency
-   replay, truthful approval card) and P1 (actionable leads, real judge, mandate persistence).
-3. **Then:** drive new functionality from §3 here — Steps A→F to finish Phase 1, then "Beyond Phase 1".
+2. ~~**Now:** run **Session E** — clear P0/P1~~ ✅ **IMPLEMENTED + LIVE-PROVED + MERGED (Session E, 2026-06-18,
+   branch `session-e/p0-p1-fixes`, PR #3):** settlement watch (P0-1), faithful idempotency replay (P0-2), truthful
+   approval card (P0-3), actionable-lead pipeline (P1-1), real promptfoo judge (P1-2), mandate persistence
+   (P1-3). Offline + seam + live-Hermes gate green. **LIVE PROOF DONE** (Task 7): all three P0 bugs reproduced
+   as fixed; 2 live ICP runs (machinery actionable, but sendable leads blocked on G1); real promptfoo Scorecard
+   over OpenRouter on Node v24.13.1; real non-demo instance on Mongo/`/instances`. Full evidence in
+   [SESSION_E_LIVE_PROOF.md](./SESSION_E_LIVE_PROOF.md).
+3. **Now that Session E proof has closed:** drive §3 here — **Step A (G1, the real agent loop) and Step B (G2,
+   repeatable runner + resume) are the next big build** (Steps C & E are largely landed and live-proven; Step C/G4
+   is *blocked on G1* for sendable leads; Step D needs only the maturation half), then "Beyond Phase 1".

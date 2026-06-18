@@ -16,6 +16,8 @@ from typing import Protocol, runtime_checkable
 from agentx_contracts import JournalEvent
 from agentx_contracts.security import Credential
 
+from .receipts import SyscallReceipt
+
 
 @runtime_checkable
 class JournalStore(Protocol):
@@ -60,6 +62,23 @@ class ProjectionStore(Protocol):
 
     async def find(self, collection: str, query: dict[str, object]) -> list[dict[str, object]]:
         """All documents in ``collection`` matching an equality ``query`` (Phase-1: equality only)."""
+        ...
+
+
+@runtime_checkable
+class SyscallReceiptStore(Protocol):
+    """Durable result sidecar for payload-faithful syscall replay.
+
+    The frozen Phase-1 ``SyscallSettled`` event records status and fulfillment metadata but not the
+    provider payload. Receipts preserve that payload under the same globally unique idempotency key.
+    """
+
+    async def save(self, receipt: SyscallReceipt) -> None:
+        """Persist a receipt idempotently; reject a conflicting request for the same key."""
+        ...
+
+    async def get(self, idempotency_key: str) -> SyscallReceipt | None:
+        """Fetch the receipt for a globally unique idempotency key."""
         ...
 
 

@@ -16,7 +16,7 @@ from agentx_contracts.enums import Ring
 from agentx_contracts.journal import SyscallSettled
 from agentx_contracts.syscall import GatewayContext, SyscallRequest
 from agentx_kernel.gateway import Gateway
-from agentx_kernel.stores.memory import InMemoryJournalStore, InMemoryVault
+from agentx_kernel.stores.memory import InMemoryJournalStore, InMemorySyscallReceiptStore, InMemoryVault
 from agentx_syscall.registry import build_phase1_registry
 
 
@@ -36,11 +36,18 @@ async def main() -> int:
     # ---------- 1. IDEMPOTENCY ----------
     print("===== 1. IDEMPOTENCY (replay must not double-effect) =====")
     j = InMemoryJournalStore()
-    gw = Gateway(journal=j, vault=InMemoryVault(), registry=build_phase1_registry())
+    gw = Gateway(
+        journal=j,
+        vault=InMemoryVault(),
+        registry=build_phase1_registry(),
+        receipts=InMemorySyscallReceiptStore(),
+    )
     iid = "idem_inst"
     idem = f"{iid}:run:draft_email"
     first = await gw.invoke(_draft_req(iid, idem), _ctx(iid, "L2"))
     second = await gw.invoke(_draft_req(iid, idem), _ctx(iid, "L2"))
+    assert first.result is not None
+    assert second.result is not None
     settled_for_key = [e for e in await j.read_instance(iid)
                        if isinstance(e, SyscallSettled) and e.idempotency_key == idem]
     print(f"FIRST  status={first.result.status} body_in_output={'body' in (first.result.output or {})} "
@@ -55,9 +62,14 @@ async def main() -> int:
     print("\n===== 2. RINGS (draft_email requires L2) =====")
     for ring in ("L0", "L1", "L2"):
         ji = InMemoryJournalStore()
-        gwi = Gateway(journal=ji, vault=InMemoryVault(), registry=build_phase1_registry())
+        gwi = Gateway(
+            journal=ji,
+            vault=InMemoryVault(),
+            registry=build_phase1_registry(),
+            receipts=InMemorySyscallReceiptStore(),
+        )
         rid = f"ring_{ring}"
-        out = await gwi.invoke(_draft_req(rid, f"{rid}:run:draft_email"), _ctx(rid, ring))  # type: ignore[arg-type]
+        out = await gwi.invoke(_draft_req(rid, f"{rid}:run:draft_email"), _ctx(rid, ring))
         if out.parked is not None:
             print(f"  ring={ring}: PARKED reason='{out.parked.reason}' required_ring={out.parked.required_ring} "
                   f"awaiting={out.parked.awaiting}")
@@ -69,7 +81,12 @@ async def main() -> int:
     print("\n===== 3. UNSUPPORTED INTENT -> human_task terminal tail (nothing 'unimplemented') =====")
     for name in ("translate_document", "score_lead", "lead_research_batch"):
         ji = InMemoryJournalStore()
-        gwi = Gateway(journal=ji, vault=InMemoryVault(), registry=build_phase1_registry())
+        gwi = Gateway(
+            journal=ji,
+            vault=InMemoryVault(),
+            registry=build_phase1_registry(),
+            receipts=InMemorySyscallReceiptStore(),
+        )
         hid = f"h_{name}"
         req = SyscallRequest(name=name, args={"criteria": {"icp": "x"}, "count": 1},
                              instance_id=hid, run_id=f"{hid}:run",

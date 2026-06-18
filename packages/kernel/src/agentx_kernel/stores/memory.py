@@ -12,7 +12,8 @@ import copy
 from agentx_contracts import JournalEvent
 from agentx_contracts.security import Credential
 
-from ..errors import DuplicateIdempotencyKey
+from ..errors import DuplicateIdempotencyKey, IdempotencyRequestConflict
+from ..receipts import SyscallReceipt
 
 
 class InMemoryJournalStore:
@@ -70,6 +71,23 @@ class InMemoryProjectionStore:
             for doc in self._collections.get(collection, {}).values()
             if all(doc.get(k) == v for k, v in query.items())
         ]
+
+
+class InMemorySyscallReceiptStore:
+    """Process-local receipt store with the same conflict semantics as Mongo."""
+
+    def __init__(self) -> None:
+        self._receipts: dict[str, SyscallReceipt] = {}
+
+    async def save(self, receipt: SyscallReceipt) -> None:
+        prior = self._receipts.get(receipt.idempotency_key)
+        if prior is not None and prior != receipt:
+            raise IdempotencyRequestConflict(receipt.idempotency_key)
+        self._receipts[receipt.idempotency_key] = receipt.model_copy(deep=True)
+
+    async def get(self, idempotency_key: str) -> SyscallReceipt | None:
+        receipt = self._receipts.get(idempotency_key)
+        return receipt.model_copy(deep=True) if receipt is not None else None
 
 
 class InMemoryVault:

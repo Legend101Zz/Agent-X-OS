@@ -22,7 +22,12 @@ from agentx_kernel.hydration import HydrationLoader
 from agentx_kernel.projections import Projections
 from agentx_kernel.run_loop import Phase1RunInvoker
 from agentx_kernel.settlement import SettlementCommitter
-from agentx_kernel.stores.memory import InMemoryJournalStore, InMemoryProjectionStore, InMemoryVault
+from agentx_kernel.stores.memory import (
+    InMemoryJournalStore,
+    InMemoryProjectionStore,
+    InMemorySyscallReceiptStore,
+    InMemoryVault,
+)
 from agentx_kernel.verifier import RulesVerifier
 from agentx_mandate.library.lead_finder import build_lead_finder_type
 from agentx_syscall.registry import build_phase1_registry
@@ -40,7 +45,12 @@ async def main() -> int:
     journal = InMemoryJournalStore()
     store = InMemoryProjectionStore()
     projections = Projections(store, journal)
-    gateway = Gateway(journal=journal, vault=InMemoryVault(), registry=build_phase1_registry())
+    gateway = Gateway(
+        journal=journal,
+        vault=InMemoryVault(),
+        registry=build_phase1_registry(),
+        receipts=InMemorySyscallReceiptStore(),
+    )
     invoker = Phase1RunInvoker(
         journal=journal, projections=projections, hydration=HydrationLoader(store, journal),
         gateway=gateway, settlement=SettlementCommitter(journal=journal, projections=projections),
@@ -62,11 +72,11 @@ async def main() -> int:
     kinds = [e.kind for e in events]
     print(f"JOURNAL_KINDS_AT_PARK={kinds}")
     attempted = [e.syscall for e in events if isinstance(e, SyscallAttempted)]
-    print(f"SyscallAttempted_in_journal_at_park={attempted}  (note: NO draft_email)")
+    print(f"SyscallAttempted_in_journal_at_park={attempted}")
 
     inbox = await control.approval_inbox(instance_id=inst.instance_id)
     print(f"\nKernelControl.approval_inbox items = {[i.model_dump(mode='json') for i in inbox.items]}")
-    print("  ^ no syscall/args/draft -> a manager would approve BLIND from KernelControl alone")
+    print("  ^ approval card now carries the exact durable syscall intent")
 
     # What the dashboard reconstructs as the effect to approve:
     drafted = _drafted_effect(events)

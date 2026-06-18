@@ -17,6 +17,7 @@ from agentx_contracts.trigger import Trigger
 from agentx_contracts.verification import Trace, TraceEvent
 from agentx_mandate.faculties import get_faculty, propose
 from agentx_mandate.harness import Call, Claim, Escalate, FacultyContext, HarnessAction, Think
+from agentx_mandate.lead_quality import enrich_lead, is_actionable_lead
 from agentx_mandate.settlement import build_settlement
 
 from .gateway import Gateway
@@ -320,7 +321,7 @@ class Phase1RunInvoker:
                     trace=trace,
                     claimed_facts=claimed_facts,
                 )
-            _apply_read_result(ctx, action.request.name, outcome.result.output)
+            _apply_read_result(ctx, action.request, outcome.result.output)
         return None
 
 
@@ -328,43 +329,89 @@ def _first_lead_id(ctx: FacultyContext) -> str | None:
     leads = ctx.scratchpad.get("leads")
     if not isinstance(leads, list) or not leads:
         return None
-    first = leads[0]
-    if not isinstance(first, dict):
-        return None
-    lead_id = first.get("id")
-    return lead_id if isinstance(lead_id, str) else None
+    scores = ctx.scratchpad.get("scores")
+    scored: list[tuple[float, str]] = []
+    for lead in leads:
+        if not isinstance(lead, dict) or not is_actionable_lead(lead):
+            continue
+        lead_id = lead.get("id")
+        if not isinstance(lead_id, str):
+            continue
+        score = 0.0
+        if isinstance(scores, dict):
+            raw_score = scores.get(lead_id)
+            if isinstance(raw_score, dict):
+                value = raw_score.get("score")
+                if isinstance(value, int | float):
+                    score = float(value)
+        scored.append((score, lead_id))
+    return max(scored, default=(0.0, ""))[1] or None
 
 
 def _draft_args(ctx: FacultyContext, lead_id: str) -> JsonObject:
     company = _lead_value(ctx, lead_id, "company", "name") or lead_id
-    url = _lead_value(ctx, lead_id, "url") or "unknown source"
-    evidence = _lead_evidence(ctx, lead_id)
-    evidence_line = "; ".join(evidence[:3]) if evidence else "research evidence captured in the run trace"
+    contact_name = _lead_value(ctx, lead_id, "contact_name")
+    contact_role = _lead_value(ctx, lead_id, "contact_role") or "business owner"
+    contact_url = _lead_value(ctx, lead_id, "contact_url") or _lead_value(ctx, lead_id, "url") or ""
+    signal = _lead_value(ctx, lead_id, "buying_signal") or "an active growth initiative"
+    greeting = contact_name or contact_role
     return {
         "lead_id": lead_id,
         "mode": "draft",
         "to": "founder-review@agent-x.local",
-        "subject": f"Draft outreach: {company}",
+        "subject": f"Draft outreach to {company}",
         "body": (
-            f"Draft only. Candidate: {company}. Source: {url}. "
-            f"Why it may fit Agent-X lead-finder: {evidence_line}."
+            f"Hi {greeting},\n\n"
+            f"I noticed this signal at {company}: {signal.rstrip('.')}. "
+            "We are testing an accountable lead-finding workflow that researches prospects, cites the signal, "
+            "and keeps every outreach message in draft for owner approval. "
+            f"If lead follow-up is a priority, I would value a short conversation. Reference: {contact_url}\n\n"
+            "Draft only — not sent."
         ),
     }
 
 
-def _apply_read_result(ctx: FacultyContext, request_name: str, output: JsonObject) -> None:
-    if request_name != "lead_research_batch":
+def _apply_read_result(ctx: FacultyContext, request: SyscallRequest, output: JsonObject) -> None:
+    if request.name == "lead_research_batch":
+        normalized = _normalize_leads(output.get("leads"))
+        if normalized:
+            ctx.scratchpad["leads"] = normalized
         return
-    normalized = _normalize_leads(output.get("leads"))
-    if normalized:
-        ctx.scratchpad["leads"] = normalized
+    if request.name != "read_url":
+        return
+    lead_id = request.args.get("lead_id")
+    leads = ctx.scratchpad.get("leads")
+    if not isinstance(lead_id, str) or not isinstance(leads, list):
+        return
+    for index, lead in enumerate(leads):
+        if isinstance(lead, dict) and lead.get("id") == lead_id:
+            leads[index] = enrich_lead(lead, output, ctx.target)
+            return
 
 
 def _fulfill_sim_native_read(ctx: FacultyContext, request: SyscallRequest, trace: Trace, ts: datetime) -> None:
     """Fulfil a READ-class intent natively in sim (off-gateway), then trace it.
 
-    Only ``lead_research_batch`` yields leads; other reads (e.g. ``read_url``) are traced no-ops in sim.
+    Sim reads use clearly synthetic fixtures but preserve the live structured enrichment shape.
     """
+    if request.name == "read_url":
+        lead_id = request.args.get("lead_id")
+        url = request.args.get("url")
+        if isinstance(lead_id, str) and isinstance(url, str):
+            page: JsonObject = {
+                "lead_id": lead_id,
+                "url": url,
+                "title": f"[sim] {lead_id} Dental Clinic",
+                "markdown": (
+                    f"# [sim] {lead_id} Dental Clinic\n"
+                    "Dr. Sim Owner and the clinic team are accepting new patients.\n"
+                    "[Book an appointment](/contact)\n"
+                ),
+                "evidence": ["Dr. Sim Owner and the clinic team are accepting new patients."],
+            }
+            _apply_read_result(ctx, request, page)
+        _trace(trace, ts, "thought", "native read (sim): read_url", request.args)
+        return
     if request.name != "lead_research_batch":
         _trace(trace, ts, "thought", f"native read (sim): {request.name}", request.args)
         return
@@ -391,13 +438,24 @@ def _synthetic_sim_leads(ctx: FacultyContext, args: JsonObject) -> list[JsonObje
     count = raw_count if isinstance(raw_count, int) and 1 <= raw_count <= 10 else 3
     leads: list[JsonObject] = []
     for index in range(1, count + 1):
-        evidence: list[JsonValue] = [f"sim-native-read:lead_research_batch:{ctx.run_id}:{index}"]
+        signal = "accepting new patients"
+        evidence: list[JsonValue] = [
+            f"sim-native-read:lead_research_batch:{ctx.run_id}:{index}",
+            signal,
+        ]
         leads.append(
             {
                 "id": f"sim_lead_{index}",
                 "company": f"[sim] {icp} candidate {index}",
-                "url": f"sim://lead/{index}",
+                "url": f"https://sim.invalid/lead/{index}",
+                "contact_name": "Dr. Sim Owner",
+                "contact_role": "Practice owner or clinic manager",
+                "contact_url": f"https://sim.invalid/lead/{index}/contact",
+                "buying_signal": signal,
+                "buying_signal_evidence": signal,
                 "evidence": evidence,
+                "origin": "synthetic",
+                "actionable": True,
             }
         )
     return leads
@@ -422,6 +480,7 @@ def _normalize_leads(value: object) -> list[JsonObject]:
                 "company": company,
                 "url": _str_value(item.get("url"), ""),
                 "evidence": evidence_json,
+                "metadata": cast(JsonValue, item.get("metadata")) if isinstance(item.get("metadata"), dict) else {},
             }
         )
     return leads

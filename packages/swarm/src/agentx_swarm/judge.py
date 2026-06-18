@@ -49,7 +49,16 @@ class PromptfooJudge:
         self._enabled = enabled
         self._command = list(
             command
-            or ["npx", "promptfoo@latest", "eval", "-c", "promptfooconfig.yaml", "--output", "json"]
+            or [
+                "npx",
+                "promptfoo@latest",
+                "eval",
+                "-c",
+                "promptfooconfig.yaml",
+                "--no-table",
+                "--no-progress-bar",
+                "--no-share",
+            ]
         )
         self._runner = runner or cast(PromptfooRunner, subprocess.run)
         self._case_origin = case_origin
@@ -77,7 +86,7 @@ class PromptfooJudge:
             "provider": str(bridge.provider_path),
             "config": str(bridge.config_path),
         }
-        completed = self._runner(
+        self._runner(
             bridge.command(self._command),
             input=json.dumps(payload, sort_keys=True),
             text=True,
@@ -85,7 +94,13 @@ class PromptfooJudge:
             check=True,
             env=env,
         )
-        return Scorecard.model_validate(_extract_scorecard_payload(completed.stdout))
+        result_payload = json.loads(bridge.results_path.read_text(encoding="utf-8"))
+        return _scorecard_from_promptfoo(
+            result_payload,
+            trace=trace,
+            rubric=rubric,
+            origin=self._case_origin,
+        )
 
 
 def build_promptfoo_judge(*, enabled: bool | None = None, case_origin: CaseOrigin = "synthetic") -> Judge:
@@ -102,10 +117,18 @@ def build_promptfoo_judge(*, enabled: bool | None = None, case_origin: CaseOrigi
 class PromptfooBridgeArtifacts:
     """Temporary promptfoo config plus Python provider script."""
 
-    def __init__(self, *, root: Path, config_path: Path, provider_path: Path) -> None:
+    def __init__(
+        self,
+        *,
+        root: Path,
+        config_path: Path,
+        provider_path: Path,
+        results_path: Path,
+    ) -> None:
         self.root = root
         self.config_path = config_path
         self.provider_path = provider_path
+        self.results_path = results_path
 
     @classmethod
     def create(
@@ -121,6 +144,7 @@ class PromptfooBridgeArtifacts:
         rubric_path = root / "rubric.json"
         provider_path = root / "kernel_provider.py"
         config_path = root / "promptfooconfig.yaml"
+        results_path = root / "results.json"
 
         trace_path.write_text(json.dumps(trace.model_dump(mode="json"), indent=2), encoding="utf-8")
         rubric_path.write_text(json.dumps(rubric.model_dump(mode="json"), indent=2), encoding="utf-8")
@@ -133,18 +157,32 @@ class PromptfooBridgeArtifacts:
                 provider_path=provider_path,
                 judge_model_id=judge_model_id,
                 origin=origin,
+                rubric=rubric,
             ),
             encoding="utf-8",
         )
-        return cls(root=root, config_path=config_path, provider_path=provider_path)
+        return cls(
+            root=root,
+            config_path=config_path,
+            provider_path=provider_path,
+            results_path=results_path,
+        )
 
     def command(self, base_command: Sequence[str]) -> list[str]:
         command = list(base_command)
         if "-c" in command:
             idx = command.index("-c")
             command[idx + 1] = str(self.config_path)
-            return command
-        return [*command, "-c", str(self.config_path)]
+        else:
+            command.extend(["-c", str(self.config_path)])
+        for flag in ("--output", "-o"):
+            if flag in command:
+                idx = command.index(flag)
+                command[idx + 1] = str(self.results_path)
+                break
+        else:
+            command.extend(["--output", str(self.results_path)])
+        return command
 
 
 def _promptfoo_env(source: Mapping[str, str]) -> dict[str, str]:
@@ -167,21 +205,41 @@ def _promptfoo_env(source: Mapping[str, str]) -> dict[str, str]:
     return env
 
 
-def _promptfoo_config(*, provider_path: Path, judge_model_id: str, origin: CaseOrigin) -> str:
-    return "\n".join(
+def _promptfoo_config(
+    *,
+    provider_path: Path,
+    judge_model_id: str,
+    origin: CaseOrigin,
+    rubric: Rubric,
+) -> str:
+    judge_provider = _promptfoo_provider_id(judge_model_id)
+    lines = [
+        "description: Agent-X swarm judge bridge",
+        "prompts:",
+        "  - '{{trace}}'",
+        "providers:",
+        f"  - id: 'file://{provider_path}'",
+        "tests:",
+        "  - vars:",
+        "      trace: 'Agent-X trace payload is loaded by the Python provider.'",
+        "    assert:",
+    ]
+    for criterion in rubric.criteria:
+        lines.extend(
+            [
+                "      - type: llm-rubric",
+                f"        value: {json.dumps(criterion.description)}",
+                f"        metric: {json.dumps(criterion.id)}",
+                f"        weight: {criterion.weight}",
+                f"        provider: '{judge_provider}'",
+            ]
+        )
+    lines.extend(
         [
-            "description: Agent-X swarm judge bridge",
-            "prompts:",
-            "  - '{{trace}}'",
-            "providers:",
-            f"  - id: 'file://{provider_path}'",
-            "tests:",
-            "  - vars:",
-            "      trace: 'Agent-X trace payload is loaded by the Python provider.'",
             "defaultTest:",
             "  options:",
             "    provider:",
-            f"      id: 'openrouter:{judge_model_id}'",
+            f"      id: '{judge_provider}'",
             "      config:",
             "        temperature: 0",
             "metadata:",
@@ -189,6 +247,14 @@ def _promptfoo_config(*, provider_path: Path, judge_model_id: str, origin: CaseO
             "",
         ]
     )
+    return "\n".join(lines)
+
+
+def _promptfoo_provider_id(judge_model_id: str) -> str:
+    if judge_model_id.startswith("openrouter:"):
+        return judge_model_id
+    normalized = judge_model_id.removeprefix("openrouter/")
+    return f"openrouter:{normalized}"
 
 
 def _provider_script(*, trace_path: Path, rubric_path: Path) -> str:
@@ -209,22 +275,89 @@ def call_api(prompt, options, context):
 '''
 
 
-def _extract_scorecard_payload(stdout: str) -> object:
-    try:
-        decoded = json.loads(stdout)
-    except json.JSONDecodeError:
-        for line in reversed(stdout.splitlines()):
-            try:
-                decoded = json.loads(line)
-                break
-            except json.JSONDecodeError:
-                continue
-        else:
-            raise ValueError("promptfoo did not emit JSON scorecard output") from None
+def _scorecard_from_promptfoo(
+    payload: object,
+    *,
+    trace: Trace,
+    rubric: Rubric,
+    origin: CaseOrigin,
+) -> Scorecard:
+    summary = _mapping(payload)
+    nested_results = summary.get("results")
+    if isinstance(nested_results, dict):
+        summary = nested_results
+    if summary.get("version") != 3:
+        raise ValueError("promptfoo result file is not version 3")
+    raw_results = summary.get("results")
+    if not isinstance(raw_results, list) or not raw_results:
+        raise ValueError("promptfoo result file contains no evaluation results")
+    result = _mapping(raw_results[0])
+    grading = _mapping(result.get("gradingResult"))
+    raw_components = grading.get("componentResults")
+    if not isinstance(raw_components, list):
+        raise ValueError("promptfoo result has no assertion component results")
 
-    if isinstance(decoded, dict) and "scorecard" in decoded:
-        return decoded["scorecard"]
-    return decoded
+    components = [_mapping(component) for component in raw_components]
+    criteria: list[CriterionResult] = []
+    failure_reasons: list[str] = []
+    weighted_score = 0.0
+    total_weight = 0.0
+    for index, criterion in enumerate(rubric.criteria):
+        component = _component_for_criterion(components, criterion.id, index)
+        score = _bounded_score(component.get("score"))
+        passed = bool(component.get("pass"))
+        reason = component.get("reason")
+        comment = reason if isinstance(reason, str) and reason else None
+        criteria.append(
+            CriterionResult(
+                criterion_id=criterion.id,
+                passed=passed,
+                score=score,
+                comment=comment,
+            )
+        )
+        weighted_score += score * criterion.weight
+        total_weight += criterion.weight
+        if not passed:
+            failure_reasons.append(f"{criterion.id}: {comment or 'criterion failed'}")
+
+    score = weighted_score / total_weight if total_weight else 0.0
+    overall_reason = grading.get("reason")
+    judge_comments = [overall_reason] if isinstance(overall_reason, str) and overall_reason else []
+    return Scorecard(
+        run_id=trace.run_id,
+        rubric_name=rubric.name,
+        score=score,
+        passed=score >= rubric.pass_threshold,
+        criteria=criteria,
+        failure_reasons=failure_reasons,
+        judge_comments=judge_comments,
+        origin=origin,
+    )
+
+
+def _component_for_criterion(
+    components: list[dict[str, object]],
+    criterion_id: str,
+    index: int,
+) -> dict[str, object]:
+    for component in components:
+        assertion = _mapping(component.get("assertion"))
+        if assertion.get("metric") == criterion_id:
+            return component
+    if index < len(components):
+        return components[index]
+    raise ValueError(f"promptfoo result is missing criterion {criterion_id!r}")
+
+
+def _mapping(value: object) -> dict[str, object]:
+    return value if isinstance(value, dict) else {}
+
+
+def _bounded_score(value: object) -> float:
+    if not isinstance(value, int | float):
+        return 0.0
+    return max(0.0, min(float(value), 1.0))
 
 
 def _fallback_scorecard(trace: Trace, rubric: Rubric, *, origin: CaseOrigin) -> Scorecard:
