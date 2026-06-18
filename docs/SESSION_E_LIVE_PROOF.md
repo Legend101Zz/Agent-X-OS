@@ -289,6 +289,32 @@ EXIT=0
 `test_live_hermes_chat_completion` ran live (PASSED, not SKIPPED) against MiniMax with the configured
 `MINIMAX_API_KEY`/`FACULTY_MODEL_*`. The same client backed every `thought` step in the Step-3 live runs.
 
-## Step 7 — Final ship gate + merge
+## Step 7 — Doc reconciliation, invariant review, final ship gate + merge
 
-_pending_
+### Diff review vs the 8 invariants (BLUEPRINT §4)
+- **Frozen contracts:** `git diff --stat origin/main...session-e -- packages/contracts` is **empty** —
+  `packages/contracts` is untouched. ✓ (hard constraint honored.)
+- Branch diff (27 files, +1522/−134) lives in the right lanes: kernel (gateway/control/settlement/registry/
+  receipts/run_loop/stores), mandate (enrichment/lead_quality/lead_finder), swarm (judge), syscall (adapters),
+  db (collections +mandate_type/+mandate_instance), api (state). **lint-imports 3/3** mechanically enforces
+  inv #2 (mandate holds no credentials) and inv #4 (Claude↔Codex lane isolation).
+- inv #1 (no fact without commit): every settled heap fact carries provenance (run_id/evidence/note) via
+  verify→settle — seen in Steps 2c/3/5. ✓
+- inv #4 (no brain in live kernel): Step 3 trace **confirms** the live kernel stays deterministic (the LLM is a
+  decorative thought) — invariant upheld (and is precisely why G4 is blocked on G1). ✓
+- inv #5 (syscall is intent, human is bottom rung): unsupported intents → `human_task queued_manual` (Step 2a). ✓
+- inv #6 (money API-only, never LLM-exec): `draft_email` is DRAFT only (`sent=false`), no money path. ✓
+- inv #7 (no synthetic case promotes): PromotionGate bars synthetic-only + requires human approval (Step 4). ✓
+- inv #8 (business is sender of record, per-instance identity): draft uses `credential_ref
+  vault://tenant_<id>/draft_email`, not a shared channel. ✓
+- This session added/edited **only docs** (this file + STATE_AND_ROADMAP + EVAL_FINDINGS + progress.md) — zero
+  code changes, no test weakened, no committed fix altered.
+
+### Docs reconciled to proven reality
+- `STATE_AND_ROADMAP.md`: G3 → ✅ source-fixed + watch live-proven (maturation loop still ❌); G5 → ✅ live;
+  G9 → ✅ card truthful + live (API path); **G4 → kept OPEN, blocked on G1** (sendable leads). Finish-line
+  checklist + Steps C/D/E + §5 updated.
+- `EVAL_FINDINGS.md`: top banner + each P0/P1 entry tagged with Session E outcome; §5 rewritten; P2 all noted open.
+- `progress.md`: Session E live-proof results appended.
+
+### Final ship gate + merge — see the closing block below (appended after the gate reran green and PR #3 merged).

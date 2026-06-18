@@ -5,6 +5,15 @@
 (the G1–G13 gap map) and [BLUEPRINT.md](./BLUEPRINT.md) (canonical). Full raw evidence is in `findings.md`
 (Session D section). All live runs made real Minimax + Firecrawl + Mongo + OpenRouter calls.*
 
+> **⟶ SESSION E UPDATE (2026-06-18, branch `session-e/p0-p1-fixes`, PR #3 merged):** every P0/P1 item below
+> was fixed **and live-proven** — see [SESSION_E_LIVE_PROOF.md](./SESSION_E_LIVE_PROOF.md). P0-1/P0-2/P0-3 are
+> reproduced as FIXED; P1-2 (real promptfoo Scorecard over OpenRouter) and P1-3 (real non-demo instance on
+> `/instances`) are proven. **P1-1 is the honest exception:** the actionable-lead *machinery* is proven on 2
+> live ICPs (real orgs, reachable contacts, cited evidence), but **reliably-founder-sendable** leads are NOT
+> proven — for a vendor-shaped ICP it returns competitors, and personalization is sometimes ungrounded; this is
+> **blocked on G1** (make the LLM drive the loop). The §1 "0/6 actionable" verdict below is the *Session D*
+> record; read it as superseded by the Session E proof. Each P0/P1 entry is tagged with its Session E status.
+
 ---
 
 ## 0. TL;DR — what works, what's weak, top 3 to fix first
@@ -95,7 +104,10 @@ Each item: symptom · repro · where (`file:line`) · suggested fix · gap.
 
 ### P0 — correctness bugs
 
-#### P0-1 · Settlement silently drops the WATCH (and the thread advance) → G3 can never fire
+#### P0-1 · Settlement silently drops the WATCH (and the thread advance) → G3 can never fire — ✅ FIXED + LIVE-PROVEN (Session E)
+> **Session E:** `SettlementCommitter.commit` now journals + projects a `WatchRegistered` per watch. Live proof:
+> a real settle appends `watch_registered` (seq 16, after `run_settled`) and creates **one `WATCH` doc in Mongo
+> (count=1, was 0)**. Thread-advance stays deferred (no frozen Phase-1 thread event); the maturation loop is Step D.
 - **Symptom:** Every settled run computes a `Watch` (72h) and a `ThreadUpdate`, but `WATCH` docs = 0 and threads
   stay `engaged`/`history=[]` forever. The reality rung / deferred-settle / probation→verified promotion / real
   eval-case emission are therefore impossible — the whole G3 loop is dead at the source.
@@ -110,7 +122,10 @@ Each item: symptom · repro · where (`file:line`) · suggested fix · gap.
   Phase-1). At minimum the watch must materialize.
 - **Maps to:** G3. BLUEPRINT §2 step 6 ("register WATCH"), §2 step 7 (deferred settle).
 
-#### P0-2 · Gateway idempotency replay is lossy (returns `output={}`)
+#### P0-2 · Gateway idempotency replay is lossy (returns `output={}`) — ✅ FIXED + PROVEN (Session E)
+> **Session E:** a kernel-owned `SyscallReceiptStore` persists the full `SyscallResult`; a replay returns the
+> ORIGINAL output (verified: `REPLAY_LOSSY = False`), journals no second attempt/settled, and leaves exactly one
+> `SyscallSettled` for the key (no double effect).
 - **Symptom:** Re-invoking a syscall with the same `idempotency_key` correctly avoids a double effect, but the
   replayed `SyscallResult` has an **empty** `output` — the original draft body / research leads are gone. Any
   crash-resume or replay path silently loses the payload.
@@ -123,7 +138,10 @@ Each item: symptom · repro · where (`file:line`) · suggested fix · gap.
   idempotency_key. (Also note `_prior_result` is an O(n) full `read_instance` scan per call; index/short-circuit later.)
 - **Maps to:** kernel correctness; supports G2 (resume).
 
-#### P0-3 · Dashboard approval card shows the wrong/empty effect — manager approves blind
+#### P0-3 · Dashboard approval card shows the wrong/empty effect — manager approves blind — ✅ FIXED + PROVEN (Session E)
+> **Session E:** the gateway now journals a `syscall_attempted(draft_email)` BEFORE `run_parked`, and the
+> approval inbox carries the exact durable card. Live proof: at park the journal is `[…, syscall_attempted,
+> run_parked]` and `api/state.py:_drafted_effect` returns `draft_email` with the full draft body (was null/wrong).
 - **Symptom:** On a **real** parked `draft_email` run, the dashboard cannot show the draft being approved. The card
   reconstructs the effect from the last `SyscallAttempted` in the journal, but the gateway parks for low ring
   **before** journaling any `SyscallAttempted`. So: sim → card effect = `null`; live → card effect = the earlier
@@ -143,7 +161,15 @@ Each item: symptom · repro · where (`file:line`) · suggested fix · gap.
 
 ### P1 — quality (especially leads)
 
-#### P1-1 · Leads are not actionable (THE one) → real orgs/people/contact + usable drafts
+#### P1-1 · Leads are not actionable (THE one) → real orgs/people/contact + usable drafts — 🟢 MACHINERY LIVE-PROVEN; SENDABLE LEADS NOT PROVEN → blocked on G1 (Session E)
+> **Session E:** the actionable-lead pipeline (bounded `read_url` enrichment, pure `lead_quality`
+> extraction/scoring, `fact:actionable_lead exists` postcondition, person-addressed draft) is **live-proven on 2
+> ICPs**: it now produces real organizations with genuinely reachable contact paths and cited evidence — a real
+> improvement over the Session-D content-pages-with-no-contact problem. **But a founder still could not reliably
+> send these drafts:** the lead-finder ICP returned competitors (Callbox/Belkins, themselves lead-gen agencies,
+> citing their own sales copy); the dental ICP found a correct reachable clinic but fabricated an ungrounded
+> salutation. Root cause = the LLM is side-lined; query formulation / relevance / grounding are heuristic.
+> **G4 stays open, blocked on G1.** Full per-lead verdict in SESSION_E_LIVE_PROOF.md §3.
 - **Symptom:** see §1 — 0/6 actionable; articles/videos/competitors; generic non-sendable drafts.
 - **Repro:** `uv run python scripts/run_lead_finder.py`; `AGENTX_EVAL_ICP_JSON='{"icp":"independent dental clinics","location":"Pune, India","count":3}' uv run python scripts/_eval_d_inspect.py`.
 - **Where & fix (multi-part, matches STATE_AND_ROADMAP §3 Step C):**
@@ -157,7 +183,10 @@ Each item: symptom · repro · where (`file:line`) · suggested fix · gap.
     `packages/mandate/.../library/lead_finder.py:23-36` (+ `verifier.py`).
 - **Maps to:** G4 (and depends on G1 for the agent to actually do multi-step research).
 
-#### P1-2 · Real promptfoo judge has never run and looks incomplete (+ unwired to config)
+#### P1-2 · Real promptfoo judge has never run and looks incomplete (+ unwired to config) — ✅ FIXED + LIVE-PROVEN (Session E)
+> **Session E:** on Node v24.13.1 the real `npx promptfoo@latest eval` subprocess over OpenRouter returned a
+> genuine `Scorecard(score=1.0, passed=True, origin=synthetic)`; `RUN_LIVE_PROMPTFOO=1 pytest …
+> test_swarm_end_to_end.py` passes the live test; the PromotionGate bars synthetic-only and requires human approval.
 - **Symptom:** Only the offline fallback + a **fake-runner** unit test exercise the judge. Driving the real path
   fails, and on inspection wouldn't produce a `Scorecard` even with a supported runtime.
 - **Repro:** `uv run python scripts/_eval_d_swarm_judge.py` → `npx promptfoo` fails: *"requires Node ^20.20.0 ||
@@ -173,7 +202,10 @@ Each item: symptom · repro · where (`file:line`) · suggested fix · gap.
   behind an opt-in env gate (like `RUN_LIVE_HERMES`).
 - **Maps to:** swarm/grading quality; supports G3 (real eval cases) and the compiler (G12) later.
 
-#### P1-3 · Mandate registry never persisted → live dashboard `/instances` is empty
+#### P1-3 · Mandate registry never persisted → live dashboard `/instances` is empty — ✅ FIXED + LIVE-PROVEN (Session E)
+> **Session E:** a projection-backed `MandateRegistry` persists `MandateType`/`MandateInstance` via
+> `KernelControl`. Live proof: a real non-`inst_demo` instance (`agentx_dogfood_…`, customer "Agent-X dogfood")
+> is in Mongo `mandate_instance` and is surfaced by `/instances` with its settled run, facts, and watch ids.
 - **Symptom:** Real runs never write `mandate_type`/`mandate_instance`/`mandate_run`; the dashboard `/instances`
   (and thus `/approvals` enumeration, system overview ring counts) read `MANDATE_INSTANCE` and show **nothing** after
   real runs. Only `seed_demo` populates them.
@@ -266,10 +298,32 @@ proof green; STATE_AND_ROADMAP G-table updated to reflect what's now closed.
 
 ---
 
-## 5. Corrections fed back into STATE_AND_ROADMAP.md
-- **G3** is stronger than "facts sit on probation": the watch is **never registered** (settlement drops it), so
-  deferred-settle cannot fire even in principle. Updated in §2.
-- **G9 (Dashboard) "DONE"** is qualified: the API is built and honest, but the approval card is not truthful on a
-  real parked run, and `/instances` is empty without `seed_demo` (depends on G5). Updated in §2.
-- New correctness bugs surfaced (not previously tracked): lossy idempotency replay (P0-2), settlement dropping
-  watch/thread (P0-1), approval-card reconstruction (P0-3), real-judge bridge incompleteness (P1-2).
+## 5. Session E outcome (resolution of this punch-list)
+
+The Session D corrections drove the Session E P0/P1 work, which is now **implemented, merged (PR #3), and
+live-proven** (evidence: [SESSION_E_LIVE_PROOF.md](./SESSION_E_LIVE_PROOF.md)). Status of each item:
+
+| Item | Session D state | Session E outcome |
+|---|---|---|
+| **P0-1** settlement drops WATCH (G3) | broken — watch never registered | ✅ fixed + live-proven (`watch_registered`; WATCH doc count=1) |
+| **P0-2** lossy idempotency replay | broken — replay returns `{}` | ✅ fixed + proven (`REPLAY_LOSSY=False`, 1 settled per key) |
+| **P0-3** non-truthful approval card (G9) | broken — wrong/empty effect | ✅ fixed + proven (`syscall_attempted` before park; card = draft_email) |
+| **P1-1** leads not actionable (G4) | 0/6 actionable | 🟢 machinery live-proven (real orgs/contacts/evidence) — but **sendable leads NOT proven; blocked on G1** |
+| **P1-2** real promptfoo judge | never run | ✅ live-proven (real Scorecard over OpenRouter, Node v24.13.1) |
+| **P1-3** mandate registry not persisted (G5) | `/instances` empty | ✅ live-proven (real non-demo instance on `/instances`) |
+
+**STATE_AND_ROADMAP.md reconciled:** G3 → source fixed + watch live-proven (maturation loop still ❌);
+G4 → pipeline live-proven but **open, blocked on G1** (sendable leads); G5 → ✅ live-proven; G9 → ✅ card
+truthful + live-proven at the API path. The finish-line checklist and Steps C/D/E were updated to match.
+
+**P2 items — all still OPEN (deferred polish; none were in Session E's P0/P1 scope):**
+- P2-1 (`resume.ring` misreport), P2-2 (`score_lead` has no adapter → G7), P2-4 (`Fact.decay_at` always null / no GC),
+  P2-6 (in-memory manual queue), P2-7 (settled trace not persisted) — **open**.
+- P2-3 (`DraftEmailAdapter.required_ring` dead metadata) — Session E's P1-1 work aligned the draft adapter
+  metadata to the gateway L2 policy; treat as **addressed-in-passing, verify if revisited**.
+- P2-5 (cost/usage not surfaced) — **confirmed still open**: live `run_lead_finder.py` still prints
+  `COST_OBSERVED=not_available_from_current_wrappers`.
+
+**Next session (per STATE_AND_ROADMAP §3):** Step A = **G1** (make the LLM actually drive the run loop — this is
+what unblocks G4's sendable leads), then Step B = **G2** (scheduler + kernel parked-run resume). Step D needs
+only its maturation half (watch matures → probation→verified → real `eval_case`).
