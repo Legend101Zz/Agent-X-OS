@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import cast
 
-from agentx_contracts.journal import RunSettled
+from agentx_contracts.journal import RunSettled, WatchRegistered
 from agentx_contracts.settlement import SettlementEvent
 
 from .ports import JournalStore
@@ -37,4 +37,18 @@ class SettlementCommitter:
             ),
         )
         await self._projections.apply(event)
+        for watch in settlement.watches:
+            watch_event = await self._journal.append(
+                WatchRegistered(
+                    event_id=f"{watch.id}:registered",
+                    seq=0,
+                    ts=settlement.settled_at,
+                    instance_id=watch.instance_id,
+                    run_id=watch.run_id,
+                    watch_id=watch.id,
+                    condition=watch.condition,
+                    deadline=watch.deadline,
+                )
+            )
+            await self._projections.apply(watch_event)
         return event
