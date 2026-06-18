@@ -135,3 +135,23 @@
   Session F banner; SESSION_F_LIVE_PROOF.md (F0–F6 full evidence); findings.md (MiniMax API + live root-causes).
 - SHIP: pushed to main (no PR). NEXT SESSION = Step B (G2): repeatable runner + first-class kernel parked-run resume
   + scheduler-min worker (build on Session E's SyscallReceiptStore) toward ~100 settles; then Step D maturation half.
+
+## Session G (2026-06-18) — STEP B (G2): repeatable runner + kernel resume + scheduler-min
+- Added kernel-owned `RunContinuation` (memory + Mongo) for frozen hydration, scratchpad, claims, trace,
+  harness cursor/state, and exact pending call; frozen contracts unchanged.
+- `Phase1RunInvoker.resume()` validates journaled create/park/approval, restores the continuation,
+  re-disposes the approved call through the receipt-backed gateway, continues the harness, verifies, settles,
+  and deletes the continuation.
+- Hermes resume persists full messages, pending tool call, call index, and cursor. Fake proof: five pre-park
+  turns plus exactly one continuation turn; no history regeneration.
+- Scheduler-min: deterministic TriggerWork/ApprovalWork, worker, in-memory store, atomic ordered Mongo claim.
+  Live scripts no longer hand-build gateway replay, verification, or settlement.
+- OFFLINE GATE GREEN: mypy strict 99 files · Ruff clean · pytest 111 passed +2 skipped · lint-imports 3/3 ·
+  seam + parked-resume integration 2 passed. Pushed implementation to main as `6347beb`.
+- LIVE DENTAL: `agentx_evald_1781802680:deadline:1781782880` found Dental Sphere, parked, resumed through
+  ApprovalWork, and settled seq 17 with two provenance facts + one watch. Both work rows completed once.
+- IDEMPOTENCY: exact key `...:draft_email:5`; one attempted + one settled; replay returned the receipt with
+  no new events and journal delta 0.
+- HONEST QUALITY: G2 repeatability is proven. Dental copy is not sendable unchanged: it fabricated a
+  20–40 consultations/month result and overstated current capability.
+- NEXT: Step D maturation (watch/mark_outcome → probation→verified → résumé/trust → real eval_case), then P2.

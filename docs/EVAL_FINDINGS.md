@@ -227,6 +227,7 @@ Each item: symptom · repro · where (`file:line`) · suggested fix · gap.
 | P2-5 | Cost/usage not surfaced from Minimax/Firecrawl/OpenRouter wrappers | `scripts/run_lead_finder.py:223` (`COST_OBSERVED=not_available`) | capture token/credit usage from API responses into billing lines | — |
 | P2-6 | Manual queue is in-memory (process-local) — a dashboard in another process sees an empty queue | `adapters.py:124-134` | DB-backed manual-task store behind the `Adapter` interface | already in `api/gaps.py: projection.manual_queue_durable` |
 | P2-7 | Syscall `settled` trace row + run trace are not persisted (only attempt args are) | `projections.py:85-95` | optional trace projection if operators need post-exit detail | already in `api/gaps.py: projection.full_trace_snapshot` |
+| P2-8 | Live outreach can invent numeric results or capabilities absent from evidence | Session G Dental Sphere draft claimed “20–40 additional booked consultations/month” and active treatment-intent identification without proof | add deterministic draft truthfulness checks: reject unsupported numeric performance claims and product capabilities not present in an approved capability manifest | G4 quality guardrail |
 
 *(Already-documented dashboard command gaps — edit/reject/instantiate/trigger-run/run-swarm/promote — are correctly
 captured in `api/src/agentx_api/gaps.py` and surfaced as honest `501`s; they are not re-listed here. They map to

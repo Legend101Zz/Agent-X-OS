@@ -31,9 +31,9 @@ protocol-driven worker, with no script-owned reconstruction or settlement glue.
 - [x] G3 — Hermes history persistence/replay and fake-transport live-path resume proof.
 - [x] G4 — scheduler-min Protocol/store/worker; trigger→run and approval→resume→settle.
 - [x] G5 — replace bespoke resume in `run_lead_finder.py` and `_eval_d_inspect.py`.
-- [ ] G6 — parked→resume→settle integration test; full offline gate; commit/push. (gate green; push pending)
-- [ ] G7 — real parked dental/vendor resume through kernel API; worker proof; honest verdict.
-- [ ] G8 — reconcile roadmap/progress/proof; final gate; commit/push; next-session handoff.
+- [x] G6 — parked→resume→settle integration test; full offline gate; commit/push (`6347beb`).
+- [x] G7 — real parked dental/vendor resume through kernel API; worker proof; honest verdict.
+- [x] G8 — reconcile roadmap/progress/proof; final gate green; Session H handoff written; final push pending.
 
 ## Baseline
 - `uv run mypy --strict packages db tests` → success, 95 source files.
@@ -45,4 +45,4 @@ protocol-driven worker, with no script-owned reconstruction or settlement glue.
 ## Errors encountered
 | Error | Attempt | Resolution |
 |---|---:|---|
-| none | | |
+| Dental draft fabricated a 20–40 consultations/month result | live proof | G2 remains proven; mark draft not sendable and carry truthfulness guardrails into the next session/P2 polish. |

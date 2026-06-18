@@ -3,22 +3,17 @@
 *Companion to [BLUEPRINT.md](./BLUEPRINT.md) (canonical). This doc is the living snapshot: **what is built
 today**, **what is left**, and **how to tackle it**. When this and the blueprint disagree on intent, the
 blueprint wins; when they disagree on *what currently exists in code*, this doc wins (it's verified against
-the tree). Last verified: 2026-06-18, after Session C (branch `session-c/integration-go-live`), the
-**Session D shakedown/eval** — see [EVAL_FINDINGS.md](./EVAL_FINDINGS.md) for the evidence-based P0/P1/P2
-punch-list (lead quality is poor, and three correctness bugs were found: lossy idempotency replay, settlement
-dropping the watch, and a non-truthful approval card) — and **Session E P0/P1 fixes** (branch
-`session-e/p0-p1-fixes`, PR #3). Session E **implemented and then LIVE-PROVED** all P0/P1 items (see
-[SESSION_E_LIVE_PROOF.md](./SESSION_E_LIVE_PROOF.md)): the three P0 correctness bugs are reproduced as fixed;
-P1-2 (real promptfoo judge) and P1-3 (real mandate instance on `/instances`) are live-proven; P1-1 (actionable
-leads) machinery is live-proven on 2 ICPs but **reliably-sendable leads are NOT proven and remain blocked on
-G1**. Items below marked ✅ are now live-proven; remaining 🟢/🟡 are proven-but-incomplete (see notes).*
+the tree). Last verified: 2026-06-18 after Sessions D–G. Session E fixed the P0/P1 correctness issues,
+Session F made MiniMax drive the loop and produced sendable leads, and Session G made trigger/approval runs
+repeatable through first-class resume + scheduler-min. Items below marked ✅ are live-proven; remaining
+🟢/🟡 are proven-but-incomplete. See the session proof documents for exact evidence.*
 
 > **Status legend:** ✅ built & proven (live) · 🟢 implemented + live-proven but blocked/incomplete · 🟡 partial / scaffolded · ❌ not built · 🏗️ in progress (parallel agent)
 
-> **Session F (2026-06-18) update:** **G1 (the LLM drives the run loop)** and **G4 (founder-sendable leads)** are
-> now **live-proven** (MiniMax-M3 drives `step()`; 2/2 Session-E ICPs produced sendable, evidence-grounded drafts) —
-> see [SESSION_F_LIVE_PROOF.md](./SESSION_F_LIVE_PROOF.md). Next big build: **G2** (repeatable runner + parked-run
-> resume + scheduler-min worker) toward the "~100 settles" finish line, plus Step D's maturation half.
+> **Session G (2026-06-18) update:** **G2 (repeatable runner + first-class parked-run resume + scheduler-min)**
+> is built and live-proven. A real dental run went trigger→park→ApprovalResolved→kernel resume→verify→settle
+> through Mongo-backed work items; same-key receipt replay added zero journal rows. See
+> [SESSION_G_LIVE_PROOF.md](./SESSION_G_LIVE_PROOF.md). Next: Step D maturation, then P2 polish.
 
 ---
 
@@ -39,12 +34,12 @@ G1**. Items below marked ✅ are now live-proven; remaining 🟢/🟡 are proven
    │   ·memory-craft·escalation ✅ │  │  │  gateway: ring·idem·channel·adapter         │
    │  harness seam: Think/Call/    │  │  │   ·credential-inject·journal        ✅      │
    │   Claim/Escalate/Finish,      │  │  │  verifier: rules rung + human park  ✅      │
-   │   HarnessSession.step()  🟡   │  │  │  settlement + projections (event-src)✅     │
-   │   OwnHarness + playbook  🟡   │  │  │  hydration (freeze snapshot)        ✅      │
+   │   HarnessSession.step()  ✅   │  │  │  settlement + projections (event-src)✅     │
+   │   OwnHarness + playbook  ✅   │  │  │  hydration (freeze snapshot)        ✅      │
    │  pod holds NO creds      ✅   │  │  │  ConfigVault (credential inject)    ✅      │
-   │  LLM DRIVES the loop?    ❌   │  │  │  HermesClient → Minimax (Reasoner)  🟡      │
-   └──────────────┬───────────────┘  │  │  scheduler / worker loop            ❌      │
-                  │ intent           │  │  parked-run RESUME api (kernel)     ❌      │
+   │  LLM DRIVES the loop?    ✅   │  │  │  HermesClient → Minimax (Reasoner)  ✅      │
+   └──────────────┬───────────────┘  │  │  scheduler / worker loop            ✅      │
+                  │ intent           │  │  parked-run RESUME api (kernel)     ✅      │
    ═══════ ADAPTER LINE ═════════════╪══│  ──────────────────────────────────────────│
                   │                  │  │ OFFLINE — FOUNDRY (agentx_swarm)            │
    ┌──────────────▼───────────────┐  │  │  SimAdapter / SimRegistry           ✅      │
@@ -63,10 +58,9 @@ G1**. Items below marked ✅ are now live-proven; remaining 🟢/🟡 are proven
                                       │   mandate_type·mandate_instance·mandate_run ✅ persists (Session E, live /instances proven)
 ```
 
-**Read this diagram as:** the **online kernel, the syscall ladder, the memory/event-sourcing, and the swarm
-grading loop are real and proven live**. The two things that make it feel like a deterministic pipeline
-rather than an *agent* OS are marked ❌/🟡: **the LLM does not yet drive the run loop**, and **there is no
-scheduler/resume to run it repeatedly**.
+**Read this diagram as:** the online kernel, syscall ladder, event sourcing, LLM-driven harness,
+first-class resume, scheduler-min worker, and swarm grading loop are real. The remaining Phase-1 feedback
+gap is deferred maturation: reality must promote probation facts and emit real graded cases.
 
 ---
 
@@ -74,6 +68,10 @@ scheduler/resume to run it repeatedly**.
 
 ### Kernel (online, deterministic) — `packages/kernel`
 - **Run loop** `Phase1RunInvoker.invoke()` — hydrate → faculties → gateway → verify → settle. `run_loop.py`
+- **First-class resume** `Phase1RunInvoker.resume()` — restores a durable continuation, replays the parked
+  syscall idempotently, continues the harness, verifies, and settles. `run_loop.py`, `continuations.py`
+- **Scheduler-min worker** — deterministic trigger/approval work, in-memory + atomic Mongo stores.
+  `scheduler.py`, `stores/`
 - **Gateway** — ring check → idempotency (journal replay) → channel rule → adapter resolve → **credential
   injection** → execute → journal Attempted/Settled. Parks when ring is too low. `gateway.py`
 - **Verifier** — deterministic `rules` rung (`claimed_facts >= N`, `fact:PRED exists`) + **human approval
@@ -90,7 +88,7 @@ scheduler/resume to run it repeatedly**.
 - Four faculties: **research** (emits read intent, no fabrication after Session C), **judgment** (scores),
   **memory-craft** (provenance-stamped fact claims), **escalation**. `faculties/`
 - Harness seam: `Think/Call/Claim/Escalate/Finish`, `HarnessSession.step()`/`HarnessRunner` Protocols,
-  `OwnHarness` (recorded | playbook). **The double works; the loop doesn't drive it yet.** `harness.py`
+  `OwnHarness` (recorded | playbook). The live and sim loops both drive this seam. `harness.py`
 - `build_lead_finder_type()` — the Phase-1 mandate, in code. `library/lead_finder.py`
 
 ### Syscall ladder — `packages/syscall`
@@ -104,12 +102,14 @@ scheduler/resume to run it repeatedly**.
   trace viewer. **End-to-end proven in sim** (Session C T6).
 
 ### Persistence — `packages/db` / MongoDB
-- Collections + indexes for journal/heap/thread/resume/watch/syscall_trace/billing/eval_case **wired & used**.
+- Collections + indexes for journal/heap/thread/resume/watch/syscall_trace/billing/eval_case plus
+  run-continuation and scheduler work **wired & used**.
 - **Proven live**: a real dogfood run settled with provenance facts in Mongo (Session C T7).
 
 ### Invariants enforced
 - Lane isolation + `mandate` holds-no-credentials enforced by `lint-imports` (3/3) + `tests/test_credential_boundary.py`.
-- Gate green: `mypy --strict` (85 files), `ruff`, `pytest` (65 + 1 live-gated skip), seam proof green on the double.
+- Gate green after Session G: `mypy --strict` (99 files), `ruff`, `pytest` (111 + 2 live-gated skips),
+  import fences 3/3, seam proof green.
 
 ---
 
@@ -118,7 +118,7 @@ scheduler/resume to run it repeatedly**.
 | # | Gap | Status | Why it matters | Blueprint ref |
 |---|---|---|---|---|
 | G1 | **LLM drives the run loop** via `step()` (proposes; kernel disposes) | ✅ | **Session F:** the run loop drives `HarnessRunner.step(observation)`. Live, MiniMax-M3 (OpenAI tool-calling) emits Think/Call/Claim/Finish and the kernel disposes (ring-checks + journals effectful Calls, fulfils reads + feeds the SyscallResult back, stamps fact provenance, verifies + settles); sim drives `OwnHarness` + a lead-finder playbook. **Live-proven end-to-end** (2 ICPs). The hardcoded faculty order + hardcoded draft are gone | §2.3, §4.5 |
-| G2 | **Scheduler / worker loop + kernel parked-run RESUME** | ❌ | Runs are invoked by hand; the script resumes draft_email with bespoke code. Needed to reach the "~100 settles" finish line | §4 (scheduler), §2.4 |
+| G2 | **Scheduler / worker loop + kernel parked-run RESUME** | ✅ | **Session G:** TriggerWork invokes; ApprovalWork calls first-class `resume()`. Durable continuation stores preserve frozen snapshot/scratch/claims/trace/cursor/Hermes history and exact pending call. Live dental run settled through the Mongo worker; same-key replay returned the receipt with zero journal delta. Scripts no longer hand-build gateway replay/verify/settle. See `SESSION_G_LIVE_PROOF.md` | §4 (scheduler), §2.4 |
 | G3 | **Deferred-settle / WATCH → gym** | ✅ source bug fixed + live-proven; loop still ❌ | **Session E P0-1** fixed the source bug: `SettlementCommitter.commit` now journals + projects a `WatchRegistered` per watch (thread-advance still deferred — no frozen Phase-1 thread event). **Live-proven (Session E proof):** a live settle appends `watch_registered` (seq 16, right after `run_settled`) and projects **one `WATCH` doc in Mongo (count=1, was 0)**. The **full deferred-settle maturation loop** (watch matures → probation→verified → emit real `eval_case`, Step D) is still **not built** | §2.7, §5 |
 | G4 | **Real, actionable lead quality** | ✅ sendable leads live-proven (2/2 ICPs) | **Session F (after G1 landed):** with the LLM driving multi-step research (search → refine query → read 3–4 candidate pages → ground claims → draft), the loop produced a **founder-sendable, evidence-grounded draft for BOTH Session-E ICPs**: dental (Microdent Dentistry, Pune — SETTLED) and the vendor-shaped ICP (American Marketing & Publishing, DeKalb IL — **competitor rejection now works**; it picked a buyer, not Callbox/Belkins). Each lead = real org + decision-maker grounded in cited page text + reachable URL + a citable buying signal — vs Session E's **0/6**. Honest caveats: quality depends on search results (the LLM skips junk and refines queries); the dental signal is partly interpretive while the vendor signal is a hard growth signal. See [SESSION_F_LIVE_PROOF.md](./SESSION_F_LIVE_PROOF.md) §F5 | §7 WIN |
 | G5 | **Mandate registry / Catalog persistence** | ✅ implemented + live-proven | **Session E P1-3** added a projection-backed `MandateRegistry` that persists `MandateType`/`MandateInstance` and exposes register/instantiate/list via `KernelControl`; live edge persists a real instance. **Live-proven (Session E proof):** a real non-`inst_demo` instance (`agentx_dogfood_…`, customer "Agent-X dogfood") is in Mongo `mandate_instance` and is surfaced by `/instances` with its settled run, facts, and watch ids | §1, §6 (Catalog) |
@@ -149,10 +149,11 @@ and the seam proof passing on the OwnHarness double at every step.
               • Agent-loop resilience added: gateway turns adapter exceptions into error results; the loop
                 FEEDS syscall errors back so the LLM recovers (only Escalate + max_steps terminate).
 
-  STEP B  G2  Repeatable runner + kernel resume                    ❌ NOT STARTED (P0-2 receipt store is a building block)
-              • first-class kernel resume: resume a parked run from its approval card THROUGH the loop.
-              • scheduler-min worker (behind Protocols): trigger→run; ApprovalResolved→resume→settle.
-              • keep kernel lane-pure (wire syscall registry at the edge, not inside agentx_kernel).
+  STEP B  G2  Repeatable runner + kernel resume                    ✅ SESSION G — DONE & LIVE-PROVEN
+              • restore frozen continuation + Hermes history; replay approved call through receipt-backed
+                gateway; continue to verify + settle.
+              • scheduler-min: trigger→run; ApprovalResolved→resume→settle (memory + Mongo).
+              • live dental proof: one attempt, one settlement, zero-row receipt replay.
 
   STEP C  G4  Real, actionable leads (multi-step research)         ✅ SESSION F — sendable leads live-proven (2/2 ICPs) now that G1 landed (LLM does search→refine→read→ground→draft)
               • search → pick real candidate COMPANIES → read_url top picks → extract
@@ -190,7 +191,7 @@ Concretely, Phase 1 is done when:
 ```text
 [✅] one lead-finder mandate runs end-to-end and settles with provenance facts        (done once)
 [✅] the LLM actually drives the run (G1) — not a deterministic pipeline               Session F: live, MiniMax drives step(); kernel disposes
-[  ] runs are repeatable without hand-wiring (G2) — toward ~100 settles                ❌ not started (next)
+[✅] runs are repeatable without hand-wiring (G2) — toward ~100 settles                Session G: live worker + kernel resume proven; 100 settles not yet run
 [✅] leads are actionable: real orgs/people/URLs + usable drafts (G4)                  Session F: founder-sendable, grounded drafts on 2/2 ICPs (dental settled; vendor parked)
 [🟢] reality grades runs back into the gym (G3)                                        watch registers + live-proven (Session E: WATCH count=1); maturation→promote→eval_case loop still ❌
 [✅] manager can approve from a dashboard surface (G9)                                 approval card truthful + live-proven at API path (Session E); React UI not browser-tested
@@ -214,7 +215,6 @@ rise with heap depth, context-gravity is fiction. Watch these as real data arriv
    as fixed; 2 live ICP runs (machinery actionable, but sendable leads blocked on G1); real promptfoo Scorecard
    over OpenRouter on Node v24.13.1; real non-demo instance on Mongo/`/instances`. Full evidence in
    [SESSION_E_LIVE_PROOF.md](./SESSION_E_LIVE_PROOF.md).
-3. ~~**Now that Session E proof has closed:** Step A (G1) + Step B (G2) are the next big build~~ ✅ **Step A (G1)
-   DONE + Step C (G4) sendable leads live-proven (Session F).** Next big build = **Step B (G2): repeatable runner +
-   first-class kernel parked-run resume + scheduler-min worker** toward "~100 settles", plus **Step D's maturation
-   half** (watch matures → promote probation→verified → emit a graded `eval_case` origin="real"), then "Beyond Phase 1".
+3. ~~Step A (G1), Step B (G2), and Step C (G4)~~ ✅ **DONE and live-proven through Session G.** Next =
+   **Step D maturation** (watch/`mark_outcome` → probation→verified, trust/résumé, graded
+   `eval_case origin="real"`), plus P2 polish; then accumulate settles toward ~100.
