@@ -6,6 +6,7 @@ from agentx_contracts.faculty import Faculty, HarnessAdapterSpec
 from agentx_contracts.memory import Fact, Provenance
 
 from agentx_mandate.harness import Claim, FacultyContext, HarnessAction
+from agentx_mandate.lead_quality import is_actionable_lead
 
 FACULTY = Faculty(
     name="memory-craft",
@@ -65,7 +66,7 @@ def propose(ctx: FacultyContext) -> list[HarnessAction]:
     scores = ctx.scratchpad.get("scores")
     for lead in raw_leads:
         lead_id = _lead_id(lead)
-        if lead_id is None:
+        if lead_id is None or not is_actionable_lead(lead):
             continue
         confidence, reason = _score(scores, lead_id)
         facts.append(
@@ -81,6 +82,24 @@ def propose(ctx: FacultyContext) -> list[HarnessAction]:
                     run_id=ctx.run_id,
                     evidence=_evidence(lead, ctx, lead_id),
                     note=f"{_company(lead, lead_id)}: {reason}",
+                ),
+                status="probation",
+                created_at=ctx.now,
+            )
+        )
+        facts.append(
+            Fact(
+                id=f"{ctx.run_id}:{lead_id}:actionable",
+                instance_id=ctx.instance_id,
+                subject=lead_id,
+                predicate="actionable_lead",
+                object=_company(lead, lead_id),
+                confidence=confidence,
+                source="agent-inferred",
+                provenance=Provenance(
+                    run_id=ctx.run_id,
+                    evidence=_evidence(lead, ctx, lead_id),
+                    note=f"{_company(lead, lead_id)} passed the actionable-lead gate",
                 ),
                 status="probation",
                 created_at=ctx.now,

@@ -5,6 +5,7 @@ from __future__ import annotations
 from agentx_contracts.faculty import Faculty, HarnessAdapterSpec, RoutingHint
 
 from agentx_mandate.harness import FacultyContext, HarnessAction
+from agentx_mandate.lead_quality import score_lead
 
 FACULTY = Faculty(
     name="judgment",
@@ -37,6 +38,7 @@ def propose(ctx: FacultyContext) -> list[HarnessAction]:
     for lead in raw_leads:
         lead_id = _lead_id(lead)
         if lead_id is not None:
-            scores[lead_id] = {"score": 0.7, "reason": "evidence-backed candidate"}
+            score, reason = score_lead(lead)
+            scores[lead_id] = {"score": score, "reason": reason}
     ctx.scratchpad["scores"] = scores
     return []

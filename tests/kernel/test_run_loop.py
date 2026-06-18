@@ -9,6 +9,7 @@ from agentx_contracts.mandate import (
     Charter,
     Condition,
     DomainPackRef,
+    HydrationSnapshot,
     InstanceBinding,
     MandateType,
     SettlementRules,
@@ -26,6 +27,8 @@ from agentx_contracts.syscall import (
 )
 from agentx_contracts.trigger import DeadlineTrigger
 from agentx_kernel.bootstrap import build_phase1_runinvoker
+from agentx_kernel.run_loop import _apply_read_result, _draft_args, _first_lead_id
+from agentx_mandate.harness import FacultyContext
 
 NOW = datetime(2026, 6, 17, tzinfo=UTC)
 
@@ -150,3 +153,57 @@ async def test_phase1_runinvoker_executes_and_settles_at_l2_with_injected_regist
     assert result.settlement.facts
     assert all(fact.provenance.run_id == result.run_id for fact in result.settlement.facts)
     assert any(event.kind == "syscall_result" for event in result.trace.events)
+
+
+def test_read_url_enrichment_merges_by_lead_id_and_draft_uses_actionable_signal() -> None:
+    ctx = FacultyContext(
+        snapshot=HydrationSnapshot(frozen_at=NOW),
+        target={"icp": "independent dental clinics", "location": "Pune"},
+        scratchpad={
+            "leads": [
+                {"id": "article", "company": "10 Best Clinics", "url": "https://youtube.com/watch/1"},
+                {
+                    "id": "clinic",
+                    "company": "Contact | Galaxy Dental Clinic",
+                    "url": "https://galaxy.example",
+                    "evidence": ["Pune clinic"],
+                },
+            ]
+        },
+        instance_id="inst_a",
+        run_id="run_1",
+        ring="L1",
+        now=NOW,
+    )
+    request = SyscallRequest(
+        name="read_url",
+        args={"lead_id": "clinic", "url": "https://galaxy.example"},
+        instance_id="inst_a",
+        run_id="run_1",
+        idempotency_key="run_1:read:clinic",
+        ring="L1",
+        risk_class="read",
+    )
+
+    _apply_read_result(
+        ctx,
+        request,
+        {
+            "url": "https://galaxy.example",
+            "title": "Contact | Galaxy Dental Clinic",
+            "markdown": (
+                "# Galaxy Dental Clinic\n"
+                "Dr. Asha Kulkarni and the team are accepting new patients.\n"
+                "[Book an appointment](/contact)"
+            ),
+            "evidence": ["Dr. Asha Kulkarni and the team are accepting new patients."],
+        },
+    )
+    ctx.scratchpad["scores"] = {"clinic": {"score": 1.0, "reason": "actionable"}}
+
+    assert _first_lead_id(ctx) == "clinic"
+    draft = _draft_args(ctx, "clinic")
+    assert "Hi Dr. Asha Kulkarni" in str(draft["body"])
+    assert "accepting new patients" in str(draft["body"])
+    assert "https://galaxy.example/contact" in str(draft["body"])
+    assert "10 Best Clinics" not in str(draft["body"])
