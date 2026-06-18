@@ -28,7 +28,7 @@ def _ctx(*, error: str | None = None) -> FacultyContext:
 
 
 def test_faculty_library_contains_exactly_phase1_faculties() -> None:
-    assert set(FACULTY_LIBRARY) == {"research", "judgment", "memory-craft", "escalation"}
+    assert set(FACULTY_LIBRARY) == {"research", "enrichment", "judgment", "memory-craft", "escalation"}
 
 
 def test_each_faculty_binds_hermes_with_effectful_tools_to_gateway_and_scratch_memory() -> None:
@@ -61,7 +61,19 @@ def test_research_proposes_read_intent_without_fabricating_leads() -> None:
     assert action.request.ring == "L1"
     # Args carry research CRITERIA (count split out for the provider), not pre-built leads.
     assert action.request.args == {
-        "criteria": {"icp": "independent dental clinics", "location": "Pune"},
+        "criteria": {
+            "icp": "independent dental clinics",
+            "location": "Pune",
+            "query": "Pune dental clinic official website contact book appointment consultation",
+            "exclude_domains": [
+                "youtube.com",
+                "instagram.com",
+                "facebook.com",
+                "linkedin.com",
+                "reddit.com",
+                "medium.com",
+            ],
+        },
         "count": 2,
     }
     # The faculty must NOT fabricate leads into scratch — that was the bug this kills.
@@ -71,23 +83,63 @@ def test_research_proposes_read_intent_without_fabricating_leads() -> None:
 def test_judgment_scores_cached_leads_in_scratchpad() -> None:
     ctx = _ctx()
     ctx.scratchpad["leads"] = [
-        {"id": "lead_1", "company": "A", "evidence": ["source:a"]},
-        {"id": "lead_2", "company": "B", "evidence": ["source:b"]},
+        {
+            "id": "lead_1",
+            "company": "A",
+                "url": "https://a.example/contact",
+                "contact_role": "Practice owner",
+                "contact_url": "https://a.example/contact",
+                "buying_signal": "Accepting new patient appointments",
+                "buying_signal_evidence": "Accepting new patient appointments",
+                "evidence": ["source:a", "Accepting new patient appointments"],
+            "actionable": True,
+        },
+        {"id": "lead_2", "company": "B", "url": "https://youtube.com/watch/2", "evidence": ["source:b"]},
     ]
 
     assert propose("judgment", ctx) == []
 
-    assert ctx.scratchpad["scores"] == {
-        "lead_1": {"score": 0.7, "reason": "evidence-backed candidate"},
-        "lead_2": {"score": 0.7, "reason": "evidence-backed candidate"},
-    }
+    scores = ctx.scratchpad["scores"]
+    assert isinstance(scores, dict)
+    assert scores["lead_1"]["score"] >= 0.8
+    assert scores["lead_2"]["score"] == 0.0
+
+
+def test_enrichment_emits_at_most_three_reads_and_skips_content_domains() -> None:
+    ctx = _ctx()
+    ctx.scratchpad["leads"] = [
+        {"id": "lead_1", "company": "Clinic One", "url": "https://clinic-one.example"},
+        {"id": "bad", "company": "Video", "url": "https://youtube.com/watch?v=1"},
+        {"id": "lead_2", "company": "Clinic Two", "url": "https://clinic-two.example"},
+        {"id": "lead_3", "company": "Clinic Three", "url": "https://clinic-three.example"},
+        {"id": "lead_4", "company": "Clinic Four", "url": "https://clinic-four.example"},
+    ]
+
+    actions = propose("enrichment", ctx)
+
+    assert [action.request.args["lead_id"] for action in actions if isinstance(action, Call)] == [
+        "lead_1",
+        "lead_2",
+        "lead_3",
+    ]
+    assert all(isinstance(action, Call) and action.request.name == "read_url" for action in actions)
 
 
 def test_memory_craft_claims_probationary_agent_inferred_facts_with_provenance() -> None:
     ctx = _ctx()
     ctx.scratchpad["leads"] = [
-        {"id": "lead_1", "company": "A", "evidence": ["source:a"]},
-        {"id": "lead_2", "company": "B", "evidence": ["source:b"]},
+        {
+            "id": "lead_1",
+            "company": "A",
+                "url": "https://a.example/contact",
+                "contact_role": "Practice owner",
+                "contact_url": "https://a.example/contact",
+                "buying_signal": "Accepting new patients",
+                "buying_signal_evidence": "Accepting new patients",
+                "evidence": ["source:a", "Accepting new patients"],
+            "actionable": True,
+        },
+        {"id": "lead_2", "company": "B", "evidence": ["source:b"], "actionable": False},
     ]
     ctx.scratchpad["scores"] = {
         "lead_1": {"score": 0.7, "reason": "evidence-backed candidate"},
@@ -100,6 +152,7 @@ def test_memory_craft_claims_probationary_agent_inferred_facts_with_provenance()
     action = actions[0]
     assert isinstance(action, Claim)
     assert len(action.facts) == 2
+    assert {fact.predicate for fact in action.facts} == {"qualified_lead_score", "actionable_lead"}
     for fact in action.facts:
         assert fact.instance_id == "inst_a"
         assert fact.provenance.run_id == "run_1"

@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 
+import pytest
 from agentx_contracts.enums import MaturityLevel, Ring, TenantAuth
 from agentx_contracts.jsontypes import JsonSchema
 from agentx_contracts.protocols import Adapter
@@ -14,6 +15,7 @@ from agentx_contracts.syscall import (
     SyscallTestCase,
     VerifyOutcome,
 )
+from agentx_kernel.errors import IdempotencyRequestConflict
 from agentx_kernel.gateway import Gateway
 from agentx_kernel.stores.memory import InMemoryJournalStore, InMemoryVault
 
@@ -105,8 +107,28 @@ async def test_ring_check_parks_before_registry_resolution() -> None:
     assert outcome.parked is not None
     assert outcome.parked.awaiting == "human_approval"
     assert outcome.parked.required_ring == "L2"
+    assert outcome.attempted is not None
+    assert outcome.attempted.syscall == "draft_email"
     assert registry.resolve_calls == 0
     assert adapter.calls == 0
+    assert [event.kind for event in await journal.read_run("run_1")] == ["syscall_attempted", "run_parked"]
+
+
+async def test_approved_retry_reuses_parked_attempt_instead_of_appending_another() -> None:
+    adapter = StubAdapter()
+    registry = StubRegistry(adapter)
+    journal = InMemoryJournalStore()
+    gateway = Gateway(journal=journal, vault=InMemoryVault(), registry=registry)
+    request = _req("draft_email", idem="idem-draft")
+
+    parked = await gateway.invoke(request, _ctx(ring="L1"))
+    executed = await gateway.invoke(request, _ctx(ring="L2"))
+
+    assert parked.parked is not None
+    assert executed.result is not None and executed.result.status == "ok"
+    events = await journal.read_run("run_1")
+    assert [event.kind for event in events] == ["syscall_attempted", "run_parked", "syscall_settled"]
+    assert sum(event.kind == "syscall_attempted" for event in events) == 1
 
 
 async def test_allowed_syscall_executes_with_injected_credential_and_journals_attempt_and_settle() -> None:
@@ -141,8 +163,21 @@ async def test_duplicate_idempotency_key_returns_prior_result_without_reexecutin
 
     assert first.result is not None and first.result.status == "ok"
     assert second.result is not None and second.result.status == "ok"
+    assert second.result.output == first.result.output == {"count": 2}
     assert second.result.fulfilled_by == "stub_research"
     assert adapter.calls == 1
+
+
+async def test_duplicate_idempotency_key_rejects_a_different_request() -> None:
+    adapter = StubAdapter()
+    registry = StubRegistry(adapter)
+    gateway = Gateway(journal=InMemoryJournalStore(), vault=InMemoryVault(), registry=registry)
+
+    await gateway.invoke(_req("lead_research_batch", idem="idem-repeat"), _ctx(ring="L0"))
+    conflicting = _req("read_url", idem="idem-repeat").model_copy(update={"args": {"url": "https://example.com"}})
+
+    with pytest.raises(IdempotencyRequestConflict, match="idempotency key belongs to a different syscall request"):
+        await gateway.invoke(conflicting, _ctx(ring="L0"))
 
 
 async def test_missing_registry_parks_to_human_approval() -> None:

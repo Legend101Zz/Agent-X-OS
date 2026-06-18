@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from inspect import isawaitable
 from typing import Any, Literal, cast
 
 import agentx_db.collections as c
@@ -72,7 +73,9 @@ class DashboardState:
     async def close(self) -> None:
         close = getattr(self.client, "close", None)
         if callable(close):
-            close()
+            result = close()
+            if isawaitable(result):
+                await result
 
     async def collection(self, collection: str, query: JsonObject | None = None) -> list[dict[str, Any]]:
         docs = await self.store.find(collection, dict(query or {}))
@@ -156,7 +159,7 @@ async def seed_demo_state(state: DashboardState) -> None:
 
     now = datetime(2026, 6, 18, 9, 30, tzinfo=UTC)
     mandate_type = build_lead_finder_type()
-    await state.store.upsert(c.MANDATE_TYPE, mandate_type.id, mandate_type.model_dump(mode="json"))
+    await state.control.register_mandate_type(mandate_type)
     instance = MandateInstance(
         id="inst_demo",
         type_ref="lead-finder@0.1.0",
@@ -164,7 +167,7 @@ async def seed_demo_state(state: DashboardState) -> None:
         ring="L1",
         heap_region_id="heap_demo",
     )
-    await state.store.upsert(c.MANDATE_INSTANCE, instance.id, instance.model_dump(mode="json"))
+    await state.control.instantiate_mandate(instance)
 
     settled_trigger = DeadlineTrigger(ts=now - timedelta(hours=6), reason="morning lead sweep", entity_id="lead_orbit")
     await _append_and_project(
@@ -443,7 +446,7 @@ async def approval_cards(state: DashboardState, *, instance_id: str | None = Non
                 {
                     **item.model_dump(mode="json"),
                     "instance_id": current_instance_id,
-                    "drafted_effect": _drafted_effect(events),
+                    "drafted_effect": item.approval_card or _drafted_effect(events),
                     "timeline": [_timeline_event(event) for event in events],
                 }
             )

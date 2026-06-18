@@ -329,11 +329,13 @@ class ReadUrlAdapter(_AdapterBase):
         url = _str_arg(req.args, "url")
         provider = self._providers[0]
         page = await provider.read_url(url)
+        lead_id = req.args.get("lead_id")
         return SyscallResult(
             status="ok",
             output={
                 "provider": provider.name,
                 "credential_ref": cred.ref if cred is not None else None,
+                "lead_id": lead_id if isinstance(lead_id, str) else None,
                 **page.to_json(),
             },
             idempotency_key=req.idempotency_key,
@@ -371,7 +373,7 @@ class DraftEmailAdapter(_AdapterBase):
             category="communication",
             maturity_level=1,
             risk_class="external_message",
-            required_ring="L1",
+            required_ring="L2",
             tenant_auth="manual",
             fixtures=[
                 SyscallTestCase(
@@ -559,14 +561,26 @@ class FirecrawlResearchProvider:
         firecrawl_module = import_module("firecrawl")
         client_cls = firecrawl_module.Firecrawl
         client = client_cls(api_key=self._api_key)
-        response = client.search(_criteria_to_query(criteria), limit=count)
+        excluded = criteria.get("exclude_domains")
+        exclude_domains = [str(item) for item in excluded] if isinstance(excluded, list) else None
+        response = client.search(
+            _criteria_to_query(criteria),
+            limit=count,
+            exclude_domains=exclude_domains,
+            timeout=60_000,
+        )
         return _parse_search_results(response, provider=self.name, count=count)
 
     async def read_url(self, url: str) -> ResearchPage:
         firecrawl_module = import_module("firecrawl")
         client_cls = firecrawl_module.Firecrawl
         client = client_cls(api_key=self._api_key)
-        response = client.scrape(url)
+        response = client.scrape(
+            url,
+            formats=["markdown", "links"],
+            only_main_content=True,
+            timeout=60_000,
+        )
         return _parse_page(response, url=url, provider=self.name)
 
 
@@ -635,6 +649,9 @@ def _mapping_arg(args: Mapping[str, Any], key: str, *, default: Mapping[str, Any
 
 
 def _criteria_to_query(criteria: Mapping[str, Any]) -> str:
+    explicit = criteria.get("query")
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip()
     if not criteria:
         return "qualified B2B leads with evidence"
     parts = [f"{key}: {value}" for key, value in sorted(criteria.items())]
@@ -646,12 +663,31 @@ def _parse_search_results(response: object, *, provider: str, count: int) -> lis
     leads: list[ResearchLead] = []
     for idx, item in enumerate(raw_results[:count], start=1):
         mapping = _to_mapping(item)
-        title = str(mapping.get("title") or mapping.get("name") or f"Lead {idx}")
-        url = str(mapping.get("url") or mapping.get("link") or "")
+        metadata = _to_mapping(mapping.get("metadata"))
+        title = str(mapping.get("title") or mapping.get("name") or metadata.get("title") or f"Lead {idx}")
+        url = str(
+            mapping.get("url")
+            or mapping.get("link")
+            or metadata.get("sourceURL")
+            or metadata.get("url")
+            or metadata.get("ogUrl")
+            or ""
+        )
         lead_id = str(mapping.get("id") or f"{provider}_{idx}")
         highlights = _string_list(mapping.get("highlights"))
-        snippet = str(mapping.get("snippet") or mapping.get("description") or "")
-        evidence = highlights or ([snippet] if snippet else [f"{provider} result {idx}"])
+        snippet = str(
+            mapping.get("snippet")
+            or mapping.get("description")
+            or metadata.get("description")
+            or metadata.get("ogDescription")
+            or ""
+        )
+        markdown = str(mapping.get("markdown") or "")
+        evidence = highlights or ([snippet] if snippet else [])
+        if markdown:
+            evidence.append(markdown[:500])
+        if not evidence:
+            evidence = [f"{provider} result {idx}"]
         leads.append(
             ResearchLead(
                 id=lead_id,
@@ -659,7 +695,7 @@ def _parse_search_results(response: object, *, provider: str, count: int) -> lis
                 url=url,
                 evidence=evidence,
                 fit_score=0.75,
-                metadata={"provider": provider},
+                metadata={"provider": provider, **cast(JsonObject, dict(metadata))},
             )
         )
     return leads
@@ -668,11 +704,18 @@ def _parse_search_results(response: object, *, provider: str, count: int) -> lis
 def _parse_page(response: object, *, url: str, provider: str) -> ResearchPage:
     mapping = _first_mapping(response)
     markdown = str(mapping.get("markdown") or mapping.get("text") or mapping.get("content") or "")
-    title = mapping.get("title")
     metadata = _to_mapping(mapping.get("metadata"))
+    title = mapping.get("title") or metadata.get("title") or metadata.get("ogTitle")
+    page_url = (
+        mapping.get("url")
+        or metadata.get("sourceURL")
+        or metadata.get("url")
+        or metadata.get("ogUrl")
+        or url
+    )
     metadata_json = cast(JsonObject, dict(metadata))
     return ResearchPage(
-        url=str(mapping.get("url") or url),
+        url=str(page_url),
         title=str(title) if title is not None else None,
         markdown=markdown,
         evidence=[markdown[:240]] if markdown else [f"{provider} read_url completed"],

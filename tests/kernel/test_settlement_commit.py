@@ -1,9 +1,9 @@
 """P8 kernel settlement commit: one RunSettled event, then projections."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from agentx_contracts.memory import Fact, Provenance
-from agentx_contracts.settlement import SettlementEvent, TrustDelta
+from agentx_contracts.settlement import SettlementEvent, TrustDelta, Watch
 from agentx_kernel.projections import Projections
 from agentx_kernel.settlement import SettlementCommitter
 from agentx_kernel.stores.memory import InMemoryJournalStore, InMemoryProjectionStore
@@ -48,3 +48,34 @@ async def test_commit_appends_one_runsettled_and_projects_facts_to_heap() -> Non
     provenance = heap_doc["provenance"]
     assert isinstance(provenance, dict)
     assert provenance["run_id"] == "run_1"
+
+
+async def test_commit_registers_and_projects_settlement_watches() -> None:
+    journal = InMemoryJournalStore()
+    projection_store = InMemoryProjectionStore()
+    projections = Projections(projection_store, journal)
+    deadline = NOW + timedelta(hours=72)
+    settlement = SettlementEvent(
+        run_id="run_1",
+        instance_id="inst_a",
+        watches=[
+            Watch(
+                id="watch_1",
+                run_id="run_1",
+                instance_id="inst_a",
+                condition="lead_replied",
+                deadline=deadline,
+            )
+        ],
+        settled_at=NOW,
+    )
+
+    await SettlementCommitter(journal=journal, projections=projections).commit(settlement)
+
+    events = await journal.read_run("run_1")
+    assert [item.kind for item in events] == ["run_settled", "watch_registered"]
+    watch_doc = await projection_store.get("watch", "watch_1")
+    assert watch_doc is not None
+    assert watch_doc["condition"] == "lead_replied"
+    assert watch_doc["deadline"] == deadline.isoformat()
+    assert watch_doc["status"] == "pending"

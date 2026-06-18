@@ -10,7 +10,8 @@ from agentx_contracts.security import Credential
 from pydantic import TypeAdapter
 from pymongo.errors import DuplicateKeyError
 
-from ..errors import DuplicateIdempotencyKey, JournalSeqContention
+from ..errors import DuplicateIdempotencyKey, IdempotencyRequestConflict, JournalSeqContention
+from ..receipts import SyscallReceipt
 
 _JOURNAL_EVENT: TypeAdapter[JournalEvent] = TypeAdapter(JournalEvent)
 
@@ -84,6 +85,27 @@ class MongoProjectionStore:
     async def find(self, collection: str, query: dict[str, object]) -> list[dict[str, object]]:
         docs = await self._database[collection].find(query).to_list(length=None)
         return [_strip_mongo_id(doc) for doc in docs]
+
+
+class MongoSyscallReceiptStore:
+    """Mongo-backed durable syscall output receipts."""
+
+    def __init__(self, database: Any) -> None:
+        self._collection = database[c.SYSCALL_RECEIPT]
+
+    async def save(self, receipt: SyscallReceipt) -> None:
+        prior = await self.get(receipt.idempotency_key)
+        if prior is not None and prior != receipt:
+            raise IdempotencyRequestConflict(receipt.idempotency_key)
+        document = receipt.model_dump(mode="json")
+        document["_id"] = receipt.idempotency_key
+        await self._collection.replace_one({"_id": receipt.idempotency_key}, document, upsert=True)
+
+    async def get(self, idempotency_key: str) -> SyscallReceipt | None:
+        doc = await self._collection.find_one({"_id": idempotency_key})
+        if doc is None:
+            return None
+        return SyscallReceipt.model_validate(_strip_mongo_id(doc))
 
 
 class MongoVault:
