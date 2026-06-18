@@ -9,6 +9,7 @@ from typing import Final
 MANDATE_TYPE: Final = "mandate_type"
 MANDATE_INSTANCE: Final = "mandate_instance"
 MANDATE_RUN: Final = "mandate_run"
+SYSCALL_RECEIPT: Final = "syscall_receipt"
 
 # --- The append-only SOURCE OF TRUTH ---
 JOURNAL: Final = "journal"
@@ -39,6 +40,7 @@ ALL_COLLECTIONS: Final[tuple[str, ...]] = (
     MANDATE_TYPE,
     MANDATE_INSTANCE,
     MANDATE_RUN,
+    SYSCALL_RECEIPT,
     JOURNAL,
     HEAP_FACT,
     THREAD,

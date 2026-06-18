@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 
+import pytest
 from agentx_contracts.enums import MaturityLevel, Ring, TenantAuth
 from agentx_contracts.jsontypes import JsonSchema
 from agentx_contracts.protocols import Adapter
@@ -14,6 +15,7 @@ from agentx_contracts.syscall import (
     SyscallTestCase,
     VerifyOutcome,
 )
+from agentx_kernel.errors import IdempotencyRequestConflict
 from agentx_kernel.gateway import Gateway
 from agentx_kernel.stores.memory import InMemoryJournalStore, InMemoryVault
 
@@ -141,8 +143,21 @@ async def test_duplicate_idempotency_key_returns_prior_result_without_reexecutin
 
     assert first.result is not None and first.result.status == "ok"
     assert second.result is not None and second.result.status == "ok"
+    assert second.result.output == first.result.output == {"count": 2}
     assert second.result.fulfilled_by == "stub_research"
     assert adapter.calls == 1
+
+
+async def test_duplicate_idempotency_key_rejects_a_different_request() -> None:
+    adapter = StubAdapter()
+    registry = StubRegistry(adapter)
+    gateway = Gateway(journal=InMemoryJournalStore(), vault=InMemoryVault(), registry=registry)
+
+    await gateway.invoke(_req("lead_research_batch", idem="idem-repeat"), _ctx(ring="L0"))
+    conflicting = _req("read_url", idem="idem-repeat").model_copy(update={"args": {"url": "https://example.com"}})
+
+    with pytest.raises(IdempotencyRequestConflict, match="idempotency key belongs to a different syscall request"):
+        await gateway.invoke(conflicting, _ctx(ring="L0"))
 
 
 async def test_missing_registry_parks_to_human_approval() -> None:

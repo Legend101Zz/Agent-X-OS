@@ -33,7 +33,7 @@ from agentx_kernel.hydration import HydrationLoader
 from agentx_kernel.projections import Projections
 from agentx_kernel.run_loop import Phase1RunInvoker
 from agentx_kernel.settlement import SettlementCommitter
-from agentx_kernel.stores.mongo import MongoJournalStore, MongoProjectionStore
+from agentx_kernel.stores.mongo import MongoJournalStore, MongoProjectionStore, MongoSyscallReceiptStore
 from agentx_kernel.vault import ConfigVault
 from agentx_kernel.verifier import RulesVerifier
 from agentx_mandate.library.lead_finder import build_lead_finder_type
@@ -88,7 +88,12 @@ async def main() -> int:
         journal = MongoJournalStore(database)
         pstore = MongoProjectionStore(database)
         projections = Projections(pstore, journal)
-        gateway = Gateway(journal=journal, vault=ConfigVault(settings), registry=build_phase1_registry())
+        gateway = Gateway(
+            journal=journal,
+            vault=ConfigVault(settings),
+            registry=build_phase1_registry(),
+            receipts=MongoSyscallReceiptStore(database),
+        )
         hydration = HydrationLoader(pstore, journal)
         settlement = SettlementCommitter(journal=journal, projections=projections)
         invoker = Phase1RunInvoker(
@@ -125,9 +130,13 @@ async def main() -> int:
         await control.approve(instance_id=instance_id, run_id=parked.run_id,
                               actor="manager:evald", now=datetime.now(UTC))
         card = parked.park.approval_card
+        raw_args = card.get("args")
+        raw_idempotency_key = card.get("idempotency_key")
+        if not isinstance(raw_args, dict) or not isinstance(raw_idempotency_key, str):
+            raise RuntimeError(f"invalid approval card: {card}")
         draft = await gateway.invoke(
-            SyscallRequest(name="draft_email", args=card["args"], instance_id=instance_id,
-                           run_id=parked.run_id, idempotency_key=card["idempotency_key"],
+            SyscallRequest(name="draft_email", args=raw_args, instance_id=instance_id,
+                           run_id=parked.run_id, idempotency_key=raw_idempotency_key,
                            ring="L2", risk_class="external_message"),
             GatewayContext(instance_id=instance_id, run_id=parked.run_id,
                            tenant_id=f"tenant_{instance_id}", ring="L2", now=datetime.now(UTC)),

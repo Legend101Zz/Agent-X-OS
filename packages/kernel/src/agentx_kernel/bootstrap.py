@@ -7,7 +7,12 @@ from .hydration import HydrationLoader
 from .projections import Projections
 from .run_loop import Phase1RunInvoker
 from .settlement import SettlementCommitter
-from .stores.memory import InMemoryJournalStore, InMemoryProjectionStore, InMemoryVault
+from .stores.memory import (
+    InMemoryJournalStore,
+    InMemoryProjectionStore,
+    InMemorySyscallReceiptStore,
+    InMemoryVault,
+)
 from .verifier import RulesVerifier
 
 
@@ -20,7 +25,12 @@ def build_phase1_runinvoker(registry: SyscallRegistry | None = None) -> RunInvok
     journal = InMemoryJournalStore()
     projection_store = InMemoryProjectionStore()
     projections = Projections(projection_store, journal)
-    gateway = Gateway(journal=journal, vault=InMemoryVault(), registry=registry)
+    gateway = Gateway(
+        journal=journal,
+        vault=InMemoryVault(),
+        registry=registry,
+        receipts=InMemorySyscallReceiptStore(),
+    )
     hydration = HydrationLoader(projection_store, journal)
     settlement = SettlementCommitter(journal=journal, projections=projections)
     return Phase1RunInvoker(

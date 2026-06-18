@@ -27,7 +27,7 @@ from agentx_kernel.hydration import HydrationLoader
 from agentx_kernel.projections import Projections
 from agentx_kernel.run_loop import Phase1RunInvoker
 from agentx_kernel.settlement import SettlementCommitter
-from agentx_kernel.stores.mongo import MongoJournalStore, MongoProjectionStore
+from agentx_kernel.stores.mongo import MongoJournalStore, MongoProjectionStore, MongoSyscallReceiptStore
 from agentx_kernel.vault import ConfigVault
 from agentx_kernel.verifier import RulesVerifier
 from agentx_mandate.library.lead_finder import build_lead_finder_type
@@ -107,7 +107,12 @@ async def main() -> int:
         journal = MongoJournalStore(database)
         projection_store = MongoProjectionStore(database)
         projections = Projections(projection_store, journal)
-        gateway = Gateway(journal=journal, vault=ConfigVault(settings), registry=build_phase1_registry())
+        gateway = Gateway(
+            journal=journal,
+            vault=ConfigVault(settings),
+            registry=build_phase1_registry(),
+            receipts=MongoSyscallReceiptStore(database),
+        )
         hydration = HydrationLoader(projection_store, journal)
         settlement = SettlementCommitter(journal=journal, projections=projections)
         invoker = Phase1RunInvoker(

@@ -24,6 +24,22 @@ class DuplicateIdempotencyKey(KernelError):
         super().__init__(f"duplicate idempotency_key: {key!r}")
 
 
+class IdempotencyRequestConflict(KernelError):
+    """An idempotency key was reused for a different logical syscall request."""
+
+    def __init__(self, key: str) -> None:
+        self.key = key
+        super().__init__(f"idempotency key belongs to a different syscall request: {key!r}")
+
+
+class MissingSyscallReceipt(KernelError):
+    """A legacy settled syscall cannot be replayed because its output receipt is absent."""
+
+    def __init__(self, key: str) -> None:
+        self.key = key
+        super().__init__(f"settled syscall has no durable output receipt: {key!r}")
+
+
 class JournalSeqContention(KernelError):
     """Per-instance ``seq`` assignment kept colliding under concurrency past the retry budget.
 

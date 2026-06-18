@@ -4,9 +4,11 @@ from datetime import UTC, datetime
 
 import pytest
 from agentx_contracts.journal import RunCreated
+from agentx_contracts.syscall import SyscallRequest, SyscallResult
 from agentx_contracts.trigger import DeadlineTrigger
-from agentx_kernel.errors import DuplicateIdempotencyKey, JournalSeqContention
-from agentx_kernel.stores.mongo import MongoJournalStore, MongoProjectionStore, MongoVault
+from agentx_kernel.errors import DuplicateIdempotencyKey, IdempotencyRequestConflict, JournalSeqContention
+from agentx_kernel.receipts import SyscallReceipt
+from agentx_kernel.stores.mongo import MongoJournalStore, MongoProjectionStore, MongoSyscallReceiptStore, MongoVault
 from pymongo.errors import DuplicateKeyError
 
 NOW = datetime(2026, 6, 17, tzinfo=UTC)
@@ -82,6 +84,25 @@ def _run_created(instance_id: str = "inst_a", event_id: str = "rc1") -> RunCreat
     )
 
 
+def _receipt(*, syscall: str = "draft_email") -> SyscallReceipt:
+    request = SyscallRequest(
+        name=syscall,
+        args={"body": "hello"},
+        instance_id="inst_a",
+        run_id="run_1",
+        idempotency_key="idem-1",
+        ring="L2",
+    )
+    result = SyscallResult(
+        status="ok",
+        output={"body": "hello", "sent": False},
+        idempotency_key="idem-1",
+        fulfilled_by="draft_email",
+        maturity_used=1,
+    )
+    return SyscallReceipt.from_execution(request, result)
+
+
 async def test_mongo_journal_assigns_seq_and_reads_ordered_events() -> None:
     store = MongoJournalStore(FakeDatabase())
 
@@ -116,6 +137,18 @@ async def test_mongo_projection_store_upsert_get_find_and_vault_stub() -> None:
 
     cred = await MongoVault(database).get(ref="vault://stub", tenant_id="tenant_a")
     assert cred is not None and cred.kind == "manual"
+
+
+async def test_mongo_syscall_receipt_round_trips_and_rejects_conflicts() -> None:
+    store = MongoSyscallReceiptStore(FakeDatabase())
+    receipt = _receipt()
+
+    await store.save(receipt)
+    await store.save(receipt)
+
+    assert await store.get("idem-1") == receipt
+    with pytest.raises(IdempotencyRequestConflict):
+        await store.save(_receipt(syscall="read_url"))
 
 
 def _seq_dup_key_error(instance_id: str, seq: int) -> DuplicateKeyError:
