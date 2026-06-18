@@ -9,12 +9,13 @@ Claims for verification, and settles on Finish. The LLM proposes; deterministic 
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal, cast
+from typing import Literal, Protocol, cast, runtime_checkable
 
-from agentx_contracts.enums import RunMode
-from agentx_contracts.journal import RunCreated, RunHydrated, RunVerified
+from agentx_contracts.enums import Ring, RunMode
+from agentx_contracts.journal import ApprovalResolved, RunCreated, RunHydrated, RunParked, RunSettled, RunVerified
 from agentx_contracts.jsontypes import JsonObject, JsonValue
 from agentx_contracts.mandate import InstanceBinding, MandateRun, MandateType
 from agentx_contracts.memory import Fact
@@ -31,6 +32,7 @@ from agentx_mandate.harness import (
     Finish,
     HarnessAction,
     HarnessRunner,
+    HarnessSession,
     OwnHarness,
     Think,
 )
@@ -38,9 +40,11 @@ from agentx_mandate.lead_quality import enrich_lead
 from agentx_mandate.library.lead_finder_playbook import lead_finder_playbook
 from agentx_mandate.settlement import build_settlement
 
+from .continuations import RunContinuation
+from .errors import RunNotResumable
 from .gateway import Gateway
 from .hydration import HydrationLoader
-from .ports import JournalStore
+from .ports import JournalStore, RunContinuationStore
 from .projections import Projections
 from .settlement import SettlementCommitter
 from .verifier import RulesVerifier
@@ -58,6 +62,15 @@ TraceKind = Literal[
 ]
 
 
+@runtime_checkable
+class StatefulHarnessSession(Protocol):
+    """Optional kernel-side extension for live harnesses with process-local continuation state."""
+
+    def export_state(self) -> JsonObject: ...
+
+    def restore_state(self, state: JsonObject) -> None: ...
+
+
 @dataclass
 class Phase1RunInvoker:
     journal: JournalStore
@@ -66,6 +79,7 @@ class Phase1RunInvoker:
     gateway: Gateway
     settlement: SettlementCommitter
     verifier: RulesVerifier
+    continuations: RunContinuationStore
     runner: HarnessRunner | None = None
     max_steps: int = 24
 
@@ -127,12 +141,137 @@ class Phase1RunInvoker:
         )
         claimed_facts: list[Fact] = []
 
-        # G1: drive the harness. live -> Hermes runner (MiniMax); sim/default -> OwnHarness + playbook.
-        runner: HarnessRunner = (
-            self.runner if self.runner is not None else OwnHarness(playbook=lead_finder_playbook)
-        )
+        runner = self._runner()
         session = runner.start(context=ctx, faculties=faculties, cursor=0)
-        observation: SyscallResult | None = None
+        return await self._drive(
+            mandate=mandate,
+            instance=instance,
+            trigger=trigger,
+            mode=mode,
+            ctx=ctx,
+            trace=trace,
+            claimed_facts=claimed_facts,
+            session=session,
+            now=trigger.ts,
+        )
+
+    async def resume(self, *, run_id: str, approval: ApprovalResolved) -> RunResult:
+        """Resume one journaled parked run through the same harness/gateway/verify/settle loop."""
+        events = await self.journal.read_run(run_id)
+        if any(isinstance(event, RunSettled) for event in events):
+            raise RunNotResumable(run_id, "run is already settled")
+        created = next((event for event in events if isinstance(event, RunCreated)), None)
+        parked = next((event for event in reversed(events) if isinstance(event, RunParked)), None)
+        journaled_approval = next(
+            (
+                event
+                for event in reversed(events)
+                if isinstance(event, ApprovalResolved) and event.event_id == approval.event_id
+            ),
+            None,
+        )
+        if created is None:
+            raise RunNotResumable(run_id, "RunCreated is missing")
+        if parked is None or parked.awaiting != "human_approval":
+            raise RunNotResumable(run_id, "human-approval park is missing")
+        if (
+            journaled_approval is None
+            or journaled_approval.run_id != run_id
+            or journaled_approval.decision != "approve"
+        ):
+            raise RunNotResumable(run_id, "matching approved ApprovalResolved is missing")
+        approval = journaled_approval
+        continuation = await self.continuations.get(run_id)
+        if continuation is None:
+            raise RunNotResumable(run_id, "durable continuation is missing")
+        if (
+            created.instance_id != continuation.instance.instance_id
+            or created.type_ref != continuation.instance.type_ref
+        ):
+            raise RunNotResumable(run_id, "continuation does not match RunCreated")
+
+        faculties = [get_faculty(binding.faculty_name) for binding in continuation.mandate.faculties]
+        ctx = FacultyContext(
+            snapshot=continuation.snapshot,
+            target=continuation.mandate.charter.target,
+            scratchpad=cast(dict[str, object], deepcopy(continuation.scratchpad)),
+            instance_id=continuation.instance.instance_id,
+            run_id=run_id,
+            ring=continuation.instance.ring,
+            now=created.trigger.ts,
+        )
+        trace = continuation.trace.model_copy(deep=True)
+        claimed_facts = [fact.model_copy(deep=True) for fact in continuation.claimed_facts]
+        session = self._runner().start(
+            context=ctx,
+            faculties=faculties,
+            cursor=continuation.harness_cursor,
+        )
+        if continuation.harness_state:
+            if not isinstance(session, StatefulHarnessSession):
+                raise RunNotResumable(run_id, "harness cannot restore persisted state")
+            session.restore_state(continuation.harness_state)
+
+        _trace(
+            trace,
+            approval.ts,
+            "resumed",
+            "human approval resolved; replaying parked syscall",
+            {"approval_event_id": approval.event_id},
+        )
+        terminal, observation = await self._dispose(
+            action=Call(request=continuation.pending_call),
+            mode=continuation.mode,
+            instance=continuation.instance,
+            now=approval.ts,
+            ctx=ctx,
+            trace=trace,
+            claimed_facts=claimed_facts,
+            gateway_ring=parked.required_ring,
+        )
+        if terminal is not None:
+            if terminal.state == "parked":
+                await self._save_continuation(
+                    mandate=continuation.mandate,
+                    instance=continuation.instance,
+                    mode=continuation.mode,
+                    ctx=ctx,
+                    trace=trace,
+                    claimed_facts=claimed_facts,
+                    session=session,
+                    pending_call=continuation.pending_call,
+                )
+            return terminal
+        return await self._drive(
+            mandate=continuation.mandate,
+            instance=continuation.instance,
+            trigger=created.trigger,
+            mode=continuation.mode,
+            ctx=ctx,
+            trace=trace,
+            claimed_facts=claimed_facts,
+            session=session,
+            observation=observation,
+            now=approval.ts,
+        )
+
+    def _runner(self) -> HarnessRunner:
+        return self.runner if self.runner is not None else OwnHarness(playbook=lead_finder_playbook)
+
+    async def _drive(
+        self,
+        *,
+        mandate: MandateType,
+        instance: InstanceBinding,
+        trigger: Trigger,
+        mode: RunMode,
+        ctx: FacultyContext,
+        trace: Trace,
+        claimed_facts: list[Fact],
+        session: HarnessSession,
+        now: datetime,
+        observation: SyscallResult | None = None,
+    ) -> RunResult:
         steps = 0
         while steps < self.max_steps:
             steps += 1
@@ -144,45 +283,80 @@ class Phase1RunInvoker:
                 action=action,
                 mode=mode,
                 instance=instance,
-                trigger=trigger,
+                now=now,
                 ctx=ctx,
                 trace=trace,
                 claimed_facts=claimed_facts,
             )
             if terminal is not None:
+                if terminal.state == "parked" and isinstance(action, Call):
+                    await self._save_continuation(
+                        mandate=mandate,
+                        instance=instance,
+                        mode=mode,
+                        ctx=ctx,
+                        trace=trace,
+                        claimed_facts=claimed_facts,
+                        session=session,
+                        pending_call=_bind_request(action.request, ctx),
+                    )
                 return terminal
         else:
-            _trace(trace, trigger.ts, "error", "harness exceeded max steps", {"max_steps": self.max_steps})
-            return RunResult(run_id=run_id, state="crashed", trace=trace, claimed_facts=claimed_facts)
+            _trace(trace, now, "error", "harness exceeded max steps", {"max_steps": self.max_steps})
+            return RunResult(run_id=ctx.run_id, state="crashed", trace=trace, claimed_facts=claimed_facts)
 
+        result = await self._verify_and_settle(
+            mandate=mandate,
+            instance=instance,
+            trigger=trigger,
+            ctx=ctx,
+            trace=trace,
+            claimed_facts=claimed_facts,
+            now=now,
+        )
+        if result.state == "settled":
+            await self.continuations.delete(ctx.run_id)
+        return result
+
+    async def _verify_and_settle(
+        self,
+        *,
+        mandate: MandateType,
+        instance: InstanceBinding,
+        trigger: Trigger,
+        ctx: FacultyContext,
+        trace: Trace,
+        claimed_facts: list[Fact],
+        now: datetime,
+    ) -> RunResult:
         verify = self.verifier.verify_postconditions(mandate, claimed_facts=claimed_facts)
         if not verify.passed:
             _trace(
                 trace,
-                trigger.ts,
+                now,
                 "error",
                 "rules verification failed",
                 cast(JsonObject, {"reasons": verify.reasons}),
             )
-            return RunResult(run_id=run_id, state="crashed", trace=trace, claimed_facts=claimed_facts)
+            return RunResult(run_id=ctx.run_id, state="crashed", trace=trace, claimed_facts=claimed_facts)
 
         await self.journal.append(
             RunVerified(
-                event_id=f"{run_id}:verified",
+                event_id=f"{ctx.run_id}:verified",
                 seq=0,
-                ts=trigger.ts,
+                ts=now,
                 instance_id=instance.instance_id,
-                run_id=run_id,
+                run_id=ctx.run_id,
                 rungs_passed=verify.rungs_passed,
             )
         )
         run = MandateRun(
-            id=run_id,
+            id=ctx.run_id,
             instance_id=instance.instance_id,
             type_ref=instance.type_ref,
             trigger=trigger,
             state="verifying",
-            hydration=snapshot,
+            hydration=ctx.snapshot,
             trace=trace,
             claimed_facts=claimed_facts,
             created_at=trigger.ts,
@@ -192,16 +366,50 @@ class Phase1RunInvoker:
             rules=mandate.settlement,
             verified_facts=claimed_facts,
             trigger_ctx={"success": True, "thread_state": "settled"},
-            now=trigger.ts,
+            now=now,
         )
         await self.settlement.commit(settlement)
-        _trace(trace, trigger.ts, "verify", "settled", {"fact_count": len(settlement.facts)})
+        _trace(trace, now, "verify", "settled", {"fact_count": len(settlement.facts)})
         return RunResult(
-            run_id=run_id,
+            run_id=ctx.run_id,
             state="settled",
             trace=trace,
             claimed_facts=claimed_facts,
             settlement=settlement,
+        )
+
+    async def _save_continuation(
+        self,
+        *,
+        mandate: MandateType,
+        instance: InstanceBinding,
+        mode: RunMode,
+        ctx: FacultyContext,
+        trace: Trace,
+        claimed_facts: list[Fact],
+        session: HarnessSession,
+        pending_call: SyscallRequest,
+    ) -> None:
+        harness_state: JsonObject = {}
+        if isinstance(session, StatefulHarnessSession):
+            harness_state = session.export_state()
+        cursor = getattr(session, "cursor", 0)
+        if not isinstance(cursor, int):
+            raise TypeError("HarnessSession.cursor must be an int")
+        await self.continuations.save(
+            RunContinuation(
+                run_id=ctx.run_id,
+                instance=instance,
+                mandate=mandate,
+                mode=mode,
+                snapshot=ctx.snapshot,
+                scratchpad=cast(JsonObject, deepcopy(ctx.scratchpad)),
+                trace=trace,
+                claimed_facts=claimed_facts,
+                harness_cursor=cursor,
+                harness_state=harness_state,
+                pending_call=pending_call,
+            )
         )
 
     async def _dispose(
@@ -210,42 +418,44 @@ class Phase1RunInvoker:
         action: HarnessAction,
         mode: RunMode,
         instance: InstanceBinding,
-        trigger: Trigger,
+        now: datetime,
         ctx: FacultyContext,
         trace: Trace,
         claimed_facts: list[Fact],
+        gateway_ring: Ring | None = None,
     ) -> tuple[RunResult | None, SyscallResult | None]:
         """Dispose one harness action. Returns (terminal RunResult | None, observation to feed back | None)."""
         if isinstance(action, Think):
-            _trace(trace, trigger.ts, "thought", action.summary, action.detail)
+            _trace(trace, now, "thought", action.summary, action.detail)
             return None, None
         if isinstance(action, Claim):
             claimed_facts.extend(action.facts)
             return None, None
         if isinstance(action, Escalate):
-            _trace(trace, trigger.ts, "error", action.reason, action.detail)
+            _trace(trace, now, "error", action.reason, action.detail)
             return (
                 RunResult(run_id=ctx.run_id, state="crashed", trace=trace, claimed_facts=claimed_facts),
                 None,
             )
         if not isinstance(action, Call):
             return None, None
+        request = _bind_request(action.request, ctx)
 
-        if action.request.risk_class == "read" and mode == "sim":
+        if request.risk_class == "read" and mode == "sim":
             # Read-class intents are fulfilled NATIVELY (off-gateway) and never reach a ring check.
             # In sim the kernel supplies deterministic, clearly-synthetic data (mirrors the live harness's
             # native web-search fulfilment, but unmistakably synthetic so it can't pose as real research).
-            _fulfill_sim_native_read(ctx, action.request, trace, trigger.ts)
+            _fulfill_sim_native_read(ctx, request, trace, now)
             return None, None
 
         outcome = await self.gateway.invoke(
-            action.request,
+            request,
             GatewayContext(
                 instance_id=instance.instance_id,
                 run_id=ctx.run_id,
                 tenant_id=instance.heap_region_id,
-                ring=instance.ring,
-                now=trigger.ts,
+                ring=gateway_ring or instance.ring,
+                now=now,
             ),
         )
         if outcome.attempted is not None:
@@ -255,7 +465,7 @@ class Phase1RunInvoker:
         if outcome.parked is not None:
             _trace(
                 trace,
-                trigger.ts,
+                now,
                 "parked",
                 outcome.parked.reason,
                 {"required_ring": outcome.parked.required_ring},
@@ -271,9 +481,9 @@ class Phase1RunInvoker:
                         awaiting=outcome.parked.awaiting,
                         required_ring=outcome.parked.required_ring,
                         approval_card={
-                            "syscall": action.request.name,
-                            "args": action.request.args,
-                            "idempotency_key": action.request.idempotency_key,
+                            "syscall": request.name,
+                            "args": request.args,
+                            "idempotency_key": request.idempotency_key,
                         },
                     ),
                 ),
@@ -284,9 +494,9 @@ class Phase1RunInvoker:
 
         _trace(
             trace,
-            trigger.ts,
+            now,
             "syscall_result",
-            action.request.name,
+            request.name,
             {
                 "status": outcome.result.status,
                 "fulfilled_by": outcome.result.fulfilled_by,
@@ -298,14 +508,14 @@ class Phase1RunInvoker:
             # retry within max_steps), not crashed. Only Escalate + the max_steps bound terminate a run.
             _trace(
                 trace,
-                trigger.ts,
+                now,
                 "error",
-                f"{action.request.name} failed",
+                f"{request.name} failed",
                 {"error": outcome.result.error or "unknown", "status": outcome.result.status},
             )
             return None, outcome.result
-        if action.request.risk_class == "read" and outcome.result.status == "ok":
-            _apply_read_result(ctx, action.request, outcome.result.output)
+        if request.risk_class == "read" and outcome.result.status == "ok":
+            _apply_read_result(ctx, request, outcome.result.output)
         return None, outcome.result
 
 
@@ -432,6 +642,11 @@ def _str_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str) and item]
+
+
+def _bind_request(request: SyscallRequest, ctx: FacultyContext) -> SyscallRequest:
+    """Bind a harness-proposed intent to the current kernel-owned run identity."""
+    return request.model_copy(update={"instance_id": ctx.instance_id, "run_id": ctx.run_id})
 
 
 def _run_id(instance: InstanceBinding, trigger: Trigger) -> str:

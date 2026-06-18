@@ -16,6 +16,7 @@ from typing import Protocol, runtime_checkable
 from agentx_contracts import JournalEvent
 from agentx_contracts.security import Credential
 
+from .continuations import RunContinuation
 from .receipts import SyscallReceipt
 
 
@@ -79,6 +80,23 @@ class SyscallReceiptStore(Protocol):
 
     async def get(self, idempotency_key: str) -> SyscallReceipt | None:
         """Fetch the receipt for a globally unique idempotency key."""
+        ...
+
+
+@runtime_checkable
+class RunContinuationStore(Protocol):
+    """Durable sidecar for the payload needed to resume a parked run."""
+
+    async def save(self, continuation: RunContinuation) -> None:
+        """Idempotently insert or replace one continuation, keyed by ``run_id``."""
+        ...
+
+    async def get(self, run_id: str) -> RunContinuation | None:
+        """Fetch a continuation by run id, or ``None``."""
+        ...
+
+    async def delete(self, run_id: str) -> None:
+        """Delete a continuation after settlement; missing rows are a no-op."""
         ...
 
 

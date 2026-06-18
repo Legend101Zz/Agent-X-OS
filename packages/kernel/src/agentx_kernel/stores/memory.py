@@ -8,12 +8,15 @@ exercises the same kernel behaviour a live run does.
 from __future__ import annotations
 
 import copy
+from datetime import datetime
 
 from agentx_contracts import JournalEvent
 from agentx_contracts.security import Credential
 
+from ..continuations import RunContinuation
 from ..errors import DuplicateIdempotencyKey, IdempotencyRequestConflict
 from ..receipts import SyscallReceipt
+from ..scheduler import ScheduledWork
 
 
 class InMemoryJournalStore:
@@ -88,6 +91,58 @@ class InMemorySyscallReceiptStore:
     async def get(self, idempotency_key: str) -> SyscallReceipt | None:
         receipt = self._receipts.get(idempotency_key)
         return receipt.model_copy(deep=True) if receipt is not None else None
+
+
+class InMemoryRunContinuationStore:
+    """Process-local continuation store with atomic replacement by run id."""
+
+    def __init__(self) -> None:
+        self._continuations: dict[str, RunContinuation] = {}
+
+    async def save(self, continuation: RunContinuation) -> None:
+        self._continuations[continuation.run_id] = continuation.model_copy(deep=True)
+
+    async def get(self, run_id: str) -> RunContinuation | None:
+        continuation = self._continuations.get(run_id)
+        return continuation.model_copy(deep=True) if continuation is not None else None
+
+    async def delete(self, run_id: str) -> None:
+        self._continuations.pop(run_id, None)
+
+
+class InMemorySchedulerStore:
+    """Deterministic process-local scheduler queue."""
+
+    def __init__(self) -> None:
+        self._work: dict[str, ScheduledWork] = {}
+        self._status: dict[str, str] = {}
+
+    async def enqueue(self, work: ScheduledWork) -> None:
+        if work.work_id not in self._work:
+            self._work[work.work_id] = work.model_copy(deep=True)
+            self._status[work.work_id] = "pending"
+
+    async def claim_next(self, now: datetime) -> ScheduledWork | None:
+        due = [
+            work
+            for work_id, work in self._work.items()
+            if self._status[work_id] == "pending" and work.available_at <= now
+        ]
+        if not due:
+            return None
+        work = min(due, key=lambda item: (item.available_at, item.work_id))
+        self._status[work.work_id] = "claimed"
+        return work.model_copy(deep=True)
+
+    async def complete(self, work_id: str) -> None:
+        if self._status.get(work_id) == "claimed":
+            self._status[work_id] = "completed"
+
+    async def fail(self, work_id: str, *, retry_at: datetime) -> None:
+        if self._status.get(work_id) == "claimed":
+            work = self._work[work_id]
+            self._work[work_id] = work.model_copy(update={"available_at": retry_at}, deep=True)
+            self._status[work_id] = "pending"
 
 
 class InMemoryVault:

@@ -20,10 +20,9 @@ from time import perf_counter
 import agentx_db.collections as c
 from agentx_contracts.config import Settings
 from agentx_contracts.enums import Ring
-from agentx_contracts.journal import RunVerified
+from agentx_contracts.journal import ApprovalResolved, RunSettled
 from agentx_contracts.jsontypes import JsonObject
-from agentx_contracts.mandate import InstanceBinding, MandateRun
-from agentx_contracts.syscall import GatewayContext, SyscallRequest
+from agentx_contracts.mandate import InstanceBinding
 from agentx_contracts.trigger import DeadlineTrigger
 from agentx_db.setup import ensure_indexes
 from agentx_kernel.control import KernelControl
@@ -33,12 +32,18 @@ from agentx_kernel.hermes_runner import HermesRunner
 from agentx_kernel.hydration import HydrationLoader
 from agentx_kernel.projections import Projections
 from agentx_kernel.run_loop import Phase1RunInvoker
+from agentx_kernel.scheduler import ApprovalWork, SchedulerWorker, TriggerWork
 from agentx_kernel.settlement import SettlementCommitter
-from agentx_kernel.stores.mongo import MongoJournalStore, MongoProjectionStore, MongoSyscallReceiptStore
+from agentx_kernel.stores.mongo import (
+    MongoJournalStore,
+    MongoProjectionStore,
+    MongoRunContinuationStore,
+    MongoSchedulerStore,
+    MongoSyscallReceiptStore,
+)
 from agentx_kernel.vault import ConfigVault
 from agentx_kernel.verifier import RulesVerifier
 from agentx_mandate.library.lead_finder import build_lead_finder_type
-from agentx_mandate.settlement import build_settlement
 from agentx_syscall.registry import build_phase1_registry
 from pymongo import AsyncMongoClient
 
@@ -89,24 +94,41 @@ async def main() -> int:
         journal = MongoJournalStore(database)
         pstore = MongoProjectionStore(database)
         projections = Projections(pstore, journal)
+        receipts = MongoSyscallReceiptStore(database)
         gateway = Gateway(
             journal=journal,
             vault=ConfigVault(settings),
             registry=build_phase1_registry(),
-            receipts=MongoSyscallReceiptStore(database),
+            receipts=receipts,
         )
         hydration = HydrationLoader(pstore, journal)
         settlement = SettlementCommitter(journal=journal, projections=projections)
         invoker = Phase1RunInvoker(
             journal=journal, projections=projections, hydration=hydration, gateway=gateway,
             settlement=settlement, verifier=RulesVerifier(),
+            continuations=MongoRunContinuationStore(database),
             runner=HermesRunner(transport=HermesClient.from_settings(settings)),
         )
         control = KernelControl(journal=journal, projections=projections, projection_store=pstore)
+        scheduler_store = MongoSchedulerStore(database)
+        worker = SchedulerWorker(store=scheduler_store, invoker=invoker)
 
+        pending_due = await database[c.SCHEDULER_WORK].count_documents(
+            {"status": "pending", "available_at": {"$lte": datetime.now(UTC)}}
+        )
+        if pending_due:
+            raise RuntimeError(f"refusing live run with {pending_due} unrelated due scheduler item(s)")
         t0 = perf_counter()
-        parked = await invoker.invoke(mandate=mandate, instance=_instance(instance_id, "L1"),
-                                      trigger=trigger, mode="live")
+        trigger_work = TriggerWork.schedule(
+            mandate=mandate,
+            instance=_instance(instance_id, "L1"),
+            trigger=trigger,
+            mode="live",
+        )
+        await scheduler_store.enqueue(trigger_work)
+        parked = await worker.run_once(datetime.now(UTC))
+        if parked is None:
+            raise RuntimeError("scheduler worker found no trigger work")
         l1 = perf_counter() - t0
         if parked.state != "parked" or parked.park is None:
             raise RuntimeError(f"expected park, got {parked.state}")
@@ -132,39 +154,37 @@ async def main() -> int:
         await control.approve(instance_id=instance_id, run_id=parked.run_id,
                               actor="manager:evald", now=datetime.now(UTC))
         card = parked.park.approval_card
-        raw_args = card.get("args")
         raw_idempotency_key = card.get("idempotency_key")
-        if not isinstance(raw_args, dict) or not isinstance(raw_idempotency_key, str):
+        if not isinstance(raw_idempotency_key, str):
             raise RuntimeError(f"invalid approval card: {card}")
-        draft = await gateway.invoke(
-            SyscallRequest(name="draft_email", args=raw_args, instance_id=instance_id,
-                           run_id=parked.run_id, idempotency_key=raw_idempotency_key,
-                           ring="L2", risk_class="external_message"),
-            GatewayContext(instance_id=instance_id, run_id=parked.run_id,
-                           tenant_id=f"tenant_{instance_id}", ring="L2", now=datetime.now(UTC)),
+        approval = next(
+            (
+                event for event in reversed(await journal.read_run(parked.run_id))
+                if isinstance(event, ApprovalResolved)
+            ),
+            None,
         )
-        if draft.result is None or draft.result.status != "ok":
-            raise RuntimeError(f"draft failed: {draft}")
-        if draft.attempted is not None:
-            await projections.apply(draft.attempted)
-        if draft.settled is not None:
-            await projections.apply(draft.settled)
+        if approval is None:
+            raise RuntimeError("approval command did not append ApprovalResolved")
+        approval_work = ApprovalWork.schedule(approval)
+        await scheduler_store.enqueue(approval_work)
+        resumed = await worker.run_once(datetime.now(UTC))
+        if resumed is None:
+            raise RuntimeError("scheduler worker found no approval work")
+        if resumed.state != "settled":
+            raise RuntimeError(f"kernel resume did not settle: {resumed.state}")
+        draft_receipt = await receipts.get(raw_idempotency_key)
+        if draft_receipt is None or draft_receipt.result.status != "ok":
+            raise RuntimeError("draft receipt missing after kernel resume")
 
-        _dump("RENDERED DRAFT (draft_email adapter output)", draft.result.output)
+        _dump("RENDERED DRAFT (draft_email adapter output)", draft_receipt.result.output)
 
-        verify = invoker.verifier.verify_postconditions(mandate, claimed_facts=parked.claimed_facts)
-        await journal.append(RunVerified(event_id=f"{parked.run_id}:verified:approved", seq=0,
-                                         ts=datetime.now(UTC), instance_id=instance_id,
-                                         run_id=parked.run_id, rungs_passed=verify.rungs_passed))
-        settled = await settlement.commit(build_settlement(
-            run=MandateRun(id=parked.run_id, instance_id=instance_id, type_ref="lead-finder@0.1.0",
-                           trigger=trigger, state="verifying", trace=parked.trace,
-                           claimed_facts=parked.claimed_facts, created_at=trigger.ts),
-            rules=mandate.settlement, verified_facts=parked.claimed_facts,
-            trigger_ctx={"success": True, "thread_state": "settled"}, now=datetime.now(UTC)))
+        run_events = await journal.read_run(parked.run_id)
+        settled = next(event for event in reversed(run_events) if isinstance(event, RunSettled))
         settle_s = perf_counter() - t1
-        print(f"\nSETTLED_EVENT={settled.event_id} seq={settled.seq} VERIFY_PASSED={verify.passed} "
-              f"rungs={verify.rungs_passed}")
+        print(f"\nSETTLED_EVENT={settled.event_id} seq={settled.seq} VERIFY_PASSED=True")
+        print(f"TRIGGER_WORK_ID={trigger_work.work_id}")
+        print(f"APPROVAL_WORK_ID={approval_work.work_id}")
         print(f"APPROVAL_TO_SETTLE_S={settle_s:.2f}")
 
         # ---- MEMORY / HEAP HEALTH (E6) ----

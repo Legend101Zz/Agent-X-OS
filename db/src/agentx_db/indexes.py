@@ -54,6 +54,19 @@ INDEXES: Final[dict[str, list[IndexSpec]]] = {
         IndexSpec(keys=[("instance_id", 1), ("state", 1)], name="ix_run_instance_state"),
         IndexSpec(keys=[("state", 1)], name="ix_run_state"),
     ],
+    c.RUN_CONTINUATION: [
+        IndexSpec(keys=[("instance.instance_id", 1)], name="ix_continuation_instance"),
+        IndexSpec(
+            keys=[("pending_call.idempotency_key", 1)],
+            name="ix_continuation_pending_idem",
+        ),
+    ],
+    c.SCHEDULER_WORK: [
+        IndexSpec(
+            keys=[("status", 1), ("available_at", 1), ("_id", 1)],
+            name="ix_scheduler_due",
+        ),
+    ],
     c.WATCH: [
         IndexSpec(keys=[("status", 1), ("deadline", 1)], name="ix_watch_due"),
         IndexSpec(keys=[("run_id", 1)], name="ix_watch_run"),

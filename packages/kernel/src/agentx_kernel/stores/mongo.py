@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 import agentx_db.collections as c
 from agentx_contracts.journal import JournalEvent
 from agentx_contracts.security import Credential
 from pydantic import TypeAdapter
+from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
+from ..continuations import RunContinuation
 from ..errors import DuplicateIdempotencyKey, IdempotencyRequestConflict, JournalSeqContention
 from ..receipts import SyscallReceipt
+from ..scheduler import ScheduledWork
 
 _JOURNAL_EVENT: TypeAdapter[JournalEvent] = TypeAdapter(JournalEvent)
+_SCHEDULED_WORK: TypeAdapter[ScheduledWork] = TypeAdapter(ScheduledWork)
 
 # How many times to recompute seq and retry when a concurrent appender wins the (instance_id, seq)
 # race. Contention is per-instance and brief, so a small budget is ample; exhausting it is pathological.
@@ -108,6 +113,66 @@ class MongoSyscallReceiptStore:
         return SyscallReceipt.model_validate(_strip_mongo_id(doc))
 
 
+class MongoRunContinuationStore:
+    """Mongo-backed continuation sidecar with one atomic upsert per run id."""
+
+    def __init__(self, database: Any) -> None:
+        self._collection = database[c.RUN_CONTINUATION]
+
+    async def save(self, continuation: RunContinuation) -> None:
+        document = continuation.model_dump(mode="json")
+        document["_id"] = continuation.run_id
+        await self._collection.replace_one({"_id": continuation.run_id}, document, upsert=True)
+
+    async def get(self, run_id: str) -> RunContinuation | None:
+        doc = await self._collection.find_one({"_id": run_id})
+        if doc is None:
+            return None
+        return RunContinuation.model_validate(_strip_mongo_id(doc))
+
+    async def delete(self, run_id: str) -> None:
+        await self._collection.delete_one({"_id": run_id})
+
+
+class MongoSchedulerStore:
+    """Mongo-backed scheduler queue with an atomic ordered due-work claim."""
+
+    def __init__(self, database: Any) -> None:
+        self._collection = database[c.SCHEDULER_WORK]
+
+    async def enqueue(self, work: ScheduledWork) -> None:
+        document = work.model_dump(mode="python")
+        document.update({"_id": work.work_id, "status": "pending", "attempts": 0})
+        await self._collection.update_one(
+            {"_id": work.work_id},
+            {"$setOnInsert": document},
+            upsert=True,
+        )
+
+    async def claim_next(self, now: datetime) -> ScheduledWork | None:
+        doc = await self._collection.find_one_and_update(
+            {"status": "pending", "available_at": {"$lte": now}},
+            {"$set": {"status": "claimed"}, "$inc": {"attempts": 1}},
+            sort=[("available_at", 1), ("_id", 1)],
+            return_document=ReturnDocument.AFTER,
+        )
+        if doc is None:
+            return None
+        return _parse_scheduled_work(doc)
+
+    async def complete(self, work_id: str) -> None:
+        await self._collection.update_one(
+            {"_id": work_id, "status": "claimed"},
+            {"$set": {"status": "completed"}},
+        )
+
+    async def fail(self, work_id: str, *, retry_at: datetime) -> None:
+        await self._collection.update_one(
+            {"_id": work_id, "status": "claimed"},
+            {"$set": {"status": "pending", "available_at": retry_at}},
+        )
+
+
 class MongoVault:
     """Phase-1 vault stub for live DB wiring; real secret lookup is an additive replacement."""
 
@@ -145,6 +210,13 @@ def _is_idempotency_violation(exc: DuplicateKeyError, *, has_key: bool) -> bool:
 
 def _parse_event(doc: dict[str, object]) -> JournalEvent:
     return _JOURNAL_EVENT.validate_python(_strip_mongo_id(doc))
+
+
+def _parse_scheduled_work(doc: dict[str, object]) -> ScheduledWork:
+    clean = _strip_mongo_id(doc)
+    clean.pop("status", None)
+    clean.pop("attempts", None)
+    return _SCHEDULED_WORK.validate_python(clean)
 
 
 def _strip_mongo_id(doc: dict[str, object]) -> dict[str, object]:

@@ -1,14 +1,33 @@
 """P12 PyMongo-async kernel stores, verified with fake async collections."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
-from agentx_contracts.journal import RunCreated
+from agentx_contracts.journal import ApprovalResolved, RunCreated
+from agentx_contracts.mandate import (
+    Charter,
+    DomainPackRef,
+    HydrationSnapshot,
+    InstanceBinding,
+    MandateType,
+    SettlementRules,
+    VerificationSuite,
+)
 from agentx_contracts.syscall import SyscallRequest, SyscallResult
 from agentx_contracts.trigger import DeadlineTrigger
+from agentx_contracts.verification import Trace
+from agentx_kernel.continuations import RunContinuation
 from agentx_kernel.errors import DuplicateIdempotencyKey, IdempotencyRequestConflict, JournalSeqContention
 from agentx_kernel.receipts import SyscallReceipt
-from agentx_kernel.stores.mongo import MongoJournalStore, MongoProjectionStore, MongoSyscallReceiptStore, MongoVault
+from agentx_kernel.scheduler import ApprovalWork, TriggerWork
+from agentx_kernel.stores.mongo import (
+    MongoJournalStore,
+    MongoProjectionStore,
+    MongoRunContinuationStore,
+    MongoSchedulerStore,
+    MongoSyscallReceiptStore,
+    MongoVault,
+)
 from pymongo.errors import DuplicateKeyError
 
 NOW = datetime(2026, 6, 17, tzinfo=UTC)
@@ -51,7 +70,7 @@ class FakeCollection:
 
     async def find_one(self, query: dict[str, object]) -> dict[str, object] | None:
         for doc in self.docs:
-            if all(doc.get(k) == v for k, v in query.items()):
+            if _matches(doc, query):
                 return dict(doc)
         return None
 
@@ -63,6 +82,43 @@ class FakeCollection:
         if upsert:
             self.docs.append(dict(document))
 
+    async def delete_one(self, query: dict[str, object]) -> None:
+        self.docs = [doc for doc in self.docs if not all(doc.get(k) == v for k, v in query.items())]
+
+    async def update_one(
+        self,
+        query: dict[str, object],
+        update: dict[str, object],
+        *,
+        upsert: bool = False,
+    ) -> None:
+        for doc in self.docs:
+            if _matches(doc, query):
+                _apply_update(doc, update, inserting=False)
+                return
+        if upsert:
+            inserted = {key: value for key, value in query.items() if not isinstance(value, dict)}
+            _apply_update(inserted, update, inserting=True)
+            self.docs.append(inserted)
+
+    async def find_one_and_update(
+        self,
+        query: dict[str, object],
+        update: dict[str, object],
+        *,
+        sort: list[tuple[str, int]],
+        return_document: object,
+    ) -> dict[str, object] | None:
+        del return_document
+        matches = [doc for doc in self.docs if _matches(doc, query)]
+        for key, direction in reversed(sort):
+            matches.sort(key=lambda doc: str(doc[key]), reverse=direction < 0)
+        if not matches:
+            return None
+        selected = matches[0]
+        _apply_update(selected, update, inserting=False)
+        return dict(selected)
+
 
 class FakeDatabase:
     def __init__(self) -> None:
@@ -70,6 +126,33 @@ class FakeDatabase:
 
     def __getitem__(self, name: str) -> FakeCollection:
         return self.collections.setdefault(name, FakeCollection())
+
+
+def _matches(doc: dict[str, object], query: dict[str, object]) -> bool:
+    for key, expected in query.items():
+        actual = doc.get(key)
+        if isinstance(expected, dict):
+            if "$lte" in expected and not (actual is not None and actual <= expected["$lte"]):
+                return False
+        elif actual != expected:
+            return False
+    return True
+
+
+def _apply_update(doc: dict[str, object], update: dict[str, object], *, inserting: bool) -> None:
+    set_values = update.get("$set")
+    if isinstance(set_values, dict):
+        doc.update(set_values)
+    set_on_insert = update.get("$setOnInsert")
+    if inserting and isinstance(set_on_insert, dict):
+        doc.update(set_on_insert)
+    increments = update.get("$inc")
+    if isinstance(increments, dict):
+        for key, value in increments.items():
+            current = doc.get(key, 0)
+            assert isinstance(current, int)
+            assert isinstance(value, int)
+            doc[key] = current + value
 
 
 def _run_created(instance_id: str = "inst_a", event_id: str = "rc1") -> RunCreated:
@@ -101,6 +184,53 @@ def _receipt(*, syscall: str = "draft_email") -> SyscallReceipt:
         maturity_used=1,
     )
     return SyscallReceipt.from_execution(request, result)
+
+
+def _continuation(*, cursor: int = 3) -> RunContinuation:
+    return RunContinuation(
+        run_id="run_1",
+        instance=InstanceBinding(
+            instance_id="inst_a",
+            type_ref="lead-finder@0.1.0",
+            ring="L1",
+            heap_region_id="heap_a",
+        ),
+        mandate=MandateType(
+            id="type_lead_finder_v0",
+            name="lead-finder",
+            version="0.1.0",
+            charter=Charter(goal="Find qualified leads."),
+            domain_pack=DomainPackRef(name="dental", version="0.1.0"),
+            verification=VerificationSuite(),
+            settlement=SettlementRules(),
+        ),
+        mode="live",
+        snapshot=HydrationSnapshot(frozen_at=NOW),
+        scratchpad={"lead_id": "lead_1"},
+        trace=Trace(run_id="run_1"),
+        claimed_facts=[],
+        harness_cursor=cursor,
+        harness_state={"messages": [{"role": "assistant", "content": "draft ready"}]},
+        pending_call=SyscallRequest(
+            name="draft_email",
+            args={"lead_id": "lead_1"},
+            instance_id="inst_a",
+            run_id="run_1",
+            idempotency_key="run_1:draft:1",
+            ring="L1",
+            risk_class="external_message",
+        ),
+    )
+
+
+def _scheduled_trigger(instance_id: str, *, available_at: datetime = NOW) -> TriggerWork:
+    return TriggerWork.schedule(
+        mandate=_continuation().mandate,
+        instance=_continuation().instance.model_copy(update={"instance_id": instance_id}),
+        trigger=DeadlineTrigger(ts=NOW, reason=instance_id),
+        mode="live",
+        available_at=available_at,
+    )
 
 
 async def test_mongo_journal_assigns_seq_and_reads_ordered_events() -> None:
@@ -149,6 +279,61 @@ async def test_mongo_syscall_receipt_round_trips_and_rejects_conflicts() -> None
     assert await store.get("idem-1") == receipt
     with pytest.raises(IdempotencyRequestConflict):
         await store.save(_receipt(syscall="read_url"))
+
+
+async def test_mongo_run_continuation_upserts_by_run_id_round_trips_and_deletes() -> None:
+    database = FakeDatabase()
+    store = MongoRunContinuationStore(database)
+    continuation = _continuation()
+
+    await store.save(continuation)
+    await store.save(continuation)
+    await store.save(_continuation(cursor=4))
+
+    assert await store.get("run_1") == _continuation(cursor=4)
+    assert database.collections["run_continuation"].docs == [
+        {
+            **_continuation(cursor=4).model_dump(mode="json"),
+            "_id": "run_1",
+        }
+    ]
+
+    await store.delete("run_1")
+    await store.delete("run_1")
+    assert await store.get("run_1") is None
+
+
+async def test_mongo_scheduler_claims_due_work_in_order_and_requeues_atomically() -> None:
+    database = FakeDatabase()
+    store = MongoSchedulerStore(database)
+    future = _scheduled_trigger("inst_future", available_at=NOW + timedelta(minutes=2))
+    due = sorted(
+        (_scheduled_trigger("inst_b"), _scheduled_trigger("inst_a")),
+        key=lambda work: work.work_id,
+    )
+    approval = ApprovalWork.schedule(
+        ApprovalResolved(
+            event_id="run_1:approval",
+            seq=4,
+            ts=NOW + timedelta(minutes=1),
+            instance_id="inst_a",
+            run_id="run_1",
+            decision="approve",
+        )
+    )
+    for work in (future, due[1], approval, due[0], due[0]):
+        await store.enqueue(work)
+
+    assert len(database.collections["scheduler_work"].docs) == 4
+    assert await store.claim_next(NOW - timedelta(seconds=1)) is None
+    assert await store.claim_next(NOW) == due[0]
+    await store.complete(due[0].work_id)
+    assert await store.claim_next(NOW) == due[1]
+    await store.fail(due[1].work_id, retry_at=NOW + timedelta(minutes=3))
+    assert await store.claim_next(NOW) is None
+    assert await store.claim_next(NOW + timedelta(minutes=1)) == approval
+    await store.complete(approval.work_id)
+    assert await store.claim_next(NOW + timedelta(minutes=2)) == future
 
 
 def _seq_dup_key_error(instance_id: str, seq: int) -> DuplicateKeyError:

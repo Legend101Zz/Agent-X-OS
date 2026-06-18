@@ -23,7 +23,12 @@ from agentx_kernel.hydration import HydrationLoader
 from agentx_kernel.projections import Projections
 from agentx_kernel.run_loop import Phase1RunInvoker
 from agentx_kernel.settlement import SettlementCommitter
-from agentx_kernel.stores.mongo import MongoJournalStore, MongoProjectionStore, MongoSyscallReceiptStore
+from agentx_kernel.stores.mongo import (
+    MongoJournalStore,
+    MongoProjectionStore,
+    MongoRunContinuationStore,
+    MongoSyscallReceiptStore,
+)
 from agentx_kernel.vault import ConfigVault
 from agentx_kernel.verifier import RulesVerifier
 from agentx_mandate.library.lead_finder import build_lead_finder_type
@@ -98,6 +103,7 @@ async def main() -> int:
             gateway=gateway,
             settlement=SettlementCommitter(journal=journal, projections=projections),
             verifier=RulesVerifier(),
+            continuations=MongoRunContinuationStore(database),
             runner=HermesRunner(transport=LoggingTransport(HermesClient.from_settings(settings))),
         )
         control = KernelControl(journal=journal, projections=projections, projection_store=pstore)

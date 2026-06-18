@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from agentx_contracts import HydrationSnapshot
 from agentx_contracts.enums import MaturityLevel, Ring, TenantAuth
 from agentx_contracts.faculty import FacultyBinding
+from agentx_contracts.journal import ApprovalResolved, SyscallAttempted, SyscallSettled
 from agentx_contracts.jsontypes import JsonObject, JsonSchema
 from agentx_contracts.mandate import (
     Charter,
@@ -236,6 +237,34 @@ async def test_observation_is_fed_back_as_a_tool_message_and_reasoning_is_preser
     assert any(m.get("role") == "assistant" and "step1" in str(m.get("content")) for m in second_request)
 
 
+async def test_session_state_round_trips_message_history_for_process_safe_resume() -> None:
+    before_runner, _ = _runner(
+        [_tool_response("search_leads", {"query": "dental clinic Pune", "count": 1}, "persist me")]
+    )
+    before = before_runner.start(context=_ctx(), faculties=[])
+    call = await before.step(None)
+    assert isinstance(call, Call)
+    state = before.export_state()
+
+    after_runner, after_transport = _runner([_tool_response("finish", {"summary": "done"}, "continued")])
+    after = after_runner.start(context=_ctx(), faculties=[], cursor=before.cursor)
+    after.restore_state(state)
+    result = await after.step(
+        SyscallResult(
+            status="ok",
+            output={"leads": [{"id": "galaxy", "company": "Galaxy Dental"}]},
+            idempotency_key=call.request.idempotency_key,
+            fulfilled_by="firecrawl",
+            maturity_used=3,
+        )
+    )
+
+    assert isinstance(result, Finish)
+    sent = after_transport.sent[0]
+    assert any(message.get("role") == "assistant" and "persist me" in str(message.get("content")) for message in sent)
+    assert any(message.get("role") == "tool" and "Galaxy Dental" in str(message.get("content")) for message in sent)
+
+
 class ScriptedAdapter:
     """A single adapter that fulfils research/read_url/draft_email with canned output (live-mode test)."""
 
@@ -361,3 +390,79 @@ async def test_run_loop_drives_hermes_through_a_live_trajectory_to_an_approval_p
     assert "Asha Kulkarni" in str(card_args["body"])  # the LLM-authored, grounded draft body
     assert any(f.predicate == "actionable_lead" for f in result.claimed_facts)  # the LLM's claim, disposed
     assert any(e.kind == "syscall_result" for e in result.trace.events)  # reads went through the gateway
+
+
+async def test_live_style_hermes_park_resumes_from_persisted_history_and_settles() -> None:
+    facts = [
+        {
+            "subject": "galaxy",
+            "predicate": "qualified_lead_score",
+            "object": "0.9",
+            "confidence": 0.9,
+            "evidence": ["accepting new patients"],
+        },
+        {
+            "subject": "galaxy",
+            "predicate": "actionable_lead",
+            "object": "Galaxy Dental Clinic",
+            "confidence": 0.9,
+            "evidence": ["accepting new patients"],
+        },
+    ]
+    responses = [
+        _tool_response("think", {"summary": "plan"}),
+        _tool_response("search_leads", {"query": "dental clinic Pune", "count": 1}),
+        _tool_response("read_url", {"lead_id": "galaxy", "url": "https://galaxy.example"}),
+        _tool_response("claim_facts", {"facts": facts}),
+        _tool_response(
+            "draft_email",
+            {"to": "x", "subject": "s", "body": "accepting new patients", "lead_id": "galaxy"},
+            "draft is ready",
+        ),
+        _tool_response("finish", {"summary": "approved draft completed"}, "continue after approval"),
+    ]
+    runner, transport = _runner(responses)
+    instance = InstanceBinding(
+        instance_id="inst_a",
+        type_ref="lead-finder@0.1.0",
+        ring="L1",
+        heap_region_id="heap_a",
+    )
+    invoker = build_phase1_runinvoker(registry=AllAdapterRegistry(), runner=runner)
+    parked = await invoker.invoke(
+        mandate=_live_mandate(),
+        instance=instance,
+        trigger=DeadlineTrigger(ts=NOW, reason="sweep", entity_id="galaxy"),
+        mode="live",
+    )
+    approval = await invoker.journal.append(
+        ApprovalResolved(
+            event_id=f"{parked.run_id}:approval:resolved",
+            seq=0,
+            ts=NOW,
+            instance_id=instance.instance_id,
+            run_id=parked.run_id,
+            actor="manager:test",
+            decision="approve",
+        )
+    )
+    assert isinstance(approval, ApprovalResolved)
+
+    resumed = await invoker.resume(run_id=parked.run_id, approval=approval)
+
+    assert resumed.state == "settled"
+    assert len(transport.sent) == 6
+    final_messages = transport.sent[-1]
+    assert any(
+        message.get("role") == "assistant" and "draft is ready" in str(message.get("content"))
+        for message in final_messages
+    )
+    assert any(
+        message.get("role") == "tool" and "draft_id" in str(message.get("content"))
+        for message in final_messages
+    )
+    events = await invoker.journal.read_run(parked.run_id)
+    attempts = [event for event in events if isinstance(event, SyscallAttempted) and event.syscall == "draft_email"]
+    settled = [event for event in events if isinstance(event, SyscallSettled) and event.syscall == "draft_email"]
+    assert len(attempts) == 1
+    assert len(settled) == 1

@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 from agentx_contracts.enums import MaturityLevel, Ring, TenantAuth
 from agentx_contracts.faculty import FacultyBinding
+from agentx_contracts.journal import ApprovalResolved, SyscallAttempted, SyscallSettled
 from agentx_contracts.jsontypes import JsonSchema
 from agentx_contracts.mandate import (
     Charter,
@@ -123,6 +124,17 @@ class ErroringDraftAdapter(DraftAdapter):
             maturity_used=1,
             error="provider down",
         )
+
+
+class CountingDraftAdapter(DraftAdapter):
+    def __init__(self) -> None:
+        self.execute_count = 0
+        self.idempotency_keys: list[str] = []
+
+    async def execute(self, req: SyscallRequest, cred: Credential | None) -> SyscallResult:
+        self.execute_count += 1
+        self.idempotency_keys.append(req.idempotency_key)
+        return await super().execute(req, cred)
 
 
 class SingleAdapterRegistry:
@@ -319,3 +331,73 @@ async def test_syscall_error_is_fed_back_to_the_harness_not_crashed() -> None:
     assert result.state == "settled"  # the syscall error did NOT crash the run
     assert any(e.kind == "error" and "draft_email" in e.summary for e in result.trace.events)
     assert result.settlement is not None and any(f.predicate == "qualified_lead_score" for f in result.settlement.facts)
+
+
+async def test_kernel_resume_replays_approved_parked_call_once_then_continues_to_settle() -> None:
+    instance = _instance("L1")
+    trigger = DeadlineTrigger(ts=NOW, reason="sweep", entity_id="lead_1")
+    run_id = _run_id(instance, trigger)
+    score_fact = Fact(
+        id=f"{run_id}:lead_1:score",
+        instance_id=instance.instance_id,
+        subject="lead_1",
+        predicate="qualified_lead_score",
+        object="0.9",
+        confidence=0.9,
+        source="agent-inferred",
+        provenance=Provenance(run_id=run_id, evidence=["accepting new patients"]),
+        status="probation",
+        created_at=NOW,
+    )
+    pending_key = f"{run_id}:draft_email:1"
+    runner = OwnHarness(
+        recorded=[
+            Claim(facts=[score_fact]),
+            Call(
+                request=SyscallRequest(
+                    name="draft_email",
+                    args={"lead_id": "lead_1", "mode": "draft", "subject": "s", "body": "b"},
+                    instance_id=instance.instance_id,
+                    run_id=run_id,
+                    idempotency_key=pending_key,
+                    ring="L1",
+                    risk_class="external_message",
+                )
+            ),
+            Finish(),
+        ]
+    )
+    adapter = CountingDraftAdapter()
+    registry = SingleAdapterRegistry()
+    registry.register(adapter)
+    invoker = build_phase1_runinvoker(registry=registry, runner=runner)
+
+    parked = await invoker.invoke(mandate=_mandate(), instance=instance, trigger=trigger, mode="sim")
+    assert parked.state == "parked"
+    assert adapter.execute_count == 0
+
+    approval = ApprovalResolved(
+        event_id=f"{run_id}:approval:resolved",
+        seq=0,
+        ts=NOW,
+        instance_id=instance.instance_id,
+        run_id=run_id,
+        actor="manager:test",
+        decision="approve",
+    )
+    journaled = await invoker.journal.append(approval)
+    assert isinstance(journaled, ApprovalResolved)
+
+    resumed = await invoker.resume(run_id=run_id, approval=journaled)
+
+    assert resumed.state == "settled"
+    assert resumed.settlement is not None
+    assert adapter.execute_count == 1
+    assert adapter.idempotency_keys == [pending_key]
+    events = await invoker.journal.read_run(run_id)
+    attempts = [event for event in events if isinstance(event, SyscallAttempted)]
+    settled = [event for event in events if isinstance(event, SyscallSettled)]
+    assert len(attempts) == 1
+    assert len(settled) == 1
+    assert attempts[0].event_id == f"{pending_key}:attempt"
+    assert settled[0].idempotency_key == pending_key

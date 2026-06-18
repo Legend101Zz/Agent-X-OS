@@ -13,10 +13,9 @@ from time import perf_counter
 
 import agentx_db.collections as c
 from agentx_contracts.config import Settings
-from agentx_contracts.journal import RunVerified
+from agentx_contracts.journal import ApprovalResolved, RunSettled
 from agentx_contracts.jsontypes import JsonObject
-from agentx_contracts.mandate import MandateInstance, MandateRun
-from agentx_contracts.syscall import GatewayContext, SyscallRequest
+from agentx_contracts.mandate import MandateInstance
 from agentx_contracts.trigger import DeadlineTrigger
 from agentx_db.setup import ensure_indexes
 from agentx_kernel.control import KernelControl
@@ -26,12 +25,18 @@ from agentx_kernel.hermes_runner import HermesRunner
 from agentx_kernel.hydration import HydrationLoader
 from agentx_kernel.projections import Projections
 from agentx_kernel.run_loop import Phase1RunInvoker
+from agentx_kernel.scheduler import ApprovalWork, SchedulerWorker, TriggerWork
 from agentx_kernel.settlement import SettlementCommitter
-from agentx_kernel.stores.mongo import MongoJournalStore, MongoProjectionStore, MongoSyscallReceiptStore
+from agentx_kernel.stores.mongo import (
+    MongoJournalStore,
+    MongoProjectionStore,
+    MongoRunContinuationStore,
+    MongoSchedulerStore,
+    MongoSyscallReceiptStore,
+)
 from agentx_kernel.vault import ConfigVault
 from agentx_kernel.verifier import RulesVerifier
 from agentx_mandate.library.lead_finder import build_lead_finder_type
-from agentx_mandate.settlement import build_settlement
 from agentx_syscall.registry import build_phase1_registry
 from pymongo import AsyncMongoClient
 
@@ -96,11 +101,12 @@ async def main() -> int:
         journal = MongoJournalStore(database)
         projection_store = MongoProjectionStore(database)
         projections = Projections(projection_store, journal)
+        receipts = MongoSyscallReceiptStore(database)
         gateway = Gateway(
             journal=journal,
             vault=ConfigVault(settings),
             registry=build_phase1_registry(),
-            receipts=MongoSyscallReceiptStore(database),
+            receipts=receipts,
         )
         hydration = HydrationLoader(projection_store, journal)
         settlement = SettlementCommitter(journal=journal, projections=projections)
@@ -111,9 +117,12 @@ async def main() -> int:
             gateway=gateway,
             settlement=settlement,
             verifier=RulesVerifier(),
+            continuations=MongoRunContinuationStore(database),
             runner=HermesRunner(transport=HermesClient.from_settings(settings)),
         )
         control = KernelControl(journal=journal, projections=projections, projection_store=projection_store)
+        scheduler_store = MongoSchedulerStore(database)
+        worker = SchedulerWorker(store=scheduler_store, invoker=invoker)
         canonical_mandate = build_lead_finder_type()
         await control.register_mandate_type(canonical_mandate)
         persisted_instance = MandateInstance(
@@ -128,13 +137,22 @@ async def main() -> int:
         mandate = canonical_mandate.model_copy(deep=True)
         mandate.charter.target = dict(DOGFOOD_TARGET)
 
+        pending_due = await database[c.SCHEDULER_WORK].count_documents(
+            {"status": "pending", "available_at": {"$lte": datetime.now(UTC)}}
+        )
+        if pending_due:
+            raise RuntimeError(f"refusing live run with {pending_due} unrelated due scheduler item(s)")
         l1_started = perf_counter()
-        parked = await invoker.invoke(
+        trigger_work = TriggerWork.schedule(
             mandate=mandate,
             instance=instance,
             trigger=trigger,
             mode="live",
         )
+        await scheduler_store.enqueue(trigger_work)
+        parked = await worker.run_once(datetime.now(UTC))
+        if parked is None:
+            raise RuntimeError("scheduler worker found no trigger work")
         l1_seconds = perf_counter() - l1_started
         if parked.state != "parked" or parked.park is None:
             raise RuntimeError(f"expected L1 approval park, got state={parked.state}")
@@ -150,78 +168,46 @@ async def main() -> int:
 
         card = parked.park.approval_card
         syscall = card.get("syscall")
-        raw_args = card.get("args")
         idem = card.get("idempotency_key")
-        if syscall != "draft_email" or not isinstance(raw_args, dict) or not isinstance(idem, str):
+        if syscall != "draft_email" or not isinstance(idem, str):
             raise RuntimeError(f"approval card cannot resume draft_email: {card}")
-
-        draft = await gateway.invoke(
-            SyscallRequest(
-                name="draft_email",
-                args=raw_args,
-                instance_id=instance_id,
-                run_id=parked.run_id,
-                idempotency_key=idem,
-                ring="L2",
-                risk_class="external_message",
+        approval = next(
+            (
+                event
+                for event in reversed(await journal.read_run(parked.run_id))
+                if isinstance(event, ApprovalResolved)
             ),
-            GatewayContext(
-                instance_id=instance_id,
-                run_id=parked.run_id,
-                tenant_id=instance.heap_region_id,
-                ring="L2",
-                now=datetime.now(UTC),
-            ),
+            None,
         )
-        if draft.result is None or draft.result.status != "ok":
-            raise RuntimeError(f"draft_email did not complete after approval: {draft}")
-        if draft.attempted is not None:
-            await projections.apply(draft.attempted)
-        if draft.settled is not None:
-            await projections.apply(draft.settled)
-
-        verify = invoker.verifier.verify_postconditions(mandate, claimed_facts=parked.claimed_facts)
-        if not verify.passed:
-            raise RuntimeError(f"postcondition verification failed: {verify.reasons}")
-        await journal.append(
-            RunVerified(
-                event_id=f"{parked.run_id}:verified:approved",
-                seq=0,
-                ts=datetime.now(UTC),
-                instance_id=instance_id,
-                run_id=parked.run_id,
-                rungs_passed=verify.rungs_passed,
-            )
-        )
-
-        settlement_event = build_settlement(
-            run=MandateRun(
-                id=parked.run_id,
-                instance_id=instance_id,
-                type_ref=instance.type_ref,
-                trigger=trigger,
-                state="verifying",
-                trace=parked.trace,
-                claimed_facts=parked.claimed_facts,
-                created_at=trigger.ts,
-            ),
-            rules=mandate.settlement,
-            verified_facts=parked.claimed_facts,
-            trigger_ctx={"success": True, "thread_state": "settled"},
-            now=datetime.now(UTC),
-        )
-        settled = await settlement.commit(settlement_event)
+        if approval is None:
+            raise RuntimeError("approval command did not append ApprovalResolved")
+        approval_work = ApprovalWork.schedule(approval)
+        await scheduler_store.enqueue(approval_work)
+        resumed = await worker.run_once(datetime.now(UTC))
+        if resumed is None:
+            raise RuntimeError("scheduler worker found no approval work")
+        if resumed.state != "settled":
+            raise RuntimeError(f"kernel resume did not settle: {resumed.state}")
+        draft_receipt = await receipts.get(idem)
+        if draft_receipt is None or draft_receipt.result.status != "ok":
+            raise RuntimeError("draft_email receipt missing after kernel resume")
         approval_seconds = perf_counter() - approval_started
 
         heap_facts = await projection_store.find(c.HEAP_FACT, {"instance_id": instance_id})
         run_events = await journal.read_run(parked.run_id)
         trace_rows = await projection_store.find(c.SYSCALL_TRACE, {"run_id": parked.run_id})
+        settled = next(event for event in reversed(run_events) if isinstance(event, RunSettled))
 
         print(f"INSTANCE_ID={instance_id}")
         print(f"RUN_ID={parked.run_id}")
+        print(f"TRIGGER_WORK_ID={trigger_work.work_id}")
+        print(f"APPROVAL_WORK_ID={approval_work.work_id}")
         print(f"L1_STATE={parked.state} reason={parked.park.reason}")
         print(f"APPROVAL_INBOX_COUNT_BEFORE={len(inbox.items)}")
-        print(f"DRAFT_STATUS={draft.result.status} fulfilled_by={draft.result.fulfilled_by}")
+        print(
+            f"DRAFT_STATUS={draft_receipt.result.status} "
+            f"fulfilled_by={draft_receipt.result.fulfilled_by}"
+        )
         print(f"SETTLED_EVENT={settled.event_id} seq={settled.seq}")
         print(f"HEAP_FACT_COUNT={len(heap_facts)}")
         print(f"JOURNAL_KINDS={','.join(event.kind for event in run_events)}")
@@ -229,7 +215,7 @@ async def main() -> int:
         print(f"LATENCY_SECONDS l1={l1_seconds:.2f} approval_to_settle={approval_seconds:.2f}")
         print("COST_OBSERVED=not_available_from_current_wrappers")
         print("TRACE")
-        for event in parked.trace.events:
+        for event in resumed.trace.events:
             print(f"  {event.seq}. {event.kind}: {event.summary} {event.detail}")
         if heap_facts:
             first = heap_facts[0]

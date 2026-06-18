@@ -40,6 +40,15 @@ class MissingSyscallReceipt(KernelError):
         super().__init__(f"settled syscall has no durable output receipt: {key!r}")
 
 
+class RunNotResumable(KernelError):
+    """A run lacks a valid parked continuation and matching approved journal state."""
+
+    def __init__(self, run_id: str, reason: str) -> None:
+        self.run_id = run_id
+        self.reason = reason
+        super().__init__(f"run {run_id!r} is not resumable: {reason}")
+
+
 class JournalSeqContention(KernelError):
     """Per-instance ``seq`` assignment kept colliding under concurrency past the retry budget.
 

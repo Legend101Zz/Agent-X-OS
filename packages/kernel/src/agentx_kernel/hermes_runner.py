@@ -15,6 +15,7 @@ with a ``role:"tool"`` message — the real ``SyscallResult`` for a ``call_tool`
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Protocol, cast, runtime_checkable
 
@@ -23,7 +24,7 @@ from agentx_contracts.faculty import Faculty
 from agentx_contracts.jsontypes import JsonObject, JsonValue
 from agentx_contracts.memory import Fact, Provenance
 from agentx_contracts.syscall import SyscallRequest, SyscallResult
-from agentx_mandate.harness import Call, Claim, FacultyContext, Finish, HarnessAction, HarnessSession, Think
+from agentx_mandate.harness import Call, Claim, FacultyContext, Finish, HarnessAction, Think
 
 
 class HermesProtocolError(RuntimeError):
@@ -220,6 +221,37 @@ class HermesSession:
     _pending_call_id: str | None = field(default=None, init=False)
     _call_index: int = field(default=0, init=False)
 
+    def export_state(self) -> JsonObject:
+        """Return the complete process-safe continuation state for a parked live run."""
+        return {
+            "messages": cast(JsonValue, deepcopy(self._messages)),
+            "started": self._started,
+            "pending_call_id": self._pending_call_id,
+            "call_index": self._call_index,
+            "cursor": self.cursor,
+        }
+
+    def restore_state(self, state: JsonObject) -> None:
+        """Restore history exactly; no prior paid/model turn is regenerated during resume."""
+        raw_messages = state.get("messages")
+        if not isinstance(raw_messages, list) or not all(isinstance(message, dict) for message in raw_messages):
+            raise HermesProtocolError("persisted Hermes state has invalid messages")
+        raw_started = state.get("started")
+        raw_pending = state.get("pending_call_id")
+        raw_call_index = state.get("call_index")
+        raw_cursor = state.get("cursor")
+        if not isinstance(raw_started, bool):
+            raise HermesProtocolError("persisted Hermes state has invalid started flag")
+        if raw_pending is not None and not isinstance(raw_pending, str):
+            raise HermesProtocolError("persisted Hermes state has invalid pending call id")
+        if not isinstance(raw_call_index, int) or not isinstance(raw_cursor, int):
+            raise HermesProtocolError("persisted Hermes state has invalid counters")
+        self._messages = deepcopy(cast(list[JsonObject], raw_messages))
+        self._started = raw_started
+        self._pending_call_id = raw_pending
+        self._call_index = raw_call_index
+        self.cursor = raw_cursor
+
     async def step(self, observation: SyscallResult | None) -> HarnessAction:
         if observation is not None and self._pending_call_id is not None:
             self._messages.append(
@@ -372,8 +404,7 @@ class HermesRunner:
     transport: ChatTransport
     name: HarnessKind = "hermes"
 
-    def start(self, *, context: FacultyContext, faculties: list[Faculty], cursor: int = 0) -> HarnessSession:
-        # cursor>0 (parked-run resume) is Step B (G2); live runs start fresh.
+    def start(self, *, context: FacultyContext, faculties: list[Faculty], cursor: int = 0) -> HermesSession:
         return HermesSession(transport=self.transport, ctx=context, cursor=cursor)
 
 

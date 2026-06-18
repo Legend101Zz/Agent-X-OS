@@ -25,6 +25,7 @@ from agentx_kernel.settlement import SettlementCommitter
 from agentx_kernel.stores.memory import (
     InMemoryJournalStore,
     InMemoryProjectionStore,
+    InMemoryRunContinuationStore,
     InMemorySyscallReceiptStore,
     InMemoryVault,
 )
@@ -54,7 +55,7 @@ async def main() -> int:
     invoker = Phase1RunInvoker(
         journal=journal, projections=projections, hydration=HydrationLoader(store, journal),
         gateway=gateway, settlement=SettlementCommitter(journal=journal, projections=projections),
-        verifier=RulesVerifier(),
+        verifier=RulesVerifier(), continuations=InMemoryRunContinuationStore(),
     )
     control = KernelControl(journal=journal, projections=projections, projection_store=store)
 

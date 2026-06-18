@@ -1,64 +1,48 @@
-# Task Plan — Session F · STEP A (G1): make the LLM actually drive the run loop
+# Task Plan — Session G · STEP B (G2): repeatable runner + kernel resume + scheduler-min
 
-## Goal (one sentence)
-The live kernel stays dumb/deterministic, but its trajectory comes from `HarnessRunner.step(observation)`
-where MiniMax emits Think/Call/Claim/Finish and the kernel DISPOSES (ring-checks + journals effectful
-Calls, fulfils reads + traces, feeds SyscallResult back) — replacing the hardcoded faculty order + hardcoded
-draft. LLM proposes; deterministic code disposes (invariant #4).
+## Goal
+Resume a parked run first-class through the kernel and make trigger/approval work repeatable through a
+protocol-driven worker, with no script-owned reconstruction or settlement glue.
 
-## Hard constraints
-- TDD. Offline gate + seam proof GREEN at every step; commit-as-you-go; push to main after each major proof.
-- Do NOT touch `packages/contracts`. Keep `agentx_kernel` lane-pure; `lint-imports` stays 3/3.
-- `tests/integration/test_seam_proof.py` stays green on the OwnHarness double.
-- Don't weaken tests. External/web content (MiniMax API research) → findings.md ONLY.
-- Live runs cost real money (authorized). Judge lead quality HONESTLY vs the rubric; don't overclaim.
-- Integration model: push DIRECTLY to main (no PR). Working in main checkout, gate-green before each push.
+## Constraints
+- TDD; keep the full offline gate and `tests/integration/test_seam_proof.py` green.
+- Do not edit `packages/contracts`.
+- Keep `agentx_kernel` lane-pure and `lint-imports` at 3/3.
+- Journal is authoritative for run identity, trigger, parking, and approval. A kernel-owned durable
+  continuation sidecar preserves payload the frozen journal event set cannot carry.
+- Live runs spend real money; execute and judge them in the main thread.
+- Integrate directly to `main`, no PR. Verify before every push.
 
-## Architecture decisions (verified against tree)
-- Live Hermes runner lives kernel-side (`agentx_kernel`, needs creds), implements the mandate-defined
-  `HarnessRunner` Protocol (kernel→mandate import is allowed).
-- Lead-finder PLAYBOOK = a GENERATOR over the shared-by-reference `ctx`: each `yield` of a read Call
-  suspends until the run-loop fulfils it (mutating `ctx.scratchpad`), so downstream faculties see leads.
-- Move the hardcoded draft (`_first_lead_id`/`_draft_args`) OUT of run_loop INTO the mandate playbook.
-- mode selects: live → HermesRunner + live registry; sim → OwnHarness(playbook) + sim registry.
-- `OwnHarness(recorded=...)` path + all existing harness tests stay byte-for-byte green.
+## Architecture decisions
+- Persist a `RunContinuation` at park: frozen hydration snapshot, JSON scratchpad, trace, claimed facts,
+  harness cursor/state, and exact pending `SyscallRequest`.
+- `resume(run_id, approval)` validates `RunCreated` + `RunParked` + matching `ApprovalResolved`, restores
+  the continuation, re-disposes the pending call through the receipt-backed gateway, then feeds the
+  result back into `HarnessSession.step` and continues to verify/settle.
+- OwnHarness resumes from its cursor. Hermes persists/restores complete message history and pending tool
+  call metadata so no paid reasoning turn is regenerated.
+- Scheduler-min is behind kernel Protocols: durable work items represent triggers and approval-resolved
+  resumes; deterministic in-memory and Mongo implementations share the same worker.
 
 ## Phases
-- [ ] **F0 — Baseline gate** GREEN (mypy --strict / ruff / pytest -q / lint-imports). Record in proof doc.
-- [ ] **F1 — Research MiniMax API** (subagent → findings.md): tool-calling vs structured output /
-      response_format; reliable single-action-per-step JSON; reasoning/think field; M2 vs M3 on api.minimax.io.
-- [ ] **F2 — Step-driven run loop + playbook (TDD, sim/OwnHarness FIRST)**: drive `session.step(obs)`;
-      dispose Think/Call/Claim/Escalate/Finish; bound max_steps; feed SyscallResult back. Generator playbook
-      in mandate. mode-select sim path. Keep seam proof + harness tests + run_loop tests green.
-- [ ] **F3 — Live Hermes runner (kernel-side, TDD with fake transport)**: HermesRunner/HermesSession.step
-      parses MiniMax structured output → HarnessAction. System prompt = playbook-as-instructions (form query,
-      reject competitors, ground personalization in cited evidence, draft-only). Wire at edge (run_lead_finder).
-- [ ] **F4 — Offline gate + seam GREEN**; commit + push to main.
-- [ ] **F5 — LIVE PROOF (money, main thread)**: rerun 2 Session-E ICPs (run_lead_finder dogfood + _eval_d_inspect
-      with AGENTX_EVAL_ICP_JSON vendor ICP + dental ICP). Target ≥1 founder-SENDABLE draft per ICP. Judge honestly.
-- [ ] **F6 — Live Hermes gate** (RUN_LIVE_HERMES=1) + reconcile docs (flip G1; flip G4 → ✅ ONLY if truly
-      sendable, else keep honest) + append progress.md.
-- [ ] **F7 — SHIP**: full gate + seam green; push to main; emit next-session prompt.
-- [ ] **(optional) STEP B (G2)** if context/time remain: first-class kernel parked-run resume + scheduler-min worker.
+- [x] G0 — sync `main`; baseline mypy/Ruff/pytest/import-fences/seam proof green.
+- [x] G1 — continuation model/store (memory + Mongo), TDD.
+- [x] G2 — OwnHarness parked→approve→kernel resume→settle; prove one effect / same key.
+- [x] G3 — Hermes history persistence/replay and fake-transport live-path resume proof.
+- [x] G4 — scheduler-min Protocol/store/worker; trigger→run and approval→resume→settle.
+- [x] G5 — replace bespoke resume in `run_lead_finder.py` and `_eval_d_inspect.py`.
+- [ ] G6 — parked→resume→settle integration test; full offline gate; commit/push. (gate green; push pending)
+- [ ] G7 — real parked dental/vendor resume through kernel API; worker proof; honest verdict.
+- [ ] G8 — reconcile roadmap/progress/proof; final gate; commit/push; next-session handoff.
 
-## Status
-- F0 DONE: baseline gate green (mypy 91, ruff, pytest 81+2skip, lint 3/3).
-- F1 DONE: MiniMax-M3 API researched → findings.md. Use OpenAI tool-calling (4 tools, tool_choice auto);
-  preserve `<think>` reasoning across turns; parse tool_calls[].function.arguments (JSON string).
-- F2 DONE: step-driven run loop (drives HarnessRunner.step, disposes Think/Call/Claim/Escalate/Finish,
-  bound max_steps=24, feeds SyscallResult back). Lead-finder PLAYBOOK generator (mandate) + lazy
-  PlaybookHarnessSession. Draft moved out of run loop → build_outreach_call. `runner` field + bootstrap arg.
-- F3 DONE: kernel-side HermesRunner/HermesSession (HarnessRunner Protocol); MiniMax tool-calling → HarnessAction;
-  kernel stamps fact provenance. HermesClient.complete_chat transport. 3 scripts wired to runner=HermesRunner(...).
-- F4 DONE: offline gate GREEN; G1 machinery committed + pushed to main (ca499d6).
-- F5 DONE: live runs exposed + TDD-fixed 3 bugs (gateway catches adapter exceptions; loop feeds syscall errors back;
-  concrete per-syscall tools replace free-form call_tool). Prompt orders claim-before-draft; transport retry+180s.
-  BOTH Session-E ICPs now produce founder-SENDABLE evidence-grounded drafts (dental Microdent SETTLED; vendor AMP
-  parked, competitor rejection fixed) vs Session E 0/6. Honest caveats noted.
-- F6 DONE: live Hermes gate 4 passed; offline gate green (pytest 100+2skip). Docs reconciled (G1→✅, G4→✅).
-Current phase: F7 — ship (commit + push) + emit next-session prompt. NEXT SESSION = Step B (G2).
+## Baseline
+- `uv run mypy --strict packages db tests` → success, 95 source files.
+- `uv run ruff check .` → all checks passed.
+- `uv run pytest -q` → 100 passed, 2 skipped.
+- `uv run lint-imports` → 3 kept, 0 broken.
+- `uv run pytest -q tests/integration/test_seam_proof.py` → 1 passed.
 
-## Errors Encountered
+## Errors encountered
 | Error | Attempt | Resolution |
-|-------|---------|------------|
-| (none yet) | | |
+|---|---:|---|
+| none | | |
