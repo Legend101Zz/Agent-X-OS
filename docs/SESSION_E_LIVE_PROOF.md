@@ -212,9 +212,38 @@ deliberately side-lined ("think briefly… then stop, do not call tools"), so qu
 competitor filtering, and evidence-grounded drafting are heuristic.** → **G4 cannot be closed; it is blocked
 on G1 (make the LLM actually drive the run loop).** Recorded as next session's Step A.
 
-## Step 4 — P1-2 real promptfoo judge (npx over OpenRouter, Node v24.13.1)
+## Step 4 — P1-2 real promptfoo judge (npx over OpenRouter, Node v24.13.1) — ✅ PROVEN
 
-_pending_
+Switched node: `nvm use 24` → `NODE=v24.13.1`, `npx=…/v24.13.1/bin/npx` (default v20.18.0 / installed
+v22.14.0 both fail promptfoo's `^20.20.0 || >=22.22.0` engine constraint; v24.13.1 satisfies it).
+
+**Real Scorecard via `scripts/_eval_d_swarm_judge.py` (enabled=True → `npx promptfoo@latest eval` over OpenRouter):**
+```
+BRIDGED_ENV JUDGE_MODEL_ID_set=True OPENROUTER_set=True
+SIM_RUN state=settled facts=2
+===== REAL PROMPTFOO JUDGE (enabled=True -> npx promptfoo over OpenRouter) =====
+REAL_JUDGE_OK scorecard: score=1.0 passed=True origin=synthetic
+===== GATE behaviour =====
+synthetic-only + human_approved -> allowed=False reasons=['synthetic-only evidence cannot promote customer-facing versions', ...]
+real+human            -> allowed=True  live_ring=L0 reasons=[]
+real+NO human         -> allowed=False reasons=['human approval is required']
+```
+The real `npx promptfoo` subprocess over OpenRouter returned a valid `Scorecard(score=1.0, passed=True,
+origin=synthetic)` — not the offline fallback. The PromotionGate correctly bars synthetic-only evidence and
+requires human approval before opening the live ring (L0).
+
+**Required gate command (the prompt's exact invocation), Node v24.13.1:**
+```
+$ RUN_LIVE_PROMPTFOO=1 uv run pytest tests/integration/test_swarm_end_to_end.py -v
+tests/integration/test_swarm_end_to_end.py::test_swarm_sim_run_judged_and_gate_bars_synthetic_only PASSED [ 50%]
+tests/integration/test_swarm_end_to_end.py::test_real_promptfoo_judge_returns_scorecard PASSED [100%]
+============================== 2 passed in 2.16s ===============================
+EXIT_CODE=0
+```
+`test_real_promptfoo_judge_returns_scorecard` ran (PASSED, not SKIPPED) on the live path. The fast 2.16s is
+promptfoo's own result-cache reuse from the eval seconds earlier — same real OpenRouter-backed judge.
+
+**Verdict: P1-2 proven — the real promptfoo/OpenRouter judge returns a genuine Scorecard end-to-end.**
 
 ## Step 5 — P1-3 real MandateInstance (Mongo + dashboard /instances)
 
