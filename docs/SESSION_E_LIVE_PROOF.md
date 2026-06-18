@@ -245,9 +245,36 @@ promptfoo's own result-cache reuse from the eval seconds earlier — same real O
 
 **Verdict: P1-2 proven — the real promptfoo/OpenRouter judge returns a genuine Scorecard end-to-end.**
 
-## Step 5 — P1-3 real MandateInstance (Mongo + dashboard /instances)
+## Step 5 — P1-3 real MandateInstance (Mongo + dashboard /instances) — ✅ PROVEN
 
-_pending_
+The live `run_lead_finder.py` (Step 3) persisted a canonical type + a full `MandateInstance` via
+`KernelControl.register_mandate_type` + `instantiate_mandate`. Verified both in raw Mongo and through the
+exact `/instances` code path (`api/state.py:instance_rows`, Mongo-backed, `seed_demo=False`):
+
+```
+MANDATE_INSTANCE total docs = 2
+inst_demo present in DB? False                 <-- NOT the demo seed; these are REAL instances
+non-demo agentx_dogfood_* instances found = 2
+
+LATEST DOGFOOD MANDATE_INSTANCE DOC:
+{ "id": "agentx_dogfood_1781781644", "type_ref": "lead-finder@0.1.0",
+  "customer_id": "Agent-X dogfood", "ring": "L1",
+  "heap_region_id": "tenant_agentx_dogfood_1781781644", "channel_binding": null, "overrides": [] }
+
+/instances row count = 2
+/instances contains inst_demo? False
+/instances non-demo dogfood rows = 2
+ONE /instances ROW (as the dashboard renders it):
+{ "instance_id": "agentx_dogfood_1781781644", "type_ref": "lead-finder@0.1.0",
+  "customer_id": "Agent-X dogfood", "ring": "L1", "approval_count": 0, "billing_total": 0,
+  "latest_run": { "state": "settled", "event_count": 16,
+      "settled": { "seq": 15, "trust_delta": 1,
+                   "facts": [Callbox + Belkins actionable/score facts ...],
+                   "watch_ids": ["…:watch:reality"] } } }
+```
+**Verdict:** a real (non-`inst_demo`) `MandateInstance` is persisted in Mongo and surfaced by `/instances`
+with its settled run, facts, and registered watch. P1-3 proven. (The instance carries the customer-target
+`ring=L1` copy; the canonical type is registered separately in `mandate_type`.)
 
 ## Step 6 — Live Hermes gate
 
