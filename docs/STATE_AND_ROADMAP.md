@@ -3,7 +3,8 @@
 *Companion to [BLUEPRINT.md](./BLUEPRINT.md) (canonical). This doc is the living snapshot: **what is built
 today**, **what is left**, and **how to tackle it**. When this and the blueprint disagree on intent, the
 blueprint wins; when they disagree on *what currently exists in code*, this doc wins (it's verified against
-the tree). Last verified: 2026-06-19 after Sessions D–I + L. Session E fixed the P0/P1 correctness issues,
+the tree). Last verified: 2026-06-20 after Sessions D–I + L, the Hermes backend (Phases 1–6), and the
+**Operator Studio GUI**. Session E fixed the P0/P1 correctness issues,
 Session F made MiniMax drive the loop and produced sendable leads, Session G made trigger/approval runs
 repeatable through first-class resume + scheduler-min, Session H made the Manager Dashboard operable
 end-to-end, Session L added a real-time SSE journal stream + command-feedback toasts, and **Session I made
@@ -43,6 +44,23 @@ the swarm runnable from the dashboard** (G8's `/run` half). Items below marked �
 > blocked). **(G12) compiler scaffold** — `compile_candidate(gym)` gates a proposal on the same `PromotionGate`
 > (synthetic-only never promotable); **mechanism only — real improvement needs ~100 real settles**. End-to-end
 > chain proven in `api/tests/test_phase6_end_to_end.py`. Contracts frozen throughout; lane fence 3/3.
+
+> **Operator Studio GUI (2026-06-20, on `main`):** the last GUI phase added a guided **Studio** seat that
+> coexists with the operator god-view via a persistent **STUDIO ◀▶ OPERATOR** toggle (Studio is the default
+> landing; mode persisted). The **drive→send spine** (`dashboard/src/components/studio-view.tsx`) drives one
+> mandate end-to-end over existing routes: ① pick/instantiate → ② find leads (trigger-run + live SSE
+> oscilloscope trace) → ③ scored leads + cited evidence (`/runs/{id}` `claimed_facts` / `/instances/{id}`
+> `facts`) → ④ review the drafted outreach (`/approvals` `drafted_effect`) → ⑤ approve & send (gated; live vs
+> staged from `/capabilities`) → land in the Business File. API glue TDD'd (`instantiate`/`triggerRun`/
+> `approveRun`/`mapScoredLeads`/`deriveSendPosture`, 12 new tests). Identity evolved, not replaced (new
+> `.studio-*` CSS only). **Live-proven over HTTP**: instantiate → run parks at L1 → approve → settle → 2 leads
+> committed with provenance; send **fail-closed** (no transport) to the human tail; bearer 401/403 verified.
+> See [SESSION_STUDIO_LIVE_PROOF.md](./SESSION_STUDIO_LIVE_PROOF.md) + [OPERATOR_STUDIO_DESIGN.md](./OPERATOR_STUDIO_DESIGN.md).
+> **Accuracy note:** the wired live-email transport is **Resend** (`RUN_LIVE_EMAIL=1` + `RESEND_API_KEY`),
+> not Gmail SMTP — the `SMTP_*` keys are recognized but not yet wrapped (`email_transports.py`). The Phase-1
+> lead-finder's terminal effect is `draft_email` (draft-only); the real gated `send_email` is a separate
+> capability (`api/tests/test_send_email_integration.py`). **Next (design-only):** Creator track, Foundry
+> deepening, Kernel Inspector — phases 2–4 of [OPERATOR_STUDIO_DESIGN.md](./OPERATOR_STUDIO_DESIGN.md).
 > **Honest caps:** real email send + the ~100-settle operating milestone are NOT yet hit; the GUI to drive
 > all this is the next (frontend) session.
 

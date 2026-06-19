@@ -237,18 +237,19 @@ export function StudioView({
           }
           if (scored.length > 0) setLeads(scored);
           return sendPosture === "live"
-            ? { tone: "good" as const, title: "Sent", detail: "Outreach dispatched through the live transport." }
+            ? { tone: "good" as const, title: "Sent", detail: "Run settled — the gated outreach dispatched through the live transport." }
             : {
                 tone: "warn" as const,
-                title: "Staged",
-                detail: "No mail transport configured — send_email routed to the manual queue (the human tail will send).",
+                title: "Committed · staged",
+                detail:
+                  "Run settled and the leads are committed with provenance. No live mail transport is configured, so the email send fail-closes to the human tail (invariant #5).",
               };
         }
         await sleep(750);
       }
       return sendPosture === "live"
         ? { tone: "good" as const, title: "Approved", detail: "Approval recorded; the run is resuming — check the Business File." }
-        : { tone: "warn" as const, title: "Staged", detail: "Approval recorded; send_email is fail-closed to the manual queue." };
+        : { tone: "warn" as const, title: "Staged", detail: "Approval recorded; the send fail-closes to the human tail (invariant #5)." };
     },
     [apiBaseUrl, instanceId, sendPosture],
   );
@@ -652,12 +653,13 @@ function DraftStage({
       <div className={classNames("studio-posture", posture === "live" ? "is-live" : "is-staged")} style={stagger(2)}>
         {posture === "live" ? (
           <>
-            <Send size={15} /> <strong>LIVE</strong> — approving will send a real email via the configured transport.
+            <Send size={15} /> <strong>LIVE</strong> — a <code>send_email</code> transport is registered; a gated send goes out
+            for real on approval.
           </>
         ) : (
           <>
-            <TriangleAlert size={15} /> <strong>STAGED</strong> — no transport configured; send_email fail-closes to the
-            manual queue (the human tail sends). Invariant #5.
+            <TriangleAlert size={15} /> <strong>STAGED</strong> — no <code>send_email</code> transport is configured. Approving
+            commits the gated outreach; the actual send fail-closes to the human tail (invariant #5).
           </>
         )}
       </div>
