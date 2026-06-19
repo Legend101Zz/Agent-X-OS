@@ -1,4 +1,14 @@
-import type { CSSProperties, PropsWithChildren, ReactNode } from "react";
+"use client";
+
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PropsWithChildren,
+  type ReactNode,
+} from "react";
 import type { ApiSource, CoreGap } from "@/lib/types";
 
 export type ViewId =
@@ -130,4 +140,103 @@ export function GapNotice({ gap }: { gap: CoreGap }) {
 
 export function EmptyState({ label }: { label: string }) {
   return <div className="empty-state">{label}</div>;
+}
+
+export type ToastTone = "good" | "warn" | "hot";
+
+export interface ToastItem {
+  id: string;
+  key: string;
+  title: string;
+  message: string;
+  tone: ToastTone;
+  createdAt: number;
+  durationMs: number;
+}
+
+export interface ToastInput {
+  key?: string;
+  title: string;
+  message: string;
+  tone?: ToastTone;
+  durationMs?: number;
+}
+
+export function upsertToast(
+  current: ToastItem[],
+  next: ToastItem,
+  limit = 5,
+): ToastItem[] {
+  return [...current.filter((toast) => toast.key !== next.key), next].slice(-limit);
+}
+
+export function useToasts() {
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id));
+    const timer = timers.current.get(id);
+    if (timer) clearTimeout(timer);
+    timers.current.delete(id);
+  }, []);
+
+  const pushToast = useCallback(
+    (input: ToastInput) => {
+      const createdAt = Date.now();
+      const key = input.key ?? `${input.title}:${input.message}`;
+      const id = `${key}:${createdAt}`;
+      const toast: ToastItem = {
+        id,
+        key,
+        title: input.title,
+        message: input.message,
+        tone: input.tone ?? "warn",
+        createdAt,
+        durationMs: input.durationMs ?? 5000,
+      };
+      setToasts((current) => upsertToast(current, toast));
+      for (const existing of toasts) {
+        if (existing.key === key) dismissToast(existing.id);
+      }
+      timers.current.set(id, setTimeout(() => dismissToast(id), toast.durationMs));
+      return id;
+    },
+    [dismissToast, toasts],
+  );
+
+  useEffect(
+    () => () => {
+      for (const timer of timers.current.values()) clearTimeout(timer);
+      timers.current.clear();
+    },
+    [],
+  );
+
+  return { dismissToast, pushToast, toasts };
+}
+
+export function ToastStack({
+  toasts,
+  onDismiss,
+}: {
+  toasts: ToastItem[];
+  onDismiss: (id: string) => void;
+}) {
+  return (
+    <aside className="toast-stack" aria-label="Command notifications" aria-live="polite">
+      {toasts.map((toast) => (
+        <button
+          className={classNames("command-toast", `toast-${toast.tone}`)}
+          key={toast.id}
+          onClick={() => onDismiss(toast.id)}
+          type="button"
+        >
+          <strong>{toast.title}</strong>
+          <span>{toast.message}</span>
+          <small>dismiss</small>
+        </button>
+      ))}
+    </aside>
+  );
 }
