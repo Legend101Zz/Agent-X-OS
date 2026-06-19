@@ -45,6 +45,7 @@ _POLICY: dict[str, SyscallPolicy] = {
     "queue_manual_action": SyscallPolicy(required_ring="L0", risk_class="read"),
     "mark_outcome": SyscallPolicy(required_ring="L1", risk_class="reversible_write"),
     "draft_email": SyscallPolicy(required_ring="L2", risk_class="external_message"),
+    "send_email": SyscallPolicy(required_ring="L2", risk_class="external_message"),
 }
 _RING_ORDER: dict[Ring, int] = {"L0": 0, "L1": 1, "L2": 2, "L3": 3, "L4": 4}
 

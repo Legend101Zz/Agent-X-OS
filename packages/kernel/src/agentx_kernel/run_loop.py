@@ -441,6 +441,22 @@ class Phase1RunInvoker:
             return None, None
         request = _bind_request(action.request, ctx)
 
+        # Invariant #8 (per-instance sender of record): the kernel run-loop stamps the instance's own
+        # ChannelBinding.sender_identity into the send_email request args (overriding any harness-supplied
+        # value) so the adapter cannot be tricked into using a shared/global sender. If the instance has
+        # no channel_binding yet, we leave the request alone — the adapter will refuse it with a clear
+        # error (no shared/global sender, ever).
+        if (
+            request.name == "send_email"
+            and instance.channel_binding is not None
+            and instance.channel_binding.sender_identity
+        ):
+            sender = instance.channel_binding.sender_identity
+            existing_args = dict(request.args)
+            if existing_args.get("sender_identity") != sender:
+                existing_args["sender_identity"] = sender
+                request = request.model_copy(update={"args": existing_args})
+
         if request.risk_class == "read" and mode == "sim":
             # Read-class intents are fulfilled NATIVELY (off-gateway) and never reach a ring check.
             # In sim the kernel supplies deterministic, clearly-synthetic data (mirrors the live harness's

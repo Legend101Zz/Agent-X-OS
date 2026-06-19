@@ -185,11 +185,18 @@ def build_runtime(
     database: Any | None = None,
     client: Any | None = None,
     runner_factory: Any | None = None,
+    send_email_transport: Any | None = None,
 ) -> OperatorRuntime:
     """Construct the live or in-memory operator runtime.
 
     ``runner_factory`` is a no-arg callable returning a ``HarnessRunner``. When ``None``,
     ``Phase1RunInvoker`` falls back to its OwnHarness default — appropriate for sim API + tests.
+
+    ``send_email_transport`` is the Phase-1 composition edge: when supplied (test fake) or
+    auto-built from ``RUN_LIVE_EMAIL=1`` + ``RESEND_API_KEY``, the runtime registers exactly one
+    ``SendEmailAdapter`` per ``MandateInstance`` whose ``channel_binding`` is set (invariant #8).
+    When unconfigured, no SendEmailAdapter is registered and the human_task tail handles
+    send_email (invariant #5 — resolve never returns None).
     """
     settings = settings or get_settings()
     if database is not None:
@@ -198,12 +205,14 @@ def build_runtime(
             database=database,
             client=client,
             runner_factory=runner_factory,
+            send_email_transport=send_email_transport,
         )
     return _compose_memory_runtime(
         settings=settings,
         database=None,
         client=None,
         runner_factory=runner_factory,
+        send_email_transport=send_email_transport,
     )
 
 
@@ -213,6 +222,7 @@ def _compose_mongo_runtime(
     database: Any,
     client: Any | None,
     runner_factory: Any | None,
+    send_email_transport: Any | None,
 ) -> OperatorRuntime:
     from agentx_kernel.vault import ConfigVault
     from agentx_syscall.manual_tasks import MongoManualTaskRepository
@@ -237,6 +247,7 @@ def _compose_mongo_runtime(
         scheduler_store=scheduler_store,
         manual_tasks=manual_tasks,
         runner_factory=runner_factory,
+        send_email_transport=send_email_transport,
     )
 
 
@@ -246,6 +257,7 @@ def _compose_memory_runtime(
     database: Any | None,
     client: Any | None,
     runner_factory: Any | None,
+    send_email_transport: Any | None,
 ) -> OperatorRuntime:
     from agentx_kernel.vault import ConfigVault
 
@@ -269,6 +281,7 @@ def _compose_memory_runtime(
         scheduler_store=scheduler_store,
         manual_tasks=manual_tasks,
         runner_factory=runner_factory,
+        send_email_transport=send_email_transport,
     )
 
 
@@ -286,9 +299,14 @@ def _compose(
     scheduler_store: SchedulerStore,
     manual_tasks: ManualTaskRepository,
     runner_factory: Any | None,
+    send_email_transport: Any | None,
 ) -> OperatorRuntime:
     projections = Projections(projection_store, journal)
-    registry = build_phase1_registry()
+    send_email_adapters = _build_send_email_adapters(
+        projection_store=projection_store,
+        send_email_transport=send_email_transport,
+    )
+    registry = build_phase1_registry(send_email_adapters=send_email_adapters)
     gateway = Gateway(
         journal=journal,
         vault=vault,
@@ -369,6 +387,120 @@ def _replace_adapter_stores(registry: SyscallRegistry, durable: ManualTaskReposi
             # The adapters carry their _store as a plain attribute set in __init__; mypy sees it
             # as missing on the Adapter Protocol. Use vars() so the assignment is type-safe.
             vars(adapter)["_store"] = durable
+
+
+def _resolve_live_email_transport(supplied: Any | None) -> Any | None:
+    """Pick the transport: caller-supplied (test fake) wins, else build from env, else None.
+
+    This is the composition edge that lets the runtime auto-build a Resend transport when
+    ``RUN_LIVE_EMAIL=1`` and ``RESEND_API_KEY`` are set, and otherwise stay quiet so the human_task
+    tail handles send_email (invariant #5 — never returns ``None`` on resolve).
+    """
+    if supplied is not None:
+        return supplied
+    try:
+        from agentx_syscall.email_transports import build_configured_email_transport
+    except Exception:  # noqa: BLE001 - missing dep / sandbox: never crash bootstrap
+        return None
+    return build_configured_email_transport()
+
+
+def _build_send_email_adapters(
+    *,
+    projection_store: Any,
+    send_email_transport: Any | None,
+) -> list[Any]:
+    """Build ONE SendEmailAdapter that resolves the per-instance sender on every call.
+
+    Phase-1 invariant #8: each instance has its own ``ChannelBinding.sender_identity``; the adapter
+    looks up the right one for ``req.instance_id`` at execute time, so a single adapter handles all
+    instances without ever sharing a global From address. The kernel run-loop ALSO stamps
+    ``req.args["sender_identity"]`` from the instance's ``ChannelBinding``; the adapter's local
+    check (``requested_sender == resolved_sender``) keeps it honest against a misbehaving harness.
+
+    When no transport is configured (test fake absent AND no live env), no adapter is registered —
+    the human_task tail handles send_email (invariant #5 — resolve never returns None).
+    """
+    from agentx_syscall.adapters import SendEmailAdapter
+
+    transport = _resolve_live_email_transport(send_email_transport)
+    if transport is None:
+        return []
+
+    async def _resolve_sender(instance_id: str) -> str | None:
+        try:
+            docs = await projection_store.find("mandate_instance", {"id": instance_id})
+        except Exception:  # noqa: BLE001 - projection store best-effort
+            return None
+        for doc in docs:
+            binding = doc.get("channel_binding") if isinstance(doc, dict) else None
+            if not isinstance(binding, dict):
+                continue
+            sender = binding.get("sender_identity")
+            if isinstance(sender, str) and sender:
+                return sender
+        return None
+
+    return [
+        SendEmailAdapter(
+            transport=transport,
+            instance_sender_resolver=_resolve_sender,
+        )
+    ]
+
+
+def _build_send_email_adapters_sync(
+    *,
+    projection_store: Any,
+    send_email_transport: Any | None,
+    sync_docs: list[dict[str, Any]] | None = None,
+) -> list[Any]:
+    """Test/sync helper: same as ``_build_send_email_adapters`` but resolves senders synchronously.
+
+    The composition edge can boot in either async (lifespan) or sync (tests) contexts; both must
+    register the same SendEmailAdapter with the same resolver contract. When ``sync_docs`` is given
+    (typically a list of in-memory MandateInstance dicts), the resolver looks them up locally;
+    otherwise it falls back to async lookup against the projection store.
+    """
+    from agentx_syscall.adapters import SendEmailAdapter
+
+    transport = _resolve_live_email_transport(send_email_transport)
+    if transport is None:
+        return []
+
+    async def _resolve_sender(instance_id: str) -> str | None:
+        if sync_docs is not None:
+            for doc in sync_docs:
+                if isinstance(doc, dict) and doc.get("id") == instance_id:
+                    binding = doc.get("channel_binding")
+                    if isinstance(binding, dict):
+                        sender = binding.get("sender_identity")
+                        if isinstance(sender, str) and sender:
+                            return sender
+            return None
+        try:
+            docs = await projection_store.find("mandate_instance", {"id": instance_id})
+        except Exception:  # noqa: BLE001
+            return None
+        for doc in docs:
+            if isinstance(doc, dict) and doc.get("id") == instance_id:
+                binding = doc.get("channel_binding")
+                if isinstance(binding, dict):
+                    sender = binding.get("sender_identity")
+                    if isinstance(sender, str) and sender:
+                        return sender
+        return None
+
+    return [
+        SendEmailAdapter(
+            transport=transport,
+            instance_sender_resolver=_resolve_sender,
+        )
+    ]
+
+
+# Backwards-compatible alias for tests that import this directly.
+_build_send_email_adapters_async = _build_send_email_adapters
 
 
 class _ManualTaskStoreAdapter:

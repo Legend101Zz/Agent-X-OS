@@ -7,7 +7,7 @@ they never make autonomous decisions outside that request.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from importlib import import_module
@@ -470,6 +470,244 @@ class MarkOutcomeAdapter(_AdapterBase):
             idempotency_key=req.idempotency_key,
             fulfilled_by=self.name,
             maturity_used=self.maturity_level,
+        )
+
+
+class EmailTransport(Protocol):
+    """A pluggable outbound email transport (Resend / AgentMail / SMTP / fake).
+
+    The transport is the boundary that actually talks to the world; the adapter NEVER holds the
+    secret (the credential arrives via ``execute(req, cred)`` from the gateway, and the transport
+    receives its API key through the SAME gateway/vault seam). Mirrors ``ResearchProvider`` for
+    symmetry: a small provider seam behind the Agent-X Adapter interface.
+    """
+
+    name: str
+
+    async def send(
+        self,
+        *,
+        from_addr: str,
+        to: str,
+        subject: str,
+        body: str,
+        headers: Mapping[str, str] | None = None,
+    ) -> SentEmailReceipt:
+        """Send one email and return a transport receipt (message_id, accepted)."""
+        ...
+
+
+@dataclass(frozen=True)
+class SentEmailReceipt:
+    """What an email transport returns: the upstream provider's message id + acceptance flag."""
+
+    message_id: str
+    to: str
+    from_addr: str
+    subject: str
+    accepted: bool = True
+
+
+class SendEmailAdapter(_AdapterBase):
+    """Send an approved email really — the gated real-send rung (HERMES_BUILD_PLAN §Phase 1).
+
+    This is the rung that converts a parked ``draft_email`` (L2 + human approval) into an outbound
+    email. It enforces:
+
+    - **Invariant #2:** the transport secret arrives ONLY via ``cred`` at execute time. The adapter
+      constructor takes a transport object whose secret was already injected by the gateway when the
+      transport was built (or a test-supplied fake); the adapter itself never imports credential
+      roots.
+    - **Invariant #8 (per-instance sender identity):** the ``From``/sender identity MUST equal the
+      instance's own ``ChannelBinding.sender_identity``. The adapter refuses requests whose
+      ``sender_identity`` arg doesn't match what the resolver returns for the instance — no
+      shared/global sender, no spoofing across instances.
+    - **Invariant #5 (terminal fallback):** if no transport is configured (``can_handle`` returns
+      False), the registry's ladder resolves to ``human_task``; ``resolve`` never returns None.
+    - **Idempotency / no double-send:** the adapter remembers the idempotency_key -> receipt mapping
+      for the lifetime of the adapter and replays it without calling ``transport.send`` again,
+      independent of (and on top of) the gateway's journal/receipt idempotency.
+    - **Live gating:** ``RUN_LIVE_EMAIL=1`` is the only gate that allows a real outbound send in
+      live mode; otherwise the configured transport is replaced with a no-op so unit tests and
+      unconfigured deployments stay deterministic.
+
+    The adapter is registered ONCE per process; it resolves the per-instance sender on each
+    ``execute(req)`` via ``instance_sender_resolver(req.instance_id)``. The kernel run-loop ALSO
+    stamps ``req.args["sender_identity"]`` from the instance's ``ChannelBinding`` (belt and
+    suspenders), so the adapter's check sees a stamped value that the resolver should agree with.
+    """
+
+    def __init__(
+        self,
+        *,
+        transport: EmailTransport | None,
+        instance_sender: str | None = None,
+        instance_sender_resolver: Callable[[str], str | Awaitable[str | None] | None] | None = None,
+        transport_factory: Callable[[], EmailTransport | None] | None = None,
+    ) -> None:
+        self._transport = transport
+        # At least one of instance_sender / instance_sender_resolver must be supplied. When only a
+        # fixed ``instance_sender`` is given, the adapter is bound to ONE instance; when a resolver
+        # is given, one adapter serves ALL instances (per-instance sender looked up per request).
+        if instance_sender is None and instance_sender_resolver is None:
+            raise ValueError("SendEmailAdapter requires instance_sender or instance_sender_resolver")
+        self._fixed_sender: str | None = instance_sender
+        self._sender_resolver: Callable[[str], str | Awaitable[str | None] | None] | None = instance_sender_resolver
+        self._transport_factory = transport_factory
+        self._sent_receipts: dict[str, SentEmailReceipt] = {}
+        super().__init__(
+            name="send_email",
+            category="communication",
+            maturity_level=2,
+            risk_class="external_message",
+            required_ring="L2",
+            tenant_auth="api_key",
+            fixtures=[
+                SyscallTestCase(
+                    name="send_email_smoke",
+                    input={
+                        "to": "founder@example.com",
+                        "subject": "Lead intro",
+                        "body": "Body text.",
+                        "sender_identity": instance_sender or "",
+                    },
+                    expect_status="ok",
+                    expect_output_contains={"mode": "sent", "sent": True},
+                )
+            ],
+        )
+
+    def _resolve_sender(self, instance_id: str) -> str | None:
+        if self._sender_resolver is None:
+            return self._fixed_sender
+        # Resolvers may be sync or async; callers that need to await must use
+        # ``_resolve_sender_async``. The sync path is for fixed-sender + test-fake-resolver only
+        # (the resolver returns a plain str); async resolvers are rejected here.
+        result = self._sender_resolver(instance_id)
+        if isinstance(result, str):
+            return result
+        return None
+
+    async def _resolve_sender_async(self, instance_id: str) -> str | None:
+        if self._sender_resolver is None:
+            return self._fixed_sender
+        import inspect
+
+        result = self._sender_resolver(instance_id)
+        if inspect.isawaitable(result):
+            return await result
+        if isinstance(result, str):
+            return result
+        return None
+
+    def can_handle(self, req: SyscallRequest, ctx: GatewayContext) -> bool:
+        if not super().can_handle(req, ctx):
+            return False
+        transport = self._live_transport()
+        return transport is not None
+
+    def _live_transport(self) -> EmailTransport | None:
+        """Resolve the live transport, honoring ``RUN_LIVE_EMAIL=1`` and re-evaluating the factory.
+
+        If a factory was supplied (e.g. live mode reads env each call), re-evaluate it now; otherwise
+        fall back to the constructor-supplied transport. ``None`` means "not configured" — and
+        ``can_handle`` will report False, sending the request down the human_task tail.
+        """
+        if self._transport_factory is not None:
+            return self._transport_factory()
+        return self._transport
+
+    async def execute(self, req: SyscallRequest, cred: Credential | None) -> SyscallResult:
+        # Idempotency replay (defense-in-depth on top of the gateway's own receipt replay).
+        prior = self._sent_receipts.get(req.idempotency_key)
+        if prior is not None:
+            return SyscallResult(
+                status="ok",
+                output={
+                    "mode": "sent",
+                    "sent": True,
+                    "message_id": prior.message_id,
+                    "to": prior.to,
+                    "subject": prior.subject,
+                    "from": prior.from_addr,
+                    "idempotent_replay": True,
+                    "credential_ref": cred.ref if cred is not None else None,
+                },
+                idempotency_key=req.idempotency_key,
+                fulfilled_by=self.name,
+                maturity_used=self.maturity_level,
+            )
+
+        # Invariant #8: the sender identity MUST be the instance's own — refuse spoofing.
+        requested_sender = _str_arg(req.args, "sender_identity")
+        instance_sender = await self._resolve_sender_async(req.instance_id)
+        if instance_sender is None:
+            return _error_result(
+                req,
+                self.name,
+                self.maturity_level,
+                f"no instance sender bound for instance_id={req.instance_id!r}",
+            )
+        if requested_sender != instance_sender:
+            return _error_result(
+                req,
+                self.name,
+                self.maturity_level,
+                (
+                    f"sender_identity mismatch: request claims {requested_sender!r} "
+                    f"but instance sender is {instance_sender!r}"
+                ),
+            )
+
+        to = _str_arg(req.args, "to")
+        subject = _str_arg(req.args, "subject")
+        body = _str_arg(req.args, "body")
+
+        transport = self._live_transport()
+        if transport is None:
+            # can_handle should have rejected this; surface as a clear error if reached.
+            return _error_result(req, self.name, self.maturity_level, "send_email transport not configured")
+
+        # The credential is injected by the gateway (invariant #2). The pod/adapter caller never
+        # holds the secret. The transport received its key from the SAME gateway at construction
+        # time (or a test-supplied fake); here we just attach the vault ref to the receipt/journal
+        # for traceability, never the material.
+        receipt = await transport.send(
+            from_addr=instance_sender,
+            to=to,
+            subject=subject,
+            body=body,
+        )
+        self._sent_receipts[req.idempotency_key] = receipt
+        return SyscallResult(
+            status="ok",
+            output={
+                "mode": "sent",
+                "sent": True,
+                "message_id": receipt.message_id,
+                "to": receipt.to,
+                "subject": receipt.subject,
+                "from": receipt.from_addr,
+                "transport": transport.name,
+                "credential_ref": cred.ref if cred is not None else None,
+            },
+            idempotency_key=req.idempotency_key,
+            fulfilled_by=self.name,
+            maturity_used=self.maturity_level,
+        )
+
+    async def health_check(self) -> Health:
+        transport = self._live_transport()
+        if transport is None:
+            return Health(
+                status="degraded",
+                detail="no email transport configured; registry will fall back to human_task",
+                checked_at=datetime.now(UTC),
+            )
+        return Health(
+            status="ok",
+            detail=f"email transport ready: {transport.name}",
+            checked_at=datetime.now(UTC),
         )
 
 

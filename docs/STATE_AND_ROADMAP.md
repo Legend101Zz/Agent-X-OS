@@ -142,7 +142,7 @@ gap is deferred maturation: reality must promote probation facts and emit real g
 | G10 | **Creator Mandate** (assemble a Type from a description) | ❌ | On-plan as *later*; Phase-1 Foundry-min is the swarm only | §5 |
 | G11 | **Operator Agent** (founder's chief-of-staff over the control surface) | ❌ | Later; needs the dashboard command/query API as its tool surface | §6.1 |
 | G12 | **Compiler (GEPA growth loop)** | ❌ | Later; needs a full gym of real cases first | §5 |
-| G13 | **Phases 2–5 channels** (send email, calendar, CRM, browser, voice, WhatsApp, money) | ❌ | **Deliberately deferred** — not Phase 1 | §7 |
+| G13 | **Phases 2–5 channels** (send email, calendar, CRM, browser, voice, WhatsApp, money) | 🟢 email send scaffolded (P1) | **Hermes Phase 1 (this session):** ``SendEmailAdapter`` + ``EmailTransport`` Protocol + ``SentEmailReceipt`` + Resend transport (gated on ``RUN_LIVE_EMAIL=1`` + ``RESEND_API_KEY``); per-instance sender resolver looks up ``ChannelBinding.sender_identity``; kernel run-loop stamps ``req.args["sender_identity"]`` from the instance binding (belt + suspenders for invariant #8); adapter refuses mismatches. Idempotency at both gateway (journal/receipt) AND adapter level (defense in depth). 13 new tests (9 adapter + 4 api integration). **Live send path is gated; unconfigured deployments fall back to ``human_task`` (invariant #5).** Post-approval wiring (faculty emits ``send_email`` Call after ``draft_email`` parks) is a thin mandate/faculty step that's out of Phase 1 scope. Other channels (calendar/CRM/browser/voice/WhatsApp/money) are still deliberately deferred — not Phase 1 | §7 |
 
 ---
 

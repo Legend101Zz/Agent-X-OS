@@ -197,9 +197,21 @@ def create_app(
     operator_token: str | None = None,
     cors_origins: list[str] | None = None,
     start_worker: bool = True,
+    send_email_transport: Any | None = None,
 ) -> FastAPI:
-    """Build the FastAPI app. ``operator_token`` overrides ``AGENTX_OPERATOR_TOKEN`` (test hook)."""
-    state = create_state(use_mongo=use_mongo, seed_demo=seed_demo)
+    """Build the FastAPI app. ``operator_token`` overrides ``AGENTX_OPERATOR_TOKEN`` (test hook).
+
+    ``send_email_transport`` is a Phase-1 test hook: when ``None`` the runtime reads
+    ``RUN_LIVE_EMAIL=1`` + ``RESEND_API_KEY`` and registers a live Resend transport if both are
+    present; otherwise no SendEmailAdapter is registered (the human_task tail handles send_email,
+    invariant #5). When supplied (a test fake), the runtime uses it instead and registers exactly
+    one SendEmailAdapter at the per-instance sender supplied via MandateInstance.channel_binding.
+    """
+    state = create_state(
+        use_mongo=use_mongo,
+        seed_demo=seed_demo,
+        send_email_transport=send_email_transport,
+    )
     if operator_token is not None:
         os.environ["AGENTX_OPERATOR_TOKEN"] = operator_token
     if cors_origins is not None:

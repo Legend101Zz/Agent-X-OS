@@ -50,6 +50,12 @@ class DashboardState:
     seed_demo: bool
     database: Any | None
     client: Any | None
+    # Phase-1 test hook: when ``None`` the runtime reads env (RUN_LIVE_EMAIL=1 + RESEND_API_KEY) and
+    # only registers a SendEmailAdapter when both are present; when a transport is supplied the
+    # runtime uses it directly (test fake) and registers the SendEmailAdapter unconditionally. In
+    # either case, when the runtime has zero channel_binding instances, no SendEmailAdapter is
+    # registered and the human_task tail takes over (invariant #5).
+    send_email_transport: Any | None = None
 
     # ---- convenience accessors so endpoint code is short -------------------------------
     @property
@@ -119,7 +125,12 @@ class DashboardState:
             events = [event for event in events if event.kind == kind]
         return events[-limit:]
 
-def create_state(*, use_mongo: bool | None, seed_demo: bool) -> DashboardState:
+def create_state(
+    *,
+    use_mongo: bool | None,
+    seed_demo: bool,
+    send_email_transport: Any | None = None,
+) -> DashboardState:
     """Build a DashboardState from settings + optional env flag.
 
     ``use_mongo=False`` forces memory even when ``MONGODB_URI`` is set (used by tests).
@@ -135,13 +146,19 @@ def create_state(*, use_mongo: bool | None, seed_demo: bool) -> DashboardState:
 
         client = AsyncMongoClient(uri)
         database = client[settings.mongodb_db_name]
-    runtime = build_runtime(settings=settings, database=database, client=client)
+    runtime = build_runtime(
+        settings=settings,
+        database=database,
+        client=client,
+        send_email_transport=send_email_transport,
+    )
     return DashboardState(
         runtime=runtime,
         backend="mongo" if should_use_mongo else "memory",
         seed_demo=seed_demo,
         database=database,
         client=client,
+        send_email_transport=send_email_transport,
     )
 
 

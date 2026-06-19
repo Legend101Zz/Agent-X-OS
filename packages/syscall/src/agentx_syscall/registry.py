@@ -1,5 +1,7 @@
 """Phase-1 syscall registry bootstrap."""
 
+from collections.abc import Sequence
+
 from agentx_contracts import Adapter, GatewayContext, SyscallRegistry, SyscallRequest
 
 from agentx_syscall.adapters import (
@@ -10,6 +12,7 @@ from agentx_syscall.adapters import (
     MarkOutcomeAdapter,
     QueueManualActionAdapter,
     ReadUrlAdapter,
+    SendEmailAdapter,
     build_configured_research_providers,
 )
 
@@ -40,15 +43,25 @@ class Phase1SyscallRegistry:
         return self._terminal_fallback
 
 
-def build_phase1_registry() -> SyscallRegistry:
-    """Build the live Phase-1 syscall ladder."""
+def build_phase1_registry(
+    *,
+    send_email_adapters: Sequence[SendEmailAdapter] = (),
+) -> SyscallRegistry:
+    """Build the live Phase-1 syscall ladder.
 
+    ``send_email_adapters`` lets the bootstrap register ONE ``SendEmailAdapter`` PER INSTANCE so
+    each instance's outbound sender identity (invariant #8) is honoured without ever sharing a
+    global From across tenants. When no send_email adapter is configured (or none can_handle
+    given its transport), the registry resolves ``send_email`` to ``human_task`` — invariant #5.
+    """
     store = ManualTaskStore()
     providers = build_configured_research_providers()
     registry = Phase1SyscallRegistry(terminal_fallback=HumanTaskAdapter(store=store))
     registry.register(LeadResearchBatchAdapter(providers=providers))
     registry.register(ReadUrlAdapter(providers=providers))
     registry.register(DraftEmailAdapter())
+    for send_adapter in send_email_adapters:
+        registry.register(send_adapter)
     registry.register(QueueManualActionAdapter(store=store))
     registry.register(MarkOutcomeAdapter(store=store))
     return registry
