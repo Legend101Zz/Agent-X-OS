@@ -1,6 +1,6 @@
 # Session L Live Proof
 
-Date: 2026-06-19  
+Date: 2026-06-19
 Branch: `feat/dashboard-realtime-sse`
 
 ## Focused red-green proof
