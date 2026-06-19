@@ -8,6 +8,8 @@ import type {
   ApiResult,
   ApprovalCard,
   ApprovePayload,
+  ApproveResult,
+  Capability,
   CommandPayload,
   CommandResult,
   CoreGap,
@@ -16,6 +18,7 @@ import type {
   Fact,
   HealthStatus,
   InstantiatePayload,
+  InstantiateResult,
   InstanceSummary,
   JournalEvent,
   GateDecisionView,
@@ -24,14 +27,17 @@ import type {
   RejectPayload,
   RunSummary,
   RunSwarmPayload,
+  ScoredLead,
   SchedulerWork,
   ScorecardView,
+  SendPosture,
   SetRingPayload,
   SwarmRunReport,
   SwarmTraceEvent,
   SystemOverview,
   TimelineEntry,
   TriggerRunPayload,
+  TriggerRunResult,
 } from "./types";
 
 type QueryValue = string | number | boolean | null | undefined;
@@ -370,6 +376,115 @@ export async function runSwarm(
     },
   );
   return { ...result, data: mapSwarmRunReport(result.data) };
+}
+
+// --- Studio drive→send helpers (Operator Studio slice) -------------------------------------
+// Typed, bearer-authed command wrappers + pure mappers for the guided Studio spine. They read
+// the SAME existing routes the operator views use; the seam stays frozen. All accept an injected
+// ``fetcher`` for unit testing (see dashboard/tests/studio.test.ts).
+
+export interface CommandOptions {
+  baseUrl?: string;
+  token?: string;
+  fetcher?: typeof fetch;
+}
+
+async function postTypedCommand(
+  path: string,
+  payload: unknown,
+  options: CommandOptions,
+): Promise<{ ok: boolean; body: Record<string, unknown>; message?: string }> {
+  const { baseUrl = DEFAULT_API_BASE_URL, token, fetcher = fetch } = options;
+  // Fail closed: without an operator token, never touch the network — commands are disabled.
+  if (!token) {
+    return { ok: false, body: {}, message: "Set the operator token to enable writes." };
+  }
+  try {
+    const response = await fetcher(buildApiUrl(baseUrl, path), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    const body = asRecord(await response.json());
+    if (!response.ok) {
+      const detail = typeof body.detail === "string" ? body.detail : response.statusText;
+      return { ok: false, body, message: detail };
+    }
+    return { ok: true, body };
+  } catch (error) {
+    return { ok: false, body: {}, message: getErrorMessage(error) };
+  }
+}
+
+export async function instantiate(
+  payload: InstantiatePayload,
+  options: CommandOptions = {},
+): Promise<InstantiateResult> {
+  const { ok, body, message } = await postTypedCommand("/commands/instantiate", payload, options);
+  if (!ok) return { supported: false, message };
+  const instance = asRecord(body.instance);
+  return {
+    supported: true,
+    instanceId: stringValue(instance.id, "") || undefined,
+    message: typeof body.message === "string" ? body.message : undefined,
+  };
+}
+
+export async function triggerRun(
+  payload: TriggerRunPayload,
+  options: CommandOptions = {},
+): Promise<TriggerRunResult> {
+  const { ok, body, message } = await postTypedCommand("/commands/trigger-run", payload, options);
+  if (!ok) return { supported: false, message };
+  return {
+    supported: true,
+    workId: stringValue(body.work_id, "") || undefined,
+    status: stringValue(body.status, "queued"),
+  };
+}
+
+export async function approveRun(
+  payload: ApprovePayload,
+  options: CommandOptions = {},
+): Promise<ApproveResult> {
+  const { ok, body, message } = await postTypedCommand("/commands/approve", payload, options);
+  if (!ok) return { supported: false, message };
+  return {
+    supported: true,
+    status: stringValue(body.status, "accepted"),
+    workId: stringValue(body.work_id, "") || undefined,
+  };
+}
+
+/** Map a ``GET /runs/{id}`` payload's ``claimed_facts`` into scored leads with cited evidence. */
+export function mapScoredLeads(raw: unknown): ScoredLead[] {
+  return unwrapArray(asRecord(raw).claimed_facts, "facts").map((item) => {
+    const value = asRecord(item);
+    const provenance = asRecord(value.provenance);
+    const parsed = Number.parseFloat(stringValue(value.object, ""));
+    const confidence = numberValue(value.confidence);
+    const note = typeof provenance.note === "string" && provenance.note ? provenance.note : undefined;
+    return {
+      lead: stringValue(value.subject, "lead"),
+      predicate: stringValue(value.predicate, ""),
+      score: Number.isFinite(parsed) ? parsed : confidence,
+      confidence,
+      evidence: arrayValue(provenance.evidence).map((entry) => stringValue(entry, "")).filter(Boolean),
+      note,
+    };
+  });
+}
+
+/** Decide whether ``send_email`` will really send (Resend adapter present) or stage to the queue. */
+export function deriveSendPosture(capabilities: Capability[]): SendPosture {
+  const hasSendEmail = capabilities.some(
+    (capability) => capability.syscall === "send_email" || capability.id === "send_email",
+  );
+  return hasSendEmail ? "live" : "staged";
 }
 
 function mapHealth(raw: unknown): HealthStatus {

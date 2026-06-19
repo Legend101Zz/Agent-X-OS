@@ -224,6 +224,47 @@ export interface CoreGap {
   detail: string;
 }
 
+// --- Studio view models (Operator Studio slice) --------------------------------------------
+// View models only — the packages/contracts seam stays frozen. These shape the JSON the Studio
+// drive→send spine reads from existing routes (/runs/{id} claimed_facts, /capabilities).
+
+export interface ScoredLead {
+  /** The lead subject (the kernel Fact's ``subject``). */
+  lead: string;
+  /** The predicate that scored it (e.g. ``qualified_lead_score``). */
+  predicate: string;
+  /** Numeric score (parsed from the Fact ``object``, falling back to ``confidence``). */
+  score: number;
+  /** The Fact's own confidence (0..1). */
+  confidence: number;
+  /** Cited evidence — provenance evidence URLs + syscall_trace lines (invariant #1). */
+  evidence: string[];
+  /** Optional provenance note. */
+  note?: string;
+}
+
+/** Whether ``send_email`` will really send (Resend transport registered) or stage to the manual queue. */
+export type SendPosture = "live" | "staged";
+
+export interface CommandOutcome {
+  supported: boolean;
+  message?: string;
+}
+
+export interface InstantiateResult extends CommandOutcome {
+  instanceId?: string;
+}
+
+export interface TriggerRunResult extends CommandOutcome {
+  workId?: string;
+  status?: string;
+}
+
+export interface ApproveResult extends CommandOutcome {
+  status?: string;
+  workId?: string;
+}
+
 export interface ApprovalCard {
   run_id: string;
   reason: string;
