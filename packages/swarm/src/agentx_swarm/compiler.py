@@ -27,9 +27,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 
+from agentx_contracts.enums import Ring
 from agentx_contracts.gym import EvalCase
 
-from agentx_contracts.enums import Ring
 from agentx_swarm.gate import (
     PromotionDecision,
     PromotionGate,

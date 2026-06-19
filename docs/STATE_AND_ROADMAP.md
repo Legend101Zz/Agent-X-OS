@@ -28,6 +28,24 @@ the swarm runnable from the dashboard** (G8's `/run` half). Items below marked �
 > **Next:** Step D maturation (G3) + the rest of the Foundry — Creator draft (Session J, G10), promote gate
 > (Session K), per [PROPOSAL_NICE_DASHBOARD_SWARM_CREATOR.md](./PROPOSAL_NICE_DASHBOARD_SWARM_CREATOR.md).
 
+> **Hermes backend build (2026-06-19, branch `feat/hermes-backend`, Phases 1–6):** an autonomous
+> MiniMax-M3 builder (guardrails in [`MINIMAX-TASK.md`](../MINIMAX-TASK.md) +
+> [`docs/HERMES_BUILD_PLAN.md`](./HERMES_BUILD_PLAN.md), Claude-reviewed at checkpoints) landed, all
+> in-memory + gate-green: **(G13-start) gated real email SEND** — `send_email` adapter (Gmail SMTP via App
+> Password, idempotent, per-instance sender; **unit-tested with a fake transport, real send gated on
+> `RUN_LIVE_EMAIL=1` — not yet exercised against Gmail**). **(G3) Step-D reality feedback** — a
+> deferred-settle worker matures a watch → promotes probation facts to verified, updates trust, and emits
+> one `EvalCase(origin="real")` graded on the real `lead_quality` rubric (proven to open the promotion gate
+> via the production offline-fallback judge). **(G10) Creator draft path** — `build_creator_type()` (4 §5
+> faculties) + a draft-only `draft_candidate_type` syscall at the canary rung (no catalog write). **(promote)
+> ring-aware `POST /commands/promote`** — L0/L1 canary on synthetic-smoke+human (the Creator bridge); L2+ on
+> real+human via the unmodified `PromotionGate` (synthetic-only **barred**, cherry-picking structurally
+> blocked). **(G12) compiler scaffold** — `compile_candidate(gym)` gates a proposal on the same `PromotionGate`
+> (synthetic-only never promotable); **mechanism only — real improvement needs ~100 real settles**. End-to-end
+> chain proven in `api/tests/test_phase6_end_to_end.py`. Contracts frozen throughout; lane fence 3/3.
+> **Honest caps:** real email send + the ~100-settle operating milestone are NOT yet hit; the GUI to drive
+> all this is the next (frontend) session.
+
 ---
 
 ## 0. The whole system on one screen — *what we actually have*
