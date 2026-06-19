@@ -167,7 +167,10 @@ export function OperatorDashboard() {
 
   useEffect(() => {
     if (!latestEvent || invalidationsForJournalEvent(latestEvent).length === 0) return;
-    void refresh({ silent: true });
+    const refreshTimer = window.setTimeout(() => {
+      void refresh({ silent: true });
+    }, 100);
+    return () => window.clearTimeout(refreshTimer);
   }, [latestEvent, refresh]);
 
   useEffect(() => {
