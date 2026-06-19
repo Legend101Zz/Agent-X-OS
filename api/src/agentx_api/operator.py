@@ -352,9 +352,10 @@ def _compose(
     # trace of every matured watch via the promptfoo Judge, promotes probation facts to verified,
     # updates the trust/résumé, and emits exactly one EvalCase(origin="real") into the gym.
     try:
+        from agentx_contracts.protocols import Judge
         from agentx_swarm.judge import PromptfooJudge
 
-        judge: Any = PromptfooJudge()
+        judge: Judge | None = PromptfooJudge()
     except Exception:  # noqa: BLE001 - judge import is best-effort (tests / sandbox)
         judge = None
     watch_maturation_worker = WatchMaturationWorker(
