@@ -26,6 +26,8 @@ from agentx_contracts import (
     TenantAuth,
     VerifyOutcome,
 )
+from agentx_contracts.faculty import FacultyBinding
+from agentx_contracts.mandate import MandateType
 from agentx_contracts.security import Credential
 
 _OPEN_OBJECT_SCHEMA: JsonSchema = {"type": "object", "additionalProperties": True}
@@ -709,6 +711,228 @@ class SendEmailAdapter(_AdapterBase):
             detail=f"email transport ready: {transport.name}",
             checked_at=datetime.now(UTC),
         )
+
+
+class DraftCandidateTypeAdapter(_AdapterBase):
+    """Phase-3 draft-only creator adapter (HERMES_BUILD_PLAN §Phase 3 — G10).
+
+    The Creator emits candidate ``MandateType`` drafts through this adapter. Crucially:
+    ``execute`` stages the candidate as run output ONLY — it does NOT register the type. The
+    adapter has no catalog / projection-store dependency, so structurally it cannot promote. Phase
+    4 (promote gate + canary) is the ONLY path that takes a candidate to a registered
+    ``mandate_type`` doc; that path also enforces real+human (invariant #7).
+
+    Invariants honoured:
+      - **#2 (no credential in user space):** the adapter imports zero credential roots; no
+        catalog / projection writes; only ``agentx_contracts.mandate``.
+      - **#5 (terminal fallback):** when not resolvable, the registry falls back to ``human_task``
+        (the adapter never returns None).
+      - **#7 (no synthetic case promotes):** the candidate IS a ``MandateType`` (typed), and the
+        output marks ``drafted=True, registered=False``. The adapter has no write path.
+      - **#4 (no brain in the live kernel):** the adapter is a pure transformer (dict → typed
+        MandateType). It does not run an autonomous loop.
+
+    The adapter registers at ``required_ring='L2'`` (human approval before promote — same ring
+    as ``draft_email`` and ``send_email``). Risk class is ``irreversible`` because promoting the
+    resulting candidate could touch customers; we keep the draft rung conservative.
+    """
+
+    def __init__(self) -> None:
+        self._drafts: dict[str, MandateType] = {}
+        super().__init__(
+            name="draft_candidate_type",
+            category="mandate_meta",
+            maturity_level=1,
+            risk_class="irreversible",
+            required_ring="L2",
+            tenant_auth="manual",
+            fixtures=[
+                SyscallTestCase(
+                    name="draft_candidate_type_smoke",
+                    input={
+                        "goal": "Find and qualify leads.",
+                        "icp": "test icp",
+                        "scenario_pack": "indian-smb-leads",
+                        "cadence_days": 7,
+                        "faculties": ["research", "judgment", "memory-craft", "escalation"],
+                    },
+                    expect_status="ok",
+                    expect_output_contains={"mode": "draft", "drafted": True, "registered": False},
+                )
+            ],
+        )
+
+    async def execute(self, req: SyscallRequest, cred: Credential | None) -> SyscallResult:
+        # Idempotent: the same idempotency_key returns the same draft (no re-materialisation).
+        prior = self._drafts.get(req.idempotency_key)
+        if prior is not None:
+            return _draft_result(req=req, candidate=prior, idempotent_replay=True)
+
+        candidate = _materialise_candidate(req.args)
+        self._drafts[req.idempotency_key] = candidate
+        return _draft_result(req=req, candidate=candidate, idempotent_replay=False)
+
+    async def health_check(self) -> Health:
+        return Health(
+            status="ok",
+            detail="draft_candidate_type: stages MandateType drafts for human review; no live registration",
+            checked_at=datetime.now(UTC),
+        )
+
+
+def _materialise_candidate(args: Mapping[str, Any]) -> MandateType:
+    """Convert the Creator's structured brief (``req.args``) into a typed ``MandateType``.
+
+    The Creator's ``scheduling`` faculty emits args shaped as:
+      ``{goal, icp, scenario_pack, cadence_days, faculties, target_schema, ...}``
+
+    We translate that into a minimal but well-formed ``MandateType`` so the human reviewer sees
+    the SAME contract shape the catalog uses — no bespoke ``candidate`` shape.
+    """
+    from agentx_contracts.faculty import FacultyBinding as _FacultyBinding
+    from agentx_contracts.mandate import (
+        Charter as _Charter,
+        Condition as _Condition,
+        DomainPackRef as _DomainPackRef,
+        MandateType as _MandateType,
+        SettlementRules as _SettlementRules,
+        VerificationSuite as _VerificationSuite,
+    )
+    from agentx_contracts.verification import Rubric as _Rubric, RubricCriterion as _RubricCriterion
+
+    def _opt(args: Mapping[str, Any], key: str, default: str) -> str:
+        raw = args.get(key)
+        return raw if isinstance(raw, str) and raw else default
+
+    goal = _opt(args, "goal", "Find and qualify leads.")
+    icp = _opt(args, "icp", "qualified B2B prospects")
+    scenario_pack = _opt(args, "scenario_pack", "indian-smb-leads")
+    pack_version = _opt(args, "scenario_pack_version", "0.1.0")
+    name = _opt(args, "candidate_name", "") or _slugify(goal)
+    raw_cadence = args.get("cadence_days")
+    cadence_days = raw_cadence if isinstance(raw_cadence, int) and raw_cadence > 0 else 7
+
+    faculties_raw = args.get("faculties")
+    faculty_names: list[str] = []
+    if isinstance(faculties_raw, list):
+        for fname in faculties_raw:
+            if isinstance(fname, str) and fname:
+                faculty_names.append(fname)
+    if not faculty_names:
+        # Empty / wrong-type / non-string-only list — fall back to the §5 default set so the
+        # human reviewer ALWAYS sees a candidate with real faculties (no empty-binding drafts).
+        faculty_names = ["research", "judgment", "memory-craft", "escalation"]
+
+    return _MandateType(
+        id=f"type_{name}_v0",
+        name=name,
+        version="0.1.0",
+        charter=_Charter(
+            goal=goal,
+            postconditions=[
+                _Condition(
+                    id="has_claimed_facts",
+                    description="At least one lead fact was claimed.",
+                    rung="rules",
+                    expr="claimed_facts >= 1",
+                ),
+                _Condition(
+                    id="has_lead_score",
+                    description="A qualified lead score fact exists.",
+                    rung="rules",
+                    expr="fact:qualified_lead_score exists",
+                ),
+            ],
+            constraints=["read-only research first", "draft email only; never send in Phase 1"],
+            target={"icp": icp, "cadence_days": cadence_days},
+        ),
+        faculties=[_FacultyBinding(faculty_name=fname) for fname in faculty_names],
+        domain_pack=_DomainPackRef(name=scenario_pack, version=pack_version),
+        verification=_VerificationSuite(
+            ladder=["rules", "judge", "human", "reality"],
+            rules=[],
+            rubrics=[
+                _Rubric(
+                    name="lead_quality",
+                    pass_threshold=0.7,
+                    criteria=[
+                        _RubricCriterion(
+                            id="fit",
+                            description="Finds a right-fit lead.",
+                            weight=0.7,
+                        ),
+                        _RubricCriterion(
+                            id="safety",
+                            description="Keeps effects behind approval.",
+                            weight=0.3,
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        settlement=_SettlementRules(watch_window_hours=72),
+        gym_ref=f"gym:{scenario_pack}",
+        service_ports=["qualified_leads"],
+    )
+
+
+def _draft_result(
+    *, req: SyscallRequest, candidate: MandateType, idempotent_replay: bool
+) -> SyscallResult:
+    """Build the success-result envelope for a draft.
+
+    The ``mode='draft'`` + ``drafted=True`` + ``registered=False`` triple is the structural
+    proof of invariant #7 in the syscall lane: the Creator emits CANDIDATES only.
+
+    The candidate is dumped to a JSON dict so the result travels through the journal cleanly.
+    Phase-4 promote + the human reviewer's UI read the dump and re-hydrate via
+    ``MandateType.model_validate(candidate_dict)`` — the same pattern the catalog read uses.
+    """
+    candidate_dump = candidate.model_dump(mode="json")
+    return SyscallResult(
+        status="ok",
+        output={
+            "mode": "draft",
+            "drafted": True,
+            "registered": False,
+            "sent": False,  # never sends; mirrors draft_email's `sent: false` shape
+            "candidate_id": candidate.id,
+            "candidate_type_ref": f"{candidate.name}@{candidate.version}",
+            "candidate_name": candidate.name,
+            "candidate_version": candidate.version,
+            "creator_instance_id": req.instance_id,
+            "creator_run_id": req.run_id,
+            "idempotent_replay": idempotent_replay,
+            "candidate": candidate_dump,
+            "credential_ref": None,  # no credential needed for a draft (manual / human-gated)
+        },
+        idempotency_key=req.idempotency_key,
+        fulfilled_by="draft_candidate_type",
+        maturity_used=cast(MaturityLevel, self_maturity_used_for_drafts()),
+    )
+
+
+def self_maturity_used_for_drafts() -> int:
+    # Local sentinel — MaturityLevel is a Literal[0,1,2,3], int-typed; using 1 directly here
+    # would be a magic number. We expose it through a helper so the rung is named, not magic.
+    return 1
+
+
+def _slugify(value: str, *, default: str = "candidate") -> str:
+    raw = (value or "").strip().lower()
+    if not raw:
+        return default
+    # ASCII-only slug; drop non-alphanumeric, collapse separators.
+    chars: list[str] = []
+    for char in raw:
+        if char.isalnum():
+            chars.append(char)
+        elif char in {" ", "_", "-"}:
+            chars.append("-")
+    slug = "".join(chars).strip("-")
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    return slug or default
 
 
 class HumanTaskAdapter(_AdapterBase):

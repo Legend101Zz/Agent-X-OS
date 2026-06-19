@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from agentx_contracts import Adapter, GatewayContext, SyscallRegistry, SyscallRequest
 
 from agentx_syscall.adapters import (
+    DraftCandidateTypeAdapter,
     DraftEmailAdapter,
     HumanTaskAdapter,
     LeadResearchBatchAdapter,
@@ -60,6 +61,9 @@ def build_phase1_registry(
     registry.register(LeadResearchBatchAdapter(providers=providers))
     registry.register(ReadUrlAdapter(providers=providers))
     registry.register(DraftEmailAdapter())
+    # Phase-3 (HERMES_BUILD_PLAN §Phase 3 — G10): Creator's draft_candidate_type syscall.
+    # Draft-only; never registers a mandate_type (invariant #7 — promote is Phase 4).
+    registry.register(DraftCandidateTypeAdapter())
     for send_adapter in send_email_adapters:
         registry.register(send_adapter)
     registry.register(QueueManualActionAdapter(store=store))

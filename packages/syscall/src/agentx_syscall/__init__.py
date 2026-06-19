@@ -10,6 +10,7 @@ FROZEN contracts only. See AGENTS.md (lane + invariants) and BUILD-PLAN.md (task
 """
 
 from agentx_syscall.adapters import (
+    DraftCandidateTypeAdapter,
     DraftEmailAdapter,
     EmailTransport,
     ExaResearchProvider,
@@ -41,6 +42,7 @@ from agentx_syscall.manual_tasks import (
 from agentx_syscall.registry import Phase1SyscallRegistry, build_phase1_registry
 
 __all__ = [
+    "DraftCandidateTypeAdapter",
     "DraftEmailAdapter",
     "EmailTransport",
     "ExaResearchProvider",

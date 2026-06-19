@@ -28,7 +28,17 @@ def _ctx(*, error: str | None = None) -> FacultyContext:
 
 
 def test_faculty_library_contains_exactly_phase1_faculties() -> None:
-    assert set(FACULTY_LIBRARY) == {"research", "enrichment", "judgment", "memory-craft", "escalation"}
+    # Phase-1 faculties + Phase-3 (Creator, BLUEPRINT §5) additions:
+    # conversation + scheduling are the Creator's interview + cadence faculties.
+    assert set(FACULTY_LIBRARY) == {
+        "research",
+        "enrichment",
+        "judgment",
+        "memory-craft",
+        "escalation",
+        "conversation",
+        "scheduling",
+    }
 
 
 def test_each_faculty_binds_hermes_with_effectful_tools_to_gateway_and_scratch_memory() -> None:
