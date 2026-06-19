@@ -340,12 +340,51 @@ def _install_routes(app: FastAPI) -> None:
 
     @app.get("/events")
     async def stream_events(request: Request) -> StreamingResponse:
-        async def events() -> AsyncIterator[str]:
-            recent = await _state(request).journal_events(limit=50)
-            yield "event: journal\n"
-            yield f"data: {json.dumps([event.model_dump(mode='json') for event in recent])}\n\n"
+        from asyncio import sleep
 
-        return StreamingResponse(events(), media_type="text/event-stream")
+        async def events() -> AsyncIterator[str]:
+            state = _state(request)
+            last_seq_by_instance: dict[str, int] = {}
+            recent = await _state(request).journal_events(limit=50)
+            for event in recent:
+                last_seq_by_instance[event.instance_id] = max(
+                    last_seq_by_instance.get(event.instance_id, 0),
+                    event.seq,
+                )
+                yield "event: journal\n"
+                yield f"data: {json.dumps(event.model_dump(mode='json'))}\n\n"
+
+            idle_seconds = 0
+            while idle_seconds < 300:
+                if await request.is_disconnected():
+                    return
+                current = await state.journal_events(limit=1000)
+                unseen = [
+                    event
+                    for event in current
+                    if event.seq > last_seq_by_instance.get(event.instance_id, 0)
+                ]
+                if unseen:
+                    idle_seconds = 0
+                    for event in unseen:
+                        last_seq_by_instance[event.instance_id] = event.seq
+                        yield "event: journal\n"
+                        yield f"data: {json.dumps(event.model_dump(mode='json'))}\n\n"
+                    continue
+                idle_seconds += 1
+                if idle_seconds % 15 == 0:
+                    yield ": heartbeat\n\n"
+                await sleep(1)
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     @app.get("/capabilities")
     async def get_capabilities(request: Request) -> dict[str, Any]:

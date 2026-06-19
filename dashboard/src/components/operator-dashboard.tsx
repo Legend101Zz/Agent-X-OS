@@ -21,6 +21,7 @@ import {
   fetchSystemInfo,
   loadDashboardData,
 } from "@/lib/api";
+import { invalidationsForJournalEvent, useJournalStream } from "@/lib/events";
 import type {
   ApiResult,
   ApprovalCard,
@@ -97,6 +98,7 @@ export function OperatorDashboard() {
   const [apiBaseUrl, setApiBaseUrl] = useState<string>(
     process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000",
   );
+  const { latestEvent } = useJournalStream({ baseUrl: apiBaseUrl });
 
   useEffect(() => {
     setOperatorTokenState(getOperatorToken());
@@ -143,6 +145,11 @@ export function OperatorDashboard() {
     }, 8000);
     return () => window.clearInterval(poller);
   }, [refresh]);
+
+  useEffect(() => {
+    if (!latestEvent || invalidationsForJournalEvent(latestEvent).length === 0) return;
+    void refresh({ silent: true });
+  }, [latestEvent, refresh]);
 
   useEffect(() => {
     const tick = () => setClock(new Date().toLocaleTimeString("en-IN", { hour12: false }));
