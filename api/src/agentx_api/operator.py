@@ -66,6 +66,8 @@ from agentx_mandate.library.lead_finder import build_lead_finder_type
 from agentx_syscall import ManualTaskRepository, build_phase1_registry
 from agentx_syscall.adapters import ManualTaskStore
 
+from .swarm_runner import SwarmRunner
+
 logger = logging.getLogger(__name__)
 
 
@@ -138,6 +140,7 @@ class OperatorRuntime:
     invoker: Phase1RunInvoker
     worker: SchedulerWorker
     control: KernelControl
+    swarm_runner: SwarmRunner
     scheduler_driver: OperatorSchedulerDriver
     runner: HarnessRunner | None
     harness_runner_factory: Any | None
@@ -321,6 +324,9 @@ def _compose(
     vars(control)["_approval_enqueuer"] = scheduler_driver
     vars(control)["_trigger_enqueuer"] = scheduler_driver
     worker = SchedulerWorker(store=scheduler_store, invoker=invoker)
+    # The swarm runner is sim-only and self-contained: it builds its own sim-bound invoker per run,
+    # so it never touches the live registry/journal composed above.
+    swarm_runner = SwarmRunner()
 
     # Replace the per-adapter in-memory store with the shared manual_tasks repo. This keeps the
     # adapters contract-pure while letting the API read what the gateway wrote.
@@ -346,6 +352,7 @@ def _compose(
         invoker=invoker,
         worker=worker,
         control=control,
+        swarm_runner=swarm_runner,
         scheduler_driver=scheduler_driver,
         runner=runner,
         harness_runner_factory=runner_factory,

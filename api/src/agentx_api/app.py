@@ -128,6 +128,14 @@ class SetRingCommand(BaseModel):
     actor: str = "manager:dashboard"
 
 
+class RunSwarmCommand(BaseModel):
+    type_ref: str = "lead-finder@0.1.0"
+    pack_id: str = "indian_b2b_leads_v1"
+    ring: Ring = "L2"
+    judge_live: bool = False
+    actor: str = "manager:dashboard"
+
+
 # ---------------------------------------------------------------------------
 # Auth + CORS + env helpers
 # ---------------------------------------------------------------------------
@@ -602,16 +610,77 @@ def _install_routes(app: FastAPI) -> None:
             },
         )
 
-    @app.post("/commands/run-swarm")
-    async def run_swarm_unavailable() -> JSONResponse:
-        return JSONResponse(
-            status_code=501,
-            content={
-                "supported": False,
-                "gap": gap_by_id("command.run_swarm"),
-                "received": {},
-            },
+    @app.post(
+        "/commands/run-swarm",
+        dependencies=[Depends(_require_command_auth)],
+        status_code=status.HTTP_200_OK,
+    )
+    async def run_swarm(command: RunSwarmCommand, request: Request) -> dict[str, Any]:
+        """Drive a sim swarm run on the kernel, grade + gate it, persist a synthetic EvalCase.
+
+        The run executes on a SECOND, sim-bound invoker (inside SwarmRunner) so the live registry
+        and journal are never touched. EVAL_CASE has no projector, so the graded case is written
+        directly; a single ManagerAction(action="run_swarm") records the audit trail.
+        """
+        state = _state(request)
+        # Resolve the candidate MandateType from the catalog; fall back to the canonical lead-finder.
+        mandate = await state.control._registry.get_type(command.type_ref)
+        if mandate is None:
+            from agentx_mandate.library.lead_finder import build_lead_finder_type
+
+            mandate = build_lead_finder_type()
+
+        report = await state.runtime.swarm_runner.run(
+            mandate=mandate,
+            pack_id=command.pack_id,
+            ring=command.ring,
+            judge_enabled=True if command.judge_live else None,
         )
+
+        from agentx_contracts.gym import EvalCase
+
+        eval_case = EvalCase(
+            id=f"eval_{report.run_id}",
+            type_ref=report.type_ref,
+            origin="synthetic",
+            hydration=report.hydration,
+            output=report.output,
+            verification_result=report.scorecard.model_dump(mode="json"),
+            scorecard=report.scorecard,
+            tags=[command.pack_id, "swarm"],
+        )
+        eval_doc = eval_case.model_dump(mode="json")
+        # Mirror score/passed at the top level so the dashboard's mapEvalCases renders the score bar
+        # (the seed fixture uses the same shape). EVAL_CASE has no projector — deliberate direct write.
+        eval_doc["score"] = report.scorecard.score
+        eval_doc["passed"] = report.scorecard.passed
+        await state.store.upsert(c.EVAL_CASE, eval_case.id, eval_doc)
+
+        await _append_manager_action(
+            state,
+            instance_id="foundry",
+            actor=command.actor,
+            action="run_swarm",
+            detail={
+                "pack_id": command.pack_id,
+                "type_ref": report.type_ref,
+                "score": report.scorecard.score,
+                "passed": report.scorecard.passed,
+                "gate_allowed": report.gate_decision.allowed,
+            },
+            run_id=report.run_id,
+        )
+
+        return {
+            "supported": True,
+            "run_id": report.run_id,
+            "type_ref": report.type_ref,
+            "pack_id": report.pack_id,
+            "trace": report.trace_payload,
+            "scorecard": report.scorecard.model_dump(mode="json"),
+            "gate_decision": report.gate_decision.model_dump(mode="json"),
+            "eval_case_id": eval_case.id,
+        }
 
     @app.post("/commands/promote")
     async def promote_unavailable() -> JSONResponse:
