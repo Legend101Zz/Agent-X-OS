@@ -18,12 +18,17 @@ import type {
   InstantiatePayload,
   InstanceSummary,
   JournalEvent,
+  GateDecisionView,
   MandateType,
   ManualTask,
   RejectPayload,
   RunSummary,
+  RunSwarmPayload,
   SchedulerWork,
+  ScorecardView,
   SetRingPayload,
+  SwarmRunReport,
+  SwarmTraceEvent,
   SystemOverview,
   TimelineEntry,
   TriggerRunPayload,
@@ -346,6 +351,27 @@ export function setRingCommand(payload: Required<Pick<CommandPayload, "instance_
   return postCommand("/commands/set-ring", payload, "gap-create-instance");
 }
 
+export async function runSwarm(
+  payload: RunSwarmPayload,
+  options: RequestOptions & { token?: string } = {},
+): Promise<ApiResult<SwarmRunReport>> {
+  const { token, baseUrl, fetcher } = options;
+  const result = await fetchJson<unknown>(
+    "/commands/run-swarm",
+    {},
+    {
+      baseUrl,
+      fetcher,
+      init: {
+        method: "POST",
+        body: JSON.stringify(payload),
+        ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+      },
+    },
+  );
+  return { ...result, data: mapSwarmRunReport(result.data) };
+}
+
 function mapHealth(raw: unknown): HealthStatus {
   const value = asRecord(raw);
   if (typeof value.status === "string") return raw as HealthStatus;
@@ -596,6 +622,64 @@ function mapEvalCases(raw: unknown): EvalCase[] {
       promotion: origin === "synthetic" ? "blocked" : "eligible",
     };
   });
+}
+
+function mapSwarmTraceEvent(raw: unknown): SwarmTraceEvent {
+  const value = asRecord(raw);
+  return {
+    seq: numberValue(value.seq),
+    ts: stringValue(value.ts, ""),
+    kind: stringValue(value.kind, "thought"),
+    summary: stringValue(value.summary, ""),
+    detail: asRecord(value.detail),
+  };
+}
+
+function mapScorecardView(raw: unknown): ScorecardView {
+  const value = asRecord(raw);
+  return {
+    run_id: stringValue(value.run_id, ""),
+    rubric_name: stringValue(value.rubric_name, ""),
+    score: numberValue(value.score),
+    passed: value.passed === true,
+    origin: stringValue(value.origin, "synthetic"),
+    criteria: arrayValue(value.criteria).map((entry) => {
+      const criterion = asRecord(entry);
+      return {
+        criterion_id: stringValue(criterion.criterion_id, ""),
+        passed: criterion.passed === true,
+        score: numberValue(criterion.score),
+        comment: typeof criterion.comment === "string" ? criterion.comment : undefined,
+      };
+    }),
+    failure_reasons: arrayValue(value.failure_reasons).map((reason) => stringValue(reason, "")).filter(Boolean),
+    judge_comments: arrayValue(value.judge_comments).map((comment) => stringValue(comment, "")).filter(Boolean),
+  };
+}
+
+function mapGateDecisionView(raw: unknown): GateDecisionView {
+  const value = asRecord(raw);
+  return {
+    allowed: value.allowed === true,
+    reasons: arrayValue(value.reasons).map((reason) => stringValue(reason, "")).filter(Boolean),
+    live_ring: typeof value.live_ring === "string" ? value.live_ring : null,
+  };
+}
+
+export function mapSwarmRunReport(raw: unknown): SwarmRunReport {
+  const value = asRecord(raw);
+  const trace = asRecord(value.trace);
+  return {
+    supported: value.supported === true,
+    run_id: stringValue(value.run_id, ""),
+    type_ref: stringValue(value.type_ref, ""),
+    pack_id: stringValue(value.pack_id, ""),
+    eval_case_id: stringValue(value.eval_case_id, ""),
+    events: arrayValue(trace.events).map(mapSwarmTraceEvent),
+    scorecard: value.scorecard ? mapScorecardView(value.scorecard) : null,
+    gate_decision: value.gate_decision ? mapGateDecisionView(value.gate_decision) : null,
+    message: typeof value.message === "string" ? value.message : undefined,
+  };
 }
 
 function mapManualQueue(raw: unknown): ManualTask[] {
