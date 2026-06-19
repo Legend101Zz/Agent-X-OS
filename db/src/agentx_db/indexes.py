@@ -83,4 +83,9 @@ INDEXES: Final[dict[str, list[IndexSpec]]] = {
         IndexSpec(keys=[("type_ref", 1), ("origin", 1)], name="ix_eval_type_origin"),
         IndexSpec(keys=[("origin", 1)], name="ix_eval_origin"),
     ],
+    c.MANUAL_TASK: [
+        IndexSpec(keys=[("idempotency_key", 1)], name="ix_manual_task_idem", unique=True),
+        IndexSpec(keys=[("instance_id", 1), ("outcome", 1)], name="ix_manual_task_instance"),
+        IndexSpec(keys=[("run_id", 1)], name="ix_manual_task_run"),
+    ],
 }

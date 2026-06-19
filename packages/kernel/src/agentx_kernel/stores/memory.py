@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 from datetime import datetime
+from typing import Literal, cast
 
 from agentx_contracts import JournalEvent
 from agentx_contracts.security import Credential
@@ -16,7 +17,7 @@ from agentx_contracts.security import Credential
 from ..continuations import RunContinuation
 from ..errors import DuplicateIdempotencyKey, IdempotencyRequestConflict
 from ..receipts import SyscallReceipt
-from ..scheduler import ScheduledWork
+from ..scheduler import ApprovalWork, ScheduledWork, SchedulerWorkStatus, TriggerWork
 
 
 class InMemoryJournalStore:
@@ -143,6 +144,41 @@ class InMemorySchedulerStore:
             work = self._work[work_id]
             self._work[work_id] = work.model_copy(update={"available_at": retry_at}, deep=True)
             self._status[work_id] = "pending"
+
+    async def status(self, work_id: str) -> SchedulerWorkStatus | None:
+        work = self._work.get(work_id)
+        if work is None:
+            return None
+        status_value = self._status.get(work_id, "pending")
+        run_id: str | None = None
+        instance_id: str | None = None
+        type_ref: str | None = None
+        if work.kind == "trigger":
+            # mypy narrows ScheduledWork -> TriggerWork via the Literal discriminator on kind,
+            # so the cast is redundant for mypy but kept for clarity and to satisfy LSP type checkers.
+            trigger_work = cast("TriggerWork", work)  # type: ignore[redundant-cast]
+            run_id = (
+                f"{trigger_work.instance.instance_id}"
+                f":{trigger_work.trigger.kind}"
+                f":{int(trigger_work.available_at.timestamp())}"
+            )
+            instance_id = trigger_work.instance.instance_id
+            type_ref = trigger_work.mandate.id
+        else:
+            approval_work = cast("ApprovalWork", work)  # type: ignore[redundant-cast]
+            run_id = approval_work.approval.run_id
+            instance_id = approval_work.approval.instance_id
+        return SchedulerWorkStatus(
+            work_id=work.work_id,
+            kind=work.kind,
+            status=cast(Literal["pending", "claimed", "completed", "failed"], status_value),
+            attempts=1 if status_value == "completed" else 0,
+            available_at=work.available_at,
+            run_id=run_id,
+            instance_id=instance_id,
+            type_ref=type_ref,
+            updated_at=work.available_at,
+        )
 
 
 class InMemoryVault:

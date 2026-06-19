@@ -16,20 +16,18 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  approveCommand,
   fetchInstance,
   fetchRun,
+  fetchSystemInfo,
   loadDashboardData,
-  setRingCommand,
 } from "@/lib/api";
-import { fixtureDashboardData } from "@/lib/fixtures";
 import type {
   ApiResult,
+  ApprovalCard,
   CommandResult,
   CoreGap,
   DashboardData,
   InstanceSummary,
-  ManualTask,
   RunSummary,
 } from "@/lib/types";
 import { ApprovalInbox } from "./approval-inbox";
@@ -59,31 +57,81 @@ const navItems: Array<{
 
 type SourceMap = Record<keyof DashboardData, ApiResult<unknown>>;
 
+const OPERATOR_TOKEN_STORAGE_KEY = "agentx.operatorToken";
+
+function getOperatorToken(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return window.localStorage.getItem(OPERATOR_TOKEN_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function setOperatorToken(value: string) {
+  if (typeof window === "undefined") return;
+  try {
+    if (value) {
+      window.localStorage.setItem(OPERATOR_TOKEN_STORAGE_KEY, value);
+    } else {
+      window.localStorage.removeItem(OPERATOR_TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    /* ignore — localStorage may be unavailable */
+  }
+}
+
 export function OperatorDashboard() {
-  const [data, setData] = useState<DashboardData>(fixtureDashboardData);
+  const [data, setData] = useState<DashboardData | null>(null);
   const [sources, setSources] = useState<SourceMap | undefined>();
   const [activeView, setActiveView] = useState<ViewId>("floor");
-  const [selectedInstanceId, setSelectedInstanceId] = useState(fixtureDashboardData.instances[0].id);
-  const [selectedRunId, setSelectedRunId] = useState(fixtureDashboardData.runs[0].id);
+  const [selectedInstanceId, setSelectedInstanceId] = useState<string>("");
+  const [selectedRunId, setSelectedRunId] = useState<string>("");
   const [instanceDetails, setInstanceDetails] = useState<Record<string, InstanceSummary>>({});
   const [runDetails, setRunDetails] = useState<Record<string, RunSummary>>({});
   const [commandResult, setCommandResult] = useState<CommandResult | undefined>();
   const [loading, setLoading] = useState(true);
   const [clock, setClock] = useState("--:--:--");
+  const [operatorToken, setOperatorTokenState] = useState<string>("");
+  const [liveMode, setLiveMode] = useState<boolean>(true);
+  const [apiBaseUrl, setApiBaseUrl] = useState<string>(
+    process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000",
+  );
 
-  const refresh = useCallback(async (options: { silent?: boolean } = {}) => {
-    if (!options.silent) setLoading(true);
-    const snapshot = await loadDashboardData();
-    setData(snapshot.data);
-    setSources(snapshot.sources);
-    setSelectedInstanceId((current) => snapshot.data.instances.some((item) => item.id === current)
-      ? current
-      : snapshot.data.instances[0]?.id ?? current);
-    setSelectedRunId((current) => snapshot.data.runs.some((item) => item.id === current)
-      ? current
-      : snapshot.data.runs[0]?.id ?? current);
-    if (!options.silent) setLoading(false);
+  useEffect(() => {
+    setOperatorTokenState(getOperatorToken());
+    const stored = getOperatorToken();
+    setOperatorTokenState(stored);
   }, []);
+
+  const refresh = useCallback(
+    async (options: { silent?: boolean } = {}) => {
+      if (!options.silent) setLoading(true);
+      try {
+        const info = await fetchSystemInfo({ baseUrl: apiBaseUrl });
+        if (info.source === "api" && typeof info.data === "object" && info.data !== null) {
+          setLiveMode(Boolean((info.data as { internal_only?: boolean }).internal_only));
+        }
+      } catch {
+        /* ignore — keep current mode */
+      }
+      const snapshot = await loadDashboardData({ baseUrl: apiBaseUrl });
+      setData(snapshot.data);
+      setSources(snapshot.sources);
+      setSelectedInstanceId((current) =>
+        snapshot.data.instances.some((item) => item.id === current)
+          ? current
+          : snapshot.data.instances[0]?.id ?? current,
+      );
+      setSelectedRunId((current) =>
+        snapshot.data.runs.some((item) => item.id === current)
+          ? current
+          : snapshot.data.runs[0]?.id ?? current,
+      );
+      if (!options.silent) setLoading(false);
+    },
+    [apiBaseUrl],
+  );
 
   useEffect(() => {
     void refresh();
@@ -111,111 +159,232 @@ export function OperatorDashboard() {
     return "mixed";
   }, [loading, sources]);
 
+  // Live-mode fail-closed: if the dashboard is in live mode and ANY critical endpoint returns
+  // a fixture, surface a blocking disconnected state instead of pretending the operator can use
+  // fake data. The fixture/fallback path is only acceptable when AGENTX_API_ALLOW_FIXTURES=1.
+  const disconnected = !data || (liveMode && sourceMode !== "api");
+
+  const safeData: DashboardData = data ?? {
+    health: { status: "disconnected", service: "agentx-api", checked_at: new Date().toISOString() },
+    overview: {
+      system_state: "disconnected",
+      active_instances: 0,
+      active_runs: 0,
+      parked_runs: 0,
+      approvals_waiting: 0,
+      manual_queue_depth: 0,
+      ledger_events_today: 0,
+      automation_coverage: 0,
+      monthly_net: 0,
+      gateway_health: "unknown",
+      ring_mix: {},
+      last_commit_at: new Date().toISOString(),
+    },
+    instances: [],
+    runs: [],
+    mandateTypes: [],
+    journal: [],
+    capabilities: [],
+    evalCases: [],
+    approvals: [],
+    manualQueue: [],
+    coreGaps: [],
+  };
+
   const selectedInstance =
     instanceDetails[selectedInstanceId] ??
-    data.instances.find((instance) => instance.id === selectedInstanceId) ??
-    data.instances[0];
+    safeData.instances.find((instance) => instance.id === selectedInstanceId) ??
+    safeData.instances[0];
 
   const selectedRun =
     runDetails[selectedRunId] ??
-    data.runs.find((run) => run.id === selectedRunId) ??
-    data.runs[0];
+    safeData.runs.find((run) => run.id === selectedRunId) ??
+    safeData.runs[0];
 
-  const selectInstance = useCallback(async (instanceId: string) => {
-    setSelectedInstanceId(instanceId);
-    setActiveView("instance");
-    const result = await fetchInstance(instanceId);
-    setInstanceDetails((current) => ({ ...current, [instanceId]: result.data }));
-  }, []);
+  const selectInstance = useCallback(
+    async (instanceId: string) => {
+      setSelectedInstanceId(instanceId);
+      setActiveView("instance");
+      const result = await fetchInstance(instanceId, { baseUrl: apiBaseUrl });
+      setInstanceDetails((current) => ({ ...current, [instanceId]: result.data }));
+    },
+    [apiBaseUrl],
+  );
 
-  const selectRun = useCallback(async (runId: string) => {
-    setSelectedRunId(runId);
-    setActiveView("run");
-    const result = await fetchRun(runId);
-    setRunDetails((current) => ({ ...current, [runId]: result.data }));
-  }, []);
+  const selectRun = useCallback(
+    async (runId: string) => {
+      setSelectedRunId(runId);
+      setActiveView("run");
+      const result = await fetchRun(runId, { baseUrl: apiBaseUrl });
+      setRunDetails((current) => ({ ...current, [runId]: result.data }));
+    },
+    [apiBaseUrl],
+  );
 
-  const approve = useCallback(async (task: ManualTask) => {
-    setCommandResult(undefined);
-    const result = await approveCommand({
-      instance_id: task.instance_id,
-      run_id: task.run_id,
-      actor: "dashboard/operator",
-    });
+  const postCommand = useCallback(
+    async (path: string, payload: CommandResult | Record<string, unknown>): Promise<CommandResult> => {
+      if (!operatorToken) {
+        return { supported: false, message: "Set AGENTX_OPERATOR_TOKEN in the dashboard to enable writes." };
+      }
+      try {
+        const response = await fetch(`${apiBaseUrl}${path}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${operatorToken}`,
+          },
+          body: JSON.stringify(payload),
+        });
+        const body = await response.json();
+        if (!response.ok) {
+          const message = typeof body?.detail === "string" ? body.detail : response.statusText;
+          return { supported: false, message };
+        }
+        return {
+          supported: true,
+          status: body.status ?? body.decision ?? "accepted",
+          message: body.message,
+          work_id: body.work_id,
+          work_enqueued: body.work_enqueued,
+        };
+      } catch (error) {
+        return {
+          supported: false,
+          message: error instanceof Error ? error.message : "Network error",
+        };
+      }
+    },
+    [apiBaseUrl, operatorToken],
+  );
 
-    setCommandResult(result);
-    if (result.supported) {
-      setData((current) => ({
-        ...current,
-        manualQueue: current.manualQueue.map((item) =>
-          item.id === task.id ? { ...item, status: "approved" } : item,
-        ),
-      }));
-    }
-  }, []);
-
-  const showGap = useCallback((gap: CoreGap) => {
-    setCommandResult({ supported: false, gap });
-  }, []);
-
-  const setRing = useCallback(async (instanceId: string, ring: string) => {
-    setCommandResult(undefined);
-    const result = await setRingCommand({
-      instance_id: instanceId,
-      ring,
-      actor: "dashboard/operator",
-    });
-
-    setCommandResult(result);
-    if (result.supported) {
-      setData((current) => ({
-        ...current,
-        instances: current.instances.map((instance) =>
-          instance.id === instanceId ? { ...instance, ring } : instance,
-        ),
-      }));
-      setInstanceDetails((current) => {
-        const detail = current[instanceId];
-        return detail ? { ...current, [instanceId]: { ...detail, ring } } : current;
+  const approve = useCallback(
+    async (card: ApprovalCard) => {
+      setCommandResult(undefined);
+      const result = await postCommand("/commands/approve", {
+        instance_id: card.instance_id,
+        run_id: card.run_id,
+        actor: "dashboard/operator",
       });
-    }
-  }, []);
+      setCommandResult(result);
+      await refresh({ silent: true });
+    },
+    [postCommand, refresh],
+  );
+
+  const reject = useCallback(
+    async (card: ApprovalCard) => {
+      setCommandResult(undefined);
+      const result = await postCommand("/commands/reject", {
+        instance_id: card.instance_id,
+        run_id: card.run_id,
+        actor: "dashboard/operator",
+      });
+      setCommandResult(result);
+      await refresh({ silent: true });
+    },
+    [postCommand, refresh],
+  );
+
+  const setRing = useCallback(
+    async (instanceId: string, ring: string) => {
+      setCommandResult(undefined);
+      const result = await postCommand("/commands/set-ring", {
+        instance_id: instanceId,
+        ring,
+        actor: "dashboard/operator",
+      });
+      setCommandResult(result);
+      if (result.supported) {
+        setInstanceDetails((current) => {
+          const detail = current[instanceId];
+          return detail ? { ...current, [instanceId]: { ...detail, ring } } : current;
+        });
+      }
+      await refresh({ silent: true });
+    },
+    [postCommand, refresh],
+  );
+
+  const handleInstantiate = useCallback(
+    (result: CommandResult) => {
+      setCommandResult(result);
+    },
+    [],
+  );
+
+  if (disconnected) {
+    return (
+      <main className="operator-shell disconnected">
+        <div className="atmosphere" />
+        <aside className="nav-rail" aria-label="Dashboard views">
+          <div className="brand-mark">
+            <Command size={24} />
+            <span>Agent-X</span>
+          </div>
+          <p className="disconnected-message">
+            API unreachable at <code>{apiBaseUrl}</code>. The dashboard is in live mode and
+            refuses to display fake data. Set <code>AGENTX_API_ALLOW_FIXTURES=1</code> on the
+            API to fall back to fixtures while debugging, or check <code>MONGODB_URI</code>.
+          </p>
+          <button className="command-button primary" onClick={() => void refresh()} type="button">
+            <RefreshCw size={16} /> Retry
+          </button>
+        </aside>
+      </main>
+    );
+  }
 
   const content = (() => {
     switch (activeView) {
       case "approvals":
         return (
           <ApprovalInbox
+            data={safeData}
             commandResult={commandResult}
-            data={data}
+            operatorToken={operatorToken}
+            apiBaseUrl={apiBaseUrl}
             onApprove={approve}
-            onGap={showGap}
+            onReject={reject}
+            onRefresh={() => void refresh()}
           />
         );
       case "catalog":
-        return <CatalogCreate data={data} />;
+        return (
+          <CatalogCreate
+            data={safeData}
+            operatorToken={operatorToken}
+            apiBaseUrl={apiBaseUrl}
+            commandResult={commandResult}
+            onCommandResult={handleInstantiate}
+            onRefresh={() => void refresh()}
+          />
+        );
       case "instance":
         return (
           <InstanceFile
             commandResult={commandResult}
-            data={data}
+            data={safeData}
+            operatorToken={operatorToken}
+            apiBaseUrl={apiBaseUrl}
             onSelectInstance={selectInstance}
             onSelectRun={selectRun}
             onSetRing={setRing}
-            selectedInstance={selectedInstance}
+            onCommandResult={setCommandResult}
+            onRefresh={() => void refresh()}
+            selectedInstance={selectedInstance as InstanceSummary}
           />
         );
       case "run":
-        return <RunDetail data={data} onSelectRun={selectRun} selectedRun={selectedRun} />;
+        return <RunDetail data={safeData} onSelectRun={selectRun} selectedRun={selectedRun as RunSummary} />;
       case "capabilities":
-        return <CapabilityRegistry data={data} />;
+        return <CapabilityRegistry data={safeData} />;
       case "ledger":
-        return <LedgerView data={data} />;
+        return <LedgerView data={safeData} />;
       case "foundry":
-        return <FoundryView data={data} />;
+        return <FoundryView data={safeData} />;
       case "floor":
       default:
-        return <FloorView data={data} onSelectInstance={selectInstance} onSelectRun={selectRun} />;
+        return <FloorView data={safeData} onSelectInstance={selectInstance} onSelectRun={selectRun} />;
     }
   })();
 
@@ -229,7 +398,7 @@ export function OperatorDashboard() {
         </div>
         <nav>
           {navItems
-            .filter((item) => item.id !== "foundry" || data.evalCases.length > 0)
+            .filter((item) => item.id !== "foundry" || safeData.evalCases.length > 0)
             .map((item) => {
               const Icon = item.icon;
               return (
@@ -246,6 +415,35 @@ export function OperatorDashboard() {
               );
             })}
         </nav>
+        <div className="token-panel">
+          <label htmlFor="operator-token" className="eyebrow">
+            Operator Token
+          </label>
+          <input
+            id="operator-token"
+            type="password"
+            placeholder="AGENTX_OPERATOR_TOKEN"
+            defaultValue={operatorToken}
+            onChange={(event) => {
+              const next = event.target.value.trim();
+              setOperatorToken(next);
+              setOperatorTokenState(next);
+            }}
+          />
+          <p className="token-help">
+            Stored locally. Without it, every command button is disabled. Match the value the
+            API was started with.
+          </p>
+          <label htmlFor="api-base-url" className="eyebrow">
+            API base URL
+          </label>
+          <input
+            id="api-base-url"
+            type="url"
+            defaultValue={apiBaseUrl}
+            onChange={(event) => setApiBaseUrl(event.target.value.trim() || apiBaseUrl)}
+          />
+        </div>
       </aside>
 
       <section className="dashboard-stage">
@@ -255,7 +453,7 @@ export function OperatorDashboard() {
             <h1>Business OS Control Room</h1>
           </div>
           <div className="top-actions">
-            <StatusPill label={data.health.status} tone={data.health.status === "ok" ? "good" : "warn"} />
+            <StatusPill label={safeData.health.status} tone={safeData.health.status === "ok" ? "good" : "warn"} />
             <SourceBadge source={sourceMode} />
             <span className="clock">{clock}</span>
             <button className="icon-button" onClick={() => void refresh()} title="Refresh" type="button">
@@ -269,8 +467,8 @@ export function OperatorDashboard() {
 
       <div className="bottom-ledger">
         <GitBranchPlus size={15} />
-        <span>{data.overview.last_commit_at}</span>
-        <strong>{data.journal[0]?.title}</strong>
+        <span>{safeData.overview.last_commit_at}</span>
+        <strong>{safeData.journal[0]?.title}</strong>
       </div>
     </main>
   );

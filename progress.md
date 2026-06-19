@@ -1,3 +1,65 @@
+# Progress Log — Sessions C through H
+
+## Session H (2026-06-18) — Dashboard operability
+Branch: `feat/dashboard-operability`. Phase 1 lead-finder is now operable end-to-end from the
+local Manager Dashboard. No script-owned approval/settlement glue.
+
+### Done
+- `KernelControl.resolve_approval()` — one journaled approve/reject path. Approve enqueues
+  `ApprovalWork`; reject deletes the durable continuation so stale claims can't replay the
+  parked effect.
+- `KernelControl.enqueue_trigger()` — journals `ManagerAction(action="trigger_run")` and enqueues
+  `TriggerWork` via the bound scheduler driver.
+- `SchedulerWorkStatus` + `SchedulerStore.status()` — backs `GET /scheduler-work/{id}`.
+- `MANUAL_TASK` Mongo collection + UNIQUE index on `idempotency_key`. New
+  `agentx_syscall/manual_tasks.py` with `InMemoryManualTaskRepository` + `MongoManualTaskRepository`
+  behind a shared `ManualTaskRepository` Protocol.
+- `api/src/agentx_api/operator.py` — `OperatorRuntime` composes
+  journal+projections+control+registry+vault+receipts+continuations+scheduler+invoker+worker once
+  per process. The in-process scheduler worker pump starts in the FastAPI lifespan.
+- `api/src/agentx_api/state.py` rewritten to be a thin reader over the runtime (no per-request
+  registry construction).
+- `api/src/agentx_api/app.py` rewritten with real command endpoints:
+  `POST /commands/{instantiate,trigger-run,approve,reject,set-ring}` + `GET /scheduler-work/{id}`.
+  Bearer token auth (`AGENTX_OPERATOR_TOKEN`) on commands; CORS restricted to
+  `AGENTX_CORS_ORIGINS`; live-mode fail-closed disconnected state.
+- `api/src/agentx_api/gaps.py` updated — removed the now-closed gaps
+  (`command.instantiate`, `command.trigger_run`, `command.reject_approval`,
+  `projection.manual_queue_durable`).
+- Dashboard: `ApprovalInbox` reads `/approvals` (separately from `/manual-queue`); `CatalogCreate`
+  posts `/commands/instantiate`; `InstanceFile` posts `/commands/trigger-run`; `OperatorDashboard`
+  has the operator-token input field and a fail-closed disconnected overlay.
+- 15 new tests: 8 in `api/tests/test_dashboard_api.py`, 7 in
+  `api/tests/test_operator_lifecycle.py` (full instantiate → trigger → parked → approve → settle
+  round-trip with no double effect, reject does not execute, durable manual queue, live worker
+  pumps a complete lifecycle). Plus 5 in `packages/syscall/tests/test_manual_tasks.py`.
+- `docs/SESSION_DASHBOARD_OPERABILITY_PROOF.md` — proof doc mapping each required test to its
+  pytest output and answering "can a non-developer operate the Phase-1 lead-finder from the
+  dashboard without scripts?" — YES, with the three honest caveats listed in the doc.
+
+### Test/check results
+- `mypy --strict packages db tests` → 0 issues across 101 source files.
+- `mypy --strict api` (src + tests) → 0 issues across 7 source files.
+- `ruff check .` → All checks passed.
+- `pytest -q` (workspace) → 112 passed, 2 skipped (live promptfoo / live Hermes).
+- `pytest -q` (api) → 15 passed.
+- `lint-imports` → 3 contracts kept.
+- `pytest -q tests/integration/test_seam_proof.py tests/integration/test_parked_resume.py` →
+  2 passed.
+- `dashboard npm test` → 3 passed.
+- `dashboard npm run build` → compiled and type-checked, 121 kB First Load JS on `/`.
+
+### What is still NOT done
+- Browser-driven proof against the real `MONGODB_URI` (code paths are proven against the in-memory
+  backend; mechanical durability via Mongo).
+- Step D maturation (BLUEPRINT §2.7): watch → probation→verified → graded `eval_case origin="real"`.
+- Creator Mandate, Operator Agent, Compiler (post-Phase-1 by BLUEPRINT).
+- Phase 2–5 channels (email/calendar/CRM/browser/voice/WhatsApp/money) — out of Phase 1 scope.
+- `/commands/edit` with edited syscall args — `edited=True` is in the contract and the kernel
+  accepts it; the HTTP route is the trivial follow-up.
+
+---
+
 # Progress Log — Session C
 
 ## Session 1 (2026-06-18)

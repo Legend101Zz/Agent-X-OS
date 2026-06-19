@@ -6,6 +6,8 @@ import {
 } from "./fixtures";
 import type {
   ApiResult,
+  ApprovalCard,
+  ApprovePayload,
   CommandPayload,
   CommandResult,
   CoreGap,
@@ -13,13 +15,18 @@ import type {
   EvalCase,
   Fact,
   HealthStatus,
+  InstantiatePayload,
   InstanceSummary,
   JournalEvent,
   MandateType,
   ManualTask,
+  RejectPayload,
   RunSummary,
+  SchedulerWork,
+  SetRingPayload,
   SystemOverview,
-  TraceEvent,
+  TimelineEntry,
+  TriggerRunPayload,
 } from "./types";
 
 type QueryValue = string | number | boolean | null | undefined;
@@ -85,6 +92,43 @@ export async function fetchJson<T>(
   }
 }
 
+export interface LiveOptions {
+  /** When true, treat any fetch error as a blocking disconnected state (live-mode fail-closed). */
+  live?: boolean;
+}
+
+export async function fetchJsonStrict<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<ApiResult<T>> {
+  const {
+    baseUrl = DEFAULT_API_BASE_URL,
+    query,
+    init,
+    fetcher = fetch,
+  } = options;
+
+  try {
+    const response = await fetcher(buildApiUrl(baseUrl, path, query), {
+      cache: "no-store",
+      ...init,
+      headers: {
+        Accept: "application/json",
+        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        ...init?.headers,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText}`.trim());
+    }
+
+    return { data: (await response.json()) as T, source: "api" };
+  } catch (error) {
+    return { data: undefined as unknown as T, source: "fixture", error: getErrorMessage(error) };
+  }
+}
+
 export async function loadDashboardData(
   options: RequestOptions = {},
 ): Promise<{ data: DashboardData; sources: Record<keyof DashboardData, ApiResult<unknown>> }> {
@@ -100,6 +144,9 @@ export async function loadDashboardData(
     }),
     fetchJson("/capabilities", fixtureDashboardData.capabilities, options),
     fetchJson("/eval-cases", fixtureDashboardData.evalCases, options),
+    // /approvals is the FIRST-CLASS approval inbox — distinct from /manual-queue, which is the
+    // human-task tail. The Approval Inbox view reads from this dataset.
+    fetchJson("/approvals", [], options),
     fetchJson("/manual-queue", fixtureDashboardData.manualQueue, options),
     fetchJson("/core-gaps", fixtureDashboardData.coreGaps, options),
   ]);
@@ -113,6 +160,7 @@ export async function loadDashboardData(
     journal,
     capabilities,
     evalCases,
+    approvals,
     manualQueue,
     coreGaps,
   ] = entries;
@@ -127,6 +175,7 @@ export async function loadDashboardData(
       journal: mapJournal(journal.data),
       capabilities: mapCapabilities(capabilities.data),
       evalCases: mapEvalCases(evalCases.data),
+      approvals: mapApprovals(approvals.data),
       manualQueue: mapManualQueue(manualQueue.data),
       coreGaps: mapCoreGaps(coreGaps.data),
     },
@@ -139,10 +188,84 @@ export async function loadDashboardData(
       journal,
       capabilities,
       evalCases,
+      approvals,
       manualQueue,
       coreGaps,
     },
   };
+}
+
+export function fetchApprovals(
+  query: { instance_id?: string } = {},
+  options: RequestOptions = {},
+): Promise<ApiResult<ApprovalCard[]>> {
+  return fetchJson("/approvals", [], { ...options, query }).then((result) => ({
+    ...result,
+    data: mapApprovals(result.data),
+  }));
+}
+
+export function fetchSchedulerWork(
+  workId: string,
+  options: RequestOptions = {},
+): Promise<ApiResult<SchedulerWork>> {
+  return fetchJson(`/scheduler-work/${encodeURIComponent(workId)}`, {} as SchedulerWork, options).then(
+    (result) => ({
+      ...result,
+      data: (result.data ?? ({} as SchedulerWork)) as SchedulerWork,
+    }),
+  );
+}
+
+export function fetchSystemInfo(
+  options: RequestOptions = {},
+): Promise<ApiResult<{
+  service: string;
+  internal_only: boolean;
+  posture: string;
+  command_auth_configured: boolean;
+  fixtures_allowed: boolean;
+  backend: string;
+}>> {
+  return fetchJson("/system/info", {} as never, options);
+}
+
+function mapApprovals(raw: unknown): ApprovalCard[] {
+  return unwrapArray(raw, "items").map((item) => {
+    const value = asRecord(item);
+    const drafted = asRecord(value.drafted_effect);
+    const syscall = stringValue(drafted.syscall, "");
+    const idem = stringValue(drafted.idempotency_key, "");
+    const argsValue = asRecord(drafted.args);
+    const timeline = arrayValue(value.timeline).map((entry) => {
+      const v = asRecord(entry);
+      const ev = asRecord(v.event);
+      return {
+        kind: stringValue(v.kind, stringValue(ev.kind, "journal")),
+        ts: stringValue(v.ts, stringValue(ev.ts, new Date().toISOString())),
+        actor: stringValue(v.actor, "kernel"),
+        summary: stringValue(v.summary, stringValue(ev.kind, "event")),
+        event: ev,
+      } as TimelineEntry;
+    });
+    return {
+      run_id: stringValue(value.run_id, ""),
+      reason: stringValue(value.reason, ""),
+      required_ring: stringValue(value.required_ring, ""),
+      seq: numberValue(value.seq),
+      approval_card: value.approval_card,
+      instance_id: stringValue(value.instance_id, ""),
+      drafted_effect:
+        syscall && idem
+          ? {
+              syscall,
+              args: argsValue as Record<string, unknown>,
+              idempotency_key: idem,
+            }
+          : {},
+      timeline,
+    };
+  });
 }
 
 export function fetchInstance(
@@ -341,7 +464,7 @@ function mapRunDetail(raw: unknown, fallback = fixtureDashboardData.runs[0]): Ru
   const timeline = unwrapArray(value.timeline, "timeline");
   const state = mapRunState(stringValue(run.state, fallback.state));
   const park = asRecord(run.park);
-  const trace = timeline.map(mapTraceEvent);
+  const trace = timeline.map((entry, index) => mapTraceEvent(entry, index));
   return {
     id: stringValue(run.run_id, fallback.id),
     instance_id: stringValue(run.instance_id, fallback.instance_id),
@@ -367,17 +490,17 @@ function mapRunState(state: string): RunSummary["state"] {
   return "active";
 }
 
-function mapTraceEvent(raw: unknown, index: number): TraceEvent {
+function mapTraceEvent(raw: unknown, index: number): TimelineEntry {
   const value = asRecord(raw);
   const event = asRecord(value.event);
-  return {
-    id: stringValue(event.event_id, `trace-${index}`),
-    at: stringValue(value.ts, stringValue(event.ts, new Date().toISOString())),
+  const timeline: TimelineEntry = {
     kind: stringValue(value.kind, stringValue(event.kind, "journal")),
-    title: stringValue(value.summary, stringValue(event.kind, "journal event")),
-    detail: stringValue(event.reason, stringValue(event.action, JSON.stringify(event))),
+    ts: stringValue(value.ts, stringValue(event.ts, new Date().toISOString())),
     actor: stringValue(value.actor, stringValue(event.actor, "kernel")),
+    summary: stringValue(value.summary, stringValue(event.kind, "journal event")),
+    event: event as Record<string, unknown>,
   };
+  return timeline;
 }
 
 function firstSyscall(timeline: unknown[]): string | undefined {

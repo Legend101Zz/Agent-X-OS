@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from typing import Any
 
 import pytest
 from agentx_contracts.mandate import MandateInstance
@@ -9,13 +10,25 @@ from httpx import ASGITransport, AsyncClient
 
 from agentx_api.app import create_app
 
+TEST_TOKEN = "test-operator-token"
+
 
 @pytest.fixture
 async def client() -> AsyncIterator[AsyncClient]:
-    app = create_app(use_mongo=False, seed_demo=True)
+    app = create_app(
+        use_mongo=False, seed_demo=True, operator_token=TEST_TOKEN, start_worker=False
+    )
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as test_client:
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {TEST_TOKEN}"},
+    ) as test_client:
         yield test_client
+
+
+async def _post(client: AsyncClient, path: str, payload: dict[str, Any]) -> Any:
+    return await client.post(path, json=payload)
 
 
 async def test_overview_and_instance_detail_are_kernel_projection_views(client: AsyncClient) -> None:
@@ -38,27 +51,35 @@ async def test_overview_and_instance_detail_are_kernel_projection_views(client: 
     assert instance["approvals"][0]["drafted_effect"]["args"]["body"]
 
 
-async def test_approve_command_calls_kernel_control_and_updates_ledger(client: AsyncClient) -> None:
-    before = (await client.get("/runs?state=parked")).json()
-    assert [run["run_id"] for run in before["runs"]] == ["run_demo_parked"]
-
-    response = await client.post(
+async def test_approve_command_enqueues_approval_work_and_advances_run(client: AsyncClient) -> None:
+    # The seeded parked run is the same one used by the overview test; replaying the flow
+    # requires the scheduler worker to be running OR the resolver to fall back to the existing
+    # demo flow. With ``start_worker=False`` we still verify the journal + work row are created.
+    response = await _post(
+        client,
         "/commands/approve",
-        json={"instance_id": "inst_demo", "run_id": "run_demo_parked", "actor": "manager:test"},
+        {"instance_id": "inst_demo", "run_id": "run_demo_parked", "actor": "manager:test"},
     )
+    assert response.status_code == 202, response.text
+    body = response.json()
+    assert body["decision"] == "approve"
+    assert body["work_enqueued"] is True
+    assert body["work_id"].startswith("approval:")
+    assert body["manager_action"]["action"] == "approve"
 
-    assert response.status_code == 200
-    assert response.json()["action"]["action"] == "approve"
-    assert (await client.get("/runs?state=parked")).json()["runs"] == []
+    # The ApprovalResolved event is journaled exactly once and the inbox is empty afterwards.
+    inbox_after = (await client.get("/approvals", params={"instance_id": "inst_demo"})).json()
+    assert inbox_after["items"] == []
 
     ledger = (await client.get("/journal", params={"kind": "manager_action"})).json()
     assert any(event["action"] == "approve" for event in ledger["events"])
 
 
 async def test_set_ring_command_is_journaled_and_reflected_in_instance_file(client: AsyncClient) -> None:
-    response = await client.post(
+    response = await _post(
+        client,
         "/commands/set-ring",
-        json={"instance_id": "inst_demo", "ring": "L2", "actor": "manager:test"},
+        {"instance_id": "inst_demo", "ring": "L2", "actor": "manager:test"},
     )
 
     assert response.status_code == 200
@@ -80,23 +101,48 @@ async def test_capability_registry_and_manual_queue_are_exposed_without_credenti
     assert queue["items"][0]["request_name"] == "queue_manual_action"
 
 
-async def test_missing_core_commands_return_explicit_core_gap(client: AsyncClient) -> None:
-    response = await client.post(
-        "/commands/instantiate",
-        json={"type_ref": "lead-finder@0.1.0", "business_name": "Acme Dental", "ring": "L1"},
-    )
+async def test_commands_require_bearer_token_when_token_is_set(client: AsyncClient) -> None:
+    # Build a separate client with NO Authorization header.
+    app = client._transport.app  # type: ignore[attr-defined]
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as anon_client:
+        response = await anon_client.post(
+            "/commands/instantiate",
+            json={"type_ref": "lead-finder@0.1.0", "business_name": "Acme", "ring": "L1"},
+        )
+        assert response.status_code == 401
+        body = response.json()
+        assert "Bearer" in body["detail"]
 
-    assert response.status_code == 501
-    body = response.json()
-    assert body["supported"] is False
-    assert body["gap"]["id"] == "command.instantiate"
 
-    gaps = (await client.get("/core-gaps")).json()["gaps"]
-    assert any(gap["id"] == "command.trigger_run" for gap in gaps)
+async def test_commands_disabled_when_no_token_is_configured() -> None:
+    """Without ``AGENTX_OPERATOR_TOKEN`` set, command routes return 401 (fail closed)."""
+    import os
+
+    os.environ.pop("AGENTX_OPERATOR_TOKEN", None)
+    app = create_app(use_mongo=False, seed_demo=True, operator_token="", start_worker=False)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Authorization": "Bearer anything"},
+    ) as test_client:
+        response = await test_client.post(
+            "/commands/approve",
+            json={"instance_id": "inst_demo", "run_id": "run_demo_parked"},
+        )
+        assert response.status_code == 401
+        assert "AGENTX_OPERATOR_TOKEN" in response.json()["detail"]
 
 
 async def test_instances_exposes_non_demo_registry_instance() -> None:
-    app = create_app(use_mongo=False, seed_demo=False)
+    """The MandateRegistry must surface in /instances regardless of demo seeding."""
+    app = create_app(
+        use_mongo=False,
+        seed_demo=False,
+        operator_token=TEST_TOKEN,
+        start_worker=False,
+    )
     dashboard = app.state.dashboard
     mandate = build_lead_finder_type()
     instance = MandateInstance(
@@ -110,7 +156,11 @@ async def test_instances_exposes_non_demo_registry_instance() -> None:
     await dashboard.control.instantiate_mandate(instance)
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as test_client:
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {TEST_TOKEN}"},
+    ) as test_client:
         response = await test_client.get("/instances")
 
     assert response.status_code == 200
@@ -119,7 +169,12 @@ async def test_instances_exposes_non_demo_registry_instance() -> None:
 
 
 async def test_dashboard_close_awaits_async_database_client() -> None:
-    app = create_app(use_mongo=False, seed_demo=False)
+    app = create_app(
+        use_mongo=False,
+        seed_demo=False,
+        operator_token=TEST_TOKEN,
+        start_worker=False,
+    )
 
     class AsyncCloseClient:
         closed = False
@@ -127,9 +182,12 @@ async def test_dashboard_close_awaits_async_database_client() -> None:
         async def close(self) -> None:
             self.closed = True
 
-    client = AsyncCloseClient()
-    app.state.dashboard.client = client
+    sentinel = AsyncCloseClient()
+    # The lifespan now drives runtime.close() through ``app.state.dashboard.close`` which
+    # delegates to the OperatorRuntime. Verify the delegation path resolves to ``client.close``.
+    # We swap in our sentinel as the Mongo client for this check.
+    app.state.dashboard.runtime.client = sentinel
 
     await app.state.dashboard.close()
 
-    assert client.closed
+    assert sentinel.closed

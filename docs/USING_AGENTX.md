@@ -24,6 +24,18 @@ For fixture-only demo data:
 ./scripts/start_agentx.sh --demo
 ```
 
+To start only the frontend when the API is already running:
+
+```bash
+./scripts/start_dashboard.sh
+```
+
+To point it at another API:
+
+```bash
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:9000 ./scripts/start_dashboard.sh
+```
+
 ## 3. Give Agent-X one specific lead
 
 ```bash

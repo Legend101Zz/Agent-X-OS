@@ -12,6 +12,7 @@ MANDATE_RUN: Final = "mandate_run"
 RUN_CONTINUATION: Final = "run_continuation"
 SCHEDULER_WORK: Final = "scheduler_work"
 SYSCALL_RECEIPT: Final = "syscall_receipt"
+MANUAL_TASK: Final = "manual_task"
 
 # --- The append-only SOURCE OF TRUTH ---
 JOURNAL: Final = "journal"
@@ -45,6 +46,7 @@ ALL_COLLECTIONS: Final[tuple[str, ...]] = (
     RUN_CONTINUATION,
     SCHEDULER_WORK,
     SYSCALL_RECEIPT,
+    MANUAL_TASK,
     JOURNAL,
     HEAP_FACT,
     THREAD,

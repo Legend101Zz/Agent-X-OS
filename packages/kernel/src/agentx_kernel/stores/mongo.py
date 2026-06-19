@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal, cast
 
 import agentx_db.collections as c
 from agentx_contracts.journal import JournalEvent
@@ -15,7 +15,7 @@ from pymongo.errors import DuplicateKeyError
 from ..continuations import RunContinuation
 from ..errors import DuplicateIdempotencyKey, IdempotencyRequestConflict, JournalSeqContention
 from ..receipts import SyscallReceipt
-from ..scheduler import ScheduledWork
+from ..scheduler import ApprovalWork, ScheduledWork, SchedulerWorkStatus, TriggerWork
 
 _JOURNAL_EVENT: TypeAdapter[JournalEvent] = TypeAdapter(JournalEvent)
 _SCHEDULED_WORK: TypeAdapter[ScheduledWork] = TypeAdapter(ScheduledWork)
@@ -170,6 +170,49 @@ class MongoSchedulerStore:
         await self._collection.update_one(
             {"_id": work_id, "status": "claimed"},
             {"$set": {"status": "pending", "available_at": retry_at}},
+        )
+
+    async def status(self, work_id: str) -> SchedulerWorkStatus | None:
+        doc = await self._collection.find_one({"_id": work_id})
+        if doc is None:
+            return None
+        work = _parse_scheduled_work(doc)
+        raw_status = doc.get("status")
+        status_value: Literal["pending", "claimed", "completed", "failed"] = "pending"
+        if isinstance(raw_status, str) and raw_status in {"pending", "claimed", "completed", "failed"}:
+            status_value = cast(
+                Literal["pending", "claimed", "completed", "failed"], raw_status
+            )
+        attempts_value = doc.get("attempts")
+        attempts = attempts_value if isinstance(attempts_value, int) else 0
+        run_id: str | None = None
+        instance_id: str | None = None
+        type_ref: str | None = None
+        if work.kind == "trigger":
+            # mypy narrows ScheduledWork -> TriggerWork via the Literal discriminator on kind,
+            # so the cast is redundant for mypy but kept for clarity and to satisfy LSP type checkers.
+            trigger_work = cast("TriggerWork", work)  # type: ignore[redundant-cast]
+            run_id = (
+                f"{trigger_work.instance.instance_id}"
+                f":{trigger_work.trigger.kind}"
+                f":{int(trigger_work.available_at.timestamp())}"
+            )
+            instance_id = trigger_work.instance.instance_id
+            type_ref = trigger_work.mandate.id
+        else:
+            approval_work = cast("ApprovalWork", work)  # type: ignore[redundant-cast]
+            run_id = approval_work.approval.run_id
+            instance_id = approval_work.approval.instance_id
+        return SchedulerWorkStatus(
+            work_id=work.work_id,
+            kind=work.kind,
+            status=status_value,
+            attempts=attempts,
+            available_at=work.available_at,
+            run_id=run_id,
+            instance_id=instance_id,
+            type_ref=type_ref,
+            updated_at=work.available_at,
         )
 
 

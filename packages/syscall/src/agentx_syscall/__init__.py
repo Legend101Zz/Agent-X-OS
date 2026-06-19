@@ -24,6 +24,13 @@ from agentx_syscall.adapters import (
     ResearchPage,
     ResearchProvider,
 )
+from agentx_syscall.manual_tasks import (
+    InMemoryManualTaskRepository,
+    ManualTaskRepository,
+    MongoManualTaskRepository,
+    make_in_memory_manual_task_repository,
+    make_mongo_manual_task_repository,
+)
 from agentx_syscall.registry import Phase1SyscallRegistry, build_phase1_registry
 
 __all__ = [
@@ -31,10 +38,13 @@ __all__ = [
     "ExaResearchProvider",
     "FirecrawlResearchProvider",
     "HumanTaskAdapter",
+    "InMemoryManualTaskRepository",
     "LeadResearchBatchAdapter",
     "ManualTask",
+    "ManualTaskRepository",
     "ManualTaskStore",
     "MarkOutcomeAdapter",
+    "MongoManualTaskRepository",
     "Phase1SyscallRegistry",
     "QueueManualActionAdapter",
     "ReadUrlAdapter",
@@ -42,4 +52,6 @@ __all__ = [
     "ResearchPage",
     "ResearchProvider",
     "build_phase1_registry",
-]
+    "make_in_memory_manual_task_repository",
+    "make_mongo_manual_task_repository",
+]  # noqa: E501

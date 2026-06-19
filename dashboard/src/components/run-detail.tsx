@@ -55,17 +55,19 @@ export function RunDetail({ data, selectedRun, onSelectRun }: RunDetailProps) {
 
         <Panel title="Timeline" eyebrow={`updated ${formatClock(selectedRun.updated_at)}`}>
           <div className="timeline">
-            {selectedRun.trace.map((event) => (
-              <article className="timeline-event" key={event.id}>
+            {selectedRun.trace.map((event, index) => (
+              <article className="timeline-event" key={`${event.ts}:${event.kind}:${index}`}>
                 <div className="timeline-pin">
-                  {event.kind === "syscall" ? <GitCommitHorizontal size={16} /> : <TimerReset size={16} />}
+                  {event.kind === "syscall_attempted" || event.kind === "syscall_settled" ? (
+                    <GitCommitHorizontal size={16} />
+                  ) : (
+                    <TimerReset size={16} />
+                  )}
                 </div>
                 <div>
-                  <p className="eyebrow">{formatClock(event.at)} / {event.actor}</p>
-                  <h3>{event.title}</h3>
-                  <p>{event.detail}</p>
+                  <p className="eyebrow">{formatClock(event.ts)} / {event.actor}</p>
+                  <h3>{event.summary}</h3>
                 </div>
-                {event.confidence ? <StatusPill label={`${Math.round(event.confidence * 100)}%`} tone="good" /> : null}
               </article>
             ))}
           </div>
