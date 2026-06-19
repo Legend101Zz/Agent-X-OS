@@ -441,6 +441,22 @@ class Phase1RunInvoker:
             return None, None
         request = _bind_request(action.request, ctx)
 
+        # Invariant #8 (per-instance sender of record): the kernel run-loop stamps the instance's own
+        # ChannelBinding.sender_identity into the send_email request args (overriding any harness-supplied
+        # value) so the adapter cannot be tricked into using a shared/global sender. If the instance has
+        # no channel_binding yet, we leave the request alone — the adapter will refuse it with a clear
+        # error (no shared/global sender, ever).
+        if (
+            request.name == "send_email"
+            and instance.channel_binding is not None
+            and instance.channel_binding.sender_identity
+        ):
+            sender = instance.channel_binding.sender_identity
+            existing_args = dict(request.args)
+            if existing_args.get("sender_identity") != sender:
+                existing_args["sender_identity"] = sender
+                request = request.model_copy(update={"args": existing_args})
+
         if request.risk_class == "read" and mode == "sim":
             # Read-class intents are fulfilled NATIVELY (off-gateway) and never reach a ring check.
             # In sim the kernel supplies deterministic, clearly-synthetic data (mirrors the live harness's
@@ -516,6 +532,19 @@ class Phase1RunInvoker:
             return None, outcome.result
         if request.risk_class == "read" and outcome.result.status == "ok":
             _apply_read_result(ctx, request, outcome.result.output)
+        # Expose the most recent non-error SyscallResult on the scratchpad so playbooks (e.g. the
+        # Creator's ``creator_playbook``) can react to a draft_candidate_type result without
+        # the playbook needing to know the gateway's receipt-store shape. We only set this when
+        # status == "ok" — error results are already surfaced through the Escalate faculty path.
+        if outcome.result.status == "ok" and request.name != "lead_research_batch":
+            ctx.scratchpad["last_receipt"] = {
+                "syscall": request.name,
+                "idempotency_key": request.idempotency_key,
+                "args": dict(request.args),
+                "output": dict(outcome.result.output),
+                "fulfilled_by": outcome.result.fulfilled_by,
+                "maturity_used": outcome.result.maturity_used,
+            }
         return None, outcome.result
 
 

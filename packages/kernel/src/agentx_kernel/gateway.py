@@ -45,6 +45,14 @@ _POLICY: dict[str, SyscallPolicy] = {
     "queue_manual_action": SyscallPolicy(required_ring="L0", risk_class="read"),
     "mark_outcome": SyscallPolicy(required_ring="L1", risk_class="reversible_write"),
     "draft_email": SyscallPolicy(required_ring="L2", risk_class="external_message"),
+    "send_email": SyscallPolicy(required_ring="L2", risk_class="external_message"),
+    # Phase-3 (HERMES_BUILD_PLAN §Phase 3 — G10): the Creator's draft rung.
+    # Draft-only — no live customer effect (the adapter has zero catalog write paths, invariant
+    # #7 structural proof). Required at L0 so a canary instance (L0/L1 rung) can produce drafts
+    # that the Phase-4 promote gate then escalates to L2/L3. Risk class is "reversible_write"
+    # not "irreversible" — a draft that gets rejected by the promote gate is just discarded, no
+    # customer-facing effect to undo. The promote gate (Phase 4) is the irreversible step.
+    "draft_candidate_type": SyscallPolicy(required_ring="L0", risk_class="reversible_write"),
 }
 _RING_ORDER: dict[Ring, int] = {"L0": 0, "L1": 1, "L2": 2, "L3": 3, "L4": 4}
 

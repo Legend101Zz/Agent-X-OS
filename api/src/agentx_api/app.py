@@ -54,6 +54,7 @@ from typing import Any, cast
 import agentx_db.collections as c
 from agentx_contracts.enums import ApprovalDecision, Ring, RunMode, RunState
 from agentx_contracts.jsontypes import JsonObject
+from agentx_contracts.mandate import MandateType
 from agentx_contracts.trigger import DeadlineTrigger
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -136,6 +137,25 @@ class RunSwarmCommand(BaseModel):
     actor: str = "manager:dashboard"
 
 
+class PromoteCommand(BaseModel):
+    """Phase-4 promote body — the candidate→live bridge.
+
+    The only client-supplied inputs are:
+      - candidate_id  (server looks up the draft + gathers eval_cases by type_ref)
+      - ring          (validated to {L0, L1} for the canary path; L2+ for the strict gate)
+      - human_approved (the operator's confirmation)
+      - actor         (audit trail)
+
+    Client-supplied eval_case_ids / scorecards are NOT accepted — the server gathers by
+    type_ref to defeat operator cherry-picking.
+    """
+
+    candidate_id: str = Field(min_length=1)
+    ring: Ring = "L0"
+    human_approved: bool = False
+    actor: str = "manager:dashboard"
+
+
 # ---------------------------------------------------------------------------
 # Auth + CORS + env helpers
 # ---------------------------------------------------------------------------
@@ -186,6 +206,59 @@ def _require_command_auth(request: Request) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Phase-4 promote helpers (candidate→live bridge).
+# ---------------------------------------------------------------------------
+
+
+def _canary_gate(
+    *,
+    eval_cases: list[Any],
+    human_approved: bool,
+    ring: str,
+) -> tuple[list[str], bool]:
+    """The L0/L1 canary gate — distinct from the swarm's strict PromotionGate.
+
+    A canary rung accepts EITHER synthetic OR real evidence (Phase-4 design: synthetic
+    is the bridge that lets a freshly-Creator-drafted candidate reach a canary rung
+    before any real run). It still requires:
+      - human_approved
+      - at least one passing scorecard on the eval_cases (origin can be synthetic OR real)
+
+    Returns (reasons, allowed). When allowed=True, reasons is [].
+    """
+    reasons: list[str] = []
+    if not human_approved:
+        reasons.append("canary promote requires human_approved=true")
+    passing = [
+        case
+        for case in eval_cases
+        if case.scorecard is not None
+        and case.scorecard.passed
+        and case.scorecard.score >= 0.5
+    ]
+    if not passing:
+        reasons.append(
+            "canary promote requires at least one eval_case with a passing scorecard "
+            "(swarm-smoke-passed)"
+        )
+    if not reasons:
+        return [], True
+    return reasons, False
+
+
+def _promote_barred(*, reasons: list[str], ring: str) -> JSONResponse:
+    """Uniform 422 envelope for a barred promote — caller-friendly + machine-readable."""
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content={
+            "status": "barred",
+            "ring_requested": ring,
+            "reasons": reasons,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
 # App factory + lifespan
 # ---------------------------------------------------------------------------
 
@@ -197,9 +270,21 @@ def create_app(
     operator_token: str | None = None,
     cors_origins: list[str] | None = None,
     start_worker: bool = True,
+    send_email_transport: Any | None = None,
 ) -> FastAPI:
-    """Build the FastAPI app. ``operator_token`` overrides ``AGENTX_OPERATOR_TOKEN`` (test hook)."""
-    state = create_state(use_mongo=use_mongo, seed_demo=seed_demo)
+    """Build the FastAPI app. ``operator_token`` overrides ``AGENTX_OPERATOR_TOKEN`` (test hook).
+
+    ``send_email_transport`` is a Phase-1 test hook: when ``None`` the runtime reads
+    ``RUN_LIVE_EMAIL=1`` + ``RESEND_API_KEY`` and registers a live Resend transport if both are
+    present; otherwise no SendEmailAdapter is registered (the human_task tail handles send_email,
+    invariant #5). When supplied (a test fake), the runtime uses it instead and registers exactly
+    one SendEmailAdapter at the per-instance sender supplied via MandateInstance.channel_binding.
+    """
+    state = create_state(
+        use_mongo=use_mongo,
+        seed_demo=seed_demo,
+        send_email_transport=send_email_transport,
+    )
     if operator_token is not None:
         os.environ["AGENTX_OPERATOR_TOKEN"] = operator_token
     if cors_origins is not None:
@@ -682,14 +767,183 @@ def _install_routes(app: FastAPI) -> None:
             "eval_case_id": eval_case.id,
         }
 
-    @app.post("/commands/promote")
-    async def promote_unavailable() -> JSONResponse:
+    @app.post(
+        "/commands/promote",
+        dependencies=[Depends(_require_command_auth)],
+    )
+    async def promote(command: PromoteCommand, request: Request) -> JSONResponse:
+        """Phase-4 promote handler — the candidate→live bridge.
+
+        RING-AWARE:
+
+        - L0/L1 (canary): requires human_approved + at least one passing scorecard
+          (origin can be synthetic OR real — synthetic is the bridge that lets a
+          Creator candidate reach a canary rung before any real run).
+        - L2/L3/L4 (autonomous): requires human_approved + real-origin evidence via
+          PromotionGate (synthetic-only is barred; invariant #7).
+
+        The server gathers eval_cases by the candidate's type_ref — never accepts
+        client-supplied eval_case_ids (that would let an operator cherry-pick favorable
+        evidence and defeat the gate).
+        """
+        state = _state(request)
+        from agentx_swarm import PromotionGate, PromotionGateInput
+
+        # 1. Ring validation: must be in {L0, L1, L2, L3, L4} (Pydantic Literal already enforced;
+        #    this is the post-validation rejection reason for the gate output).
+        if command.ring not in {"L0", "L1", "L2", "L3", "L4"}:
+            return _promote_barred(
+                reasons=[f"requested ring {command.ring} is not a valid Ring value"],
+                ring=command.ring,
+            )
+
+        # 2. Look up the candidate draft (the only client input is candidate_id — server
+        #    gathers everything else by type_ref, no eval_case_ids accepted).
+        candidate_doc = await state.store.get(c.CANDIDATE, command.candidate_id)
+        if candidate_doc is None:
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                content={
+                    "status": "not_found",
+                    "candidate_id": command.candidate_id,
+                },
+            )
+
+        type_ref = candidate_doc.get("type_ref", "")
+        mandate_type_dict = candidate_doc.get("mandate_type")
+        if not isinstance(type_ref, str) or not type_ref or not isinstance(mandate_type_dict, dict):
+            return _promote_barred(
+                reasons=["candidate draft is malformed (missing type_ref or mandate_type)"],
+                ring=command.ring,
+            )
+
+        # 3. Server-side gather: all eval_cases for this type_ref (regardless of origin).
+        # We do NOT strict-validate every case — the run-swarm path persists the case with
+        # dashboard-friendly top-level ``score``/``passed`` mirrors that the EvalCase contract
+        # doesn't carry (extra='forbid'). The gate cares about ``origin`` and the scorecard
+        # sub-document; we read those defensively rather than rebuilding the typed object.
+        all_eval_cases = await state.store.find(c.EVAL_CASE, {"type_ref": type_ref})
+
+        from agentx_contracts.gym import EvalCase as _EvalCase
+        from agentx_contracts.verification import Scorecard as _Scorecard
+
+        eval_cases: list[_EvalCase] = []
+        for case_doc in all_eval_cases:
+            if not isinstance(case_doc, dict):
+                continue
+            origin = case_doc.get("origin")
+            scorecard = case_doc.get("scorecard")
+            if origin is None or not isinstance(scorecard, dict):
+                continue
+            try:
+                # Drop dashboard-mirror top-level keys (score, passed) that aren't on the contract;
+                # build a valid Scorecard sub-doc explicitly (the gate reads eval_case.scorecard.X).
+                clean_case = {
+                    "id": case_doc.get("id") or f"eval_unknown_{type_ref}",
+                    "type_ref": type_ref,
+                    "origin": origin,
+                    "hydration": case_doc.get("hydration") or {},
+                    "scorecard": _Scorecard(
+                        origin=scorecard.get("origin", origin),
+                        run_id=scorecard.get("run_id", ""),
+                        rubric_name=scorecard.get("rubric_name", ""),
+                        score=float(scorecard.get("score", 0.0)),
+                        passed=bool(scorecard.get("passed", False)),
+                    ).model_dump(mode="json"),
+                    "reality_outcome": case_doc.get("reality_outcome"),
+                    "tags": case_doc.get("tags", []) or [],
+                }
+                eval_cases.append(_EvalCase.model_validate(clean_case))
+            except Exception:  # noqa: BLE001 — malformed rows are skipped.
+                continue
+
+        # 4. Ring-aware gate logic.
+        canary_rings: set[Ring] = {"L0", "L1"}
+        if command.ring in canary_rings:
+            reasons, allowed = _canary_gate(
+                eval_cases=eval_cases,
+                human_approved=command.human_approved,
+                ring=command.ring,
+            )
+        else:
+            # L2+ calls the swarm's strict PromotionGate (DO NOT modify — Session I's
+            # synthetic-bar test stays valid). We widen allow_rings so the gate enforces
+            # ONLY evidence+human (the ring split is OUR concern, not the swarm gate's).
+            decision = PromotionGate(allow_rings={"L0", "L1", "L2", "L3", "L4"}).evaluate(
+                PromotionGateInput(
+                    eval_cases=eval_cases,
+                    scorecards=[],
+                    human_approved=command.human_approved,
+                    requested_ring=command.ring,
+                )
+            )
+            allowed = decision.allowed
+            reasons = decision.reasons
+
+        if not allowed:
+            return _promote_barred(reasons=reasons, ring=command.ring)
+
+        # 5. ALLOW: register the MandateType + journal ManagerAction(promote).
+        try:
+            mandate_type = MandateType.model_validate(mandate_type_dict)
+        except Exception as exc:  # noqa: BLE001
+            return _promote_barred(
+                reasons=[
+                    f"candidate mandate_type did not validate against the contract: "
+                    f"{type(exc).__name__}: {exc}"
+                ],
+                ring=command.ring,
+            )
+
+        try:
+            registered = await state.control.register_mandate_type(mandate_type)
+        except Exception as exc:  # noqa: BLE001
+            return _promote_barred(
+                reasons=[
+                    f"register_mandate_type failed: {type(exc).__name__}: {exc}"
+                ],
+                ring=command.ring,
+            )
+
+        # Audit row: one ManagerAction(promote) per promotion. instance_id is the Creator
+        # instance from the draft (carries through the bridge), run_id None (promote is
+        # structural, not run-scoped).
+        creator_instance_id = str(candidate_doc.get("creator_instance_id", "creator-unknown"))
+        await _append_manager_action(
+            state,
+            instance_id=creator_instance_id,
+            actor=command.actor,
+            action="promote",
+            detail=cast(
+                JsonObject,
+                {
+                    "candidate_id": command.candidate_id,
+                    "type_ref": type_ref,
+                    "ring": command.ring,
+                    "human_approved": command.human_approved,
+                    "eval_case_count": len(eval_cases),
+                    "gate_origin": "canary"
+                    if command.ring in canary_rings
+                    else "promotion_gate",
+                    "promoted_at": datetime.now(UTC).isoformat(),
+                },
+            ),
+            run_id=None,
+        )
+
         return JSONResponse(
-            status_code=501,
+            status_code=status.HTTP_200_OK,
             content={
-                "supported": False,
-                "gap": gap_by_id("command.promote"),
-                "received": {},
+                "status": "promoted",
+                "candidate_id": command.candidate_id,
+                "type_ref": registered.name + "@" + registered.version,
+                "mandate_id": registered.id,
+                "ring": command.ring,
+                "human_approved": command.human_approved,
+                "eval_case_count": len(eval_cases),
+                "gate_origin": "canary"
+                if command.ring in canary_rings
+                else "promotion_gate",
             },
         )
 

@@ -19,18 +19,6 @@ CORE_GAPS: Final[list[JsonObject]] = [
         ),
     },
     {
-        "id": "command.promote",
-        "title": "Promote mandate version",
-        "detail": (
-            "PromotionGate exists, but no kernel control command records a promotion decision or "
-            "applies a canary ring."
-        ),
-        "needed_core_surface": (
-            "Journaled promote command gated by real eval evidence (PromotionGate already enforces "
-            "this) + human approval + a canary-ring application through the existing ring projection."
-        ),
-    },
-    {
         "id": "projection.full_trace_snapshot",
         "title": "Persist full run result trace",
         "detail": (
@@ -59,12 +47,14 @@ def gap_by_id(gap_id: str) -> JsonObject:
 
 # Stale ids that older dashboards or fixtures still reference. Kept here so /core-gaps returns a
 # stable response — Phase H closed instantiate, trigger_run, reject_approval in the kernel.
+# Phase-4 closed command.promote (HERMES_BUILD_PLAN §Phase 4 — the candidate→live bridge).
 KNOWN_CLOSED: Final[frozenset[str]] = frozenset(
     {
         "command.instantiate",
         "command.trigger_run",
         "command.reject_approval",
         "command.run_swarm",
+        "command.promote",
         "projection.manual_queue_durable",
     }
 )

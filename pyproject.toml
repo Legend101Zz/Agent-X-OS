@@ -49,7 +49,12 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 addopts = "-ra"
-testpaths = ["tests"]
+# Collect the root integration tests, every package's unit-test tree, and the DB tree.
+# Without ``packages`` here, `uv run pytest -q` (the gate) silently skips the package unit
+# tests — the gate previously ran 112 + 2 skip while 41 package tests (incl. the SendEmail +
+# WatchMaturation suites from Hermes phases 1–2) stayed invisible. Adding the packages and
+# db paths makes the gate actually guard the package code.
+testpaths = ["tests", "packages", "db"]
 markers = [
     "live: tests that require live external services and credentials",
 ]

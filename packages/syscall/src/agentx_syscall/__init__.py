@@ -10,7 +10,9 @@ FROZEN contracts only. See AGENTS.md (lane + invariants) and BUILD-PLAN.md (task
 """
 
 from agentx_syscall.adapters import (
+    DraftCandidateTypeAdapter,
     DraftEmailAdapter,
+    EmailTransport,
     ExaResearchProvider,
     FirecrawlResearchProvider,
     HumanTaskAdapter,
@@ -23,6 +25,12 @@ from agentx_syscall.adapters import (
     ResearchLead,
     ResearchPage,
     ResearchProvider,
+    SendEmailAdapter,
+    SentEmailReceipt,
+)
+from agentx_syscall.email_transports import (
+    ResendEmailTransport,
+    build_configured_email_transport,
 )
 from agentx_syscall.manual_tasks import (
     InMemoryManualTaskRepository,
@@ -34,7 +42,9 @@ from agentx_syscall.manual_tasks import (
 from agentx_syscall.registry import Phase1SyscallRegistry, build_phase1_registry
 
 __all__ = [
+    "DraftCandidateTypeAdapter",
     "DraftEmailAdapter",
+    "EmailTransport",
     "ExaResearchProvider",
     "FirecrawlResearchProvider",
     "HumanTaskAdapter",
@@ -51,6 +61,10 @@ __all__ = [
     "ResearchLead",
     "ResearchPage",
     "ResearchProvider",
+    "ResendEmailTransport",
+    "SendEmailAdapter",
+    "SentEmailReceipt",
+    "build_configured_email_transport",
     "build_phase1_registry",
     "make_in_memory_manual_task_repository",
     "make_mongo_manual_task_repository",

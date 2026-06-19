@@ -13,6 +13,9 @@ RUN_CONTINUATION: Final = "run_continuation"
 SCHEDULER_WORK: Final = "scheduler_work"
 SYSCALL_RECEIPT: Final = "syscall_receipt"
 MANUAL_TASK: Final = "manual_task"
+# Phase-4: the candidate store (pre-registration drafts of MandateType). The Creator's
+# draft_candidate_type adapter stages here; the /commands/promote handler reads by candidate_id.
+CANDIDATE: Final = "candidate"
 
 # --- The append-only SOURCE OF TRUTH ---
 JOURNAL: Final = "journal"
@@ -47,6 +50,7 @@ ALL_COLLECTIONS: Final[tuple[str, ...]] = (
     SCHEDULER_WORK,
     SYSCALL_RECEIPT,
     MANUAL_TASK,
+    CANDIDATE,
     JOURNAL,
     HEAP_FACT,
     THREAD,

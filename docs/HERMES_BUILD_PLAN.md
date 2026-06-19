@@ -20,9 +20,18 @@ sends via a real transport, using the **instance's own sender identity**, and ne
 **Context.** Model on `DraftEmailAdapter` (`packages/syscall/src/agentx_syscall/adapters.py:367` —
 `external_message`, `required_ring="L2"`, `sent:False`). Register in `registry.py`
 (`build_phase1_registry`). Inject the transport behind a Protocol (mirror `ResearchProvider` in
-`adapters.py` — the real provider reads its key kernel-side; the pod never holds it). Recommended real
-transport: **Resend or AgentMail** (API key in `.env` via `get_settings`); SMTP acceptable. The
+`adapters.py` — the real provider reads its key kernel-side; the pod never holds it). The
 draft→approve→resume flow already exists (draft parks at L2 → `/commands/approve` → kernel `resume()`).
+
+**Transport is DECIDED: Gmail SMTP via an App Password** (`smtplib` STARTTLS — no new pip dep). Add these
+fields to `agentx_contracts.config.Settings` (UPPER_SNAKE env vars, already in `.env`; `SMTP_PASSWORD` is a
+`SecretStr`): `smtp_host` (`SMTP_HOST`, default `smtp.gmail.com`), `smtp_port` (`SMTP_PORT`, default `587`),
+`smtp_username` (`SMTP_USERNAME`), `smtp_password` (`SMTP_PASSWORD`, `SecretStr`), `email_from`
+(`EMAIL_FROM`), `email_from_name` (`EMAIL_FROM_NAME`). The adapter reads them kernel-side (like the research
+providers) — the mandate pod never sees them (invariant #2; `config.py` stays forbidden to `agentx_mandate`).
+Gmail rewrites `From:` to the authenticated account, so `email_from` must equal `smtp_username` (or a verified
+alias). Note #8: this single Gmail is a shared sender — acceptable for dogfooding only; still thread the
+sender identity per-instance so per-instance senders drop in later with no structural change.
 
 **Constraints.** Invariant #2 (credential from the vault at `execute(req, cred)`, never the pod — keep
 `tests/test_credential_boundary.py` green). Invariant #8 (per-instance sender identity; NO shared

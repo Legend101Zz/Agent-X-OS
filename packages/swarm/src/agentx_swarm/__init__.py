@@ -9,6 +9,7 @@ Implements ``agentx_contracts.Judge``; drives the kernel via ``agentx_contracts.
 against the FROZEN contracts only. See AGENTS.md and BUILD-PLAN.md.
 """
 
+from .compiler import CompiledCandidate, CompilerConfig, compile_candidate
 from .gate import PromotionDecision, PromotionGate, PromotionGateInput, case_origin_is_promotable
 from .judge import PromptfooBridgeArtifacts, PromptfooJudge, build_promptfoo_judge
 from .scenarios import ScenarioCase, ScenarioPack, load_builtin_scenario_pack, load_scenario_pack
@@ -16,6 +17,8 @@ from .sim import SimAdapter, SimRegistry, build_sim_registry
 from .trace import trace_to_viewer_payload
 
 __all__ = [
+    "CompiledCandidate",
+    "CompilerConfig",
     "PromotionDecision",
     "PromotionGate",
     "PromotionGateInput",
@@ -28,6 +31,7 @@ __all__ = [
     "build_promptfoo_judge",
     "build_sim_registry",
     "case_origin_is_promotable",
+    "compile_candidate",
     "load_builtin_scenario_pack",
     "load_scenario_pack",
     "trace_to_viewer_payload",
