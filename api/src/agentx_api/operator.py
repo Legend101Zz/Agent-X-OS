@@ -61,6 +61,7 @@ from agentx_kernel.stores.mongo import (
     MongoSyscallReceiptStore,
 )
 from agentx_kernel.verifier import RulesVerifier
+from agentx_kernel.watch_maturation import WatchMaturationWorker
 from agentx_mandate.harness import HarnessRunner
 from agentx_mandate.library.lead_finder import build_lead_finder_type
 from agentx_syscall import ManualTaskRepository, build_phase1_registry
@@ -146,6 +147,7 @@ class OperatorRuntime:
     harness_runner_factory: Any | None
     database: Any | None
     client: Any | None
+    watch_maturation_worker: WatchMaturationWorker
     _worker_task: asyncio.Task[None] | None = None
     _stopped: bool = False
 
@@ -346,6 +348,22 @@ def _compose(
     # so it never touches the live registry/journal composed above.
     swarm_runner = SwarmRunner()
 
+    # Phase-2 deferred-settle worker (HERMES_BUILD_PLAN §Phase 2 — closes G3). It grades the
+    # trace of every matured watch via the promptfoo Judge, promotes probation facts to verified,
+    # updates the trust/résumé, and emits exactly one EvalCase(origin="real") into the gym.
+    try:
+        from agentx_swarm.judge import PromptfooJudge
+
+        judge: Any = PromptfooJudge()
+    except Exception:  # noqa: BLE001 - judge import is best-effort (tests / sandbox)
+        judge = None
+    watch_maturation_worker = WatchMaturationWorker(
+        journal=journal,
+        projection_store=projection_store,
+        judge=judge,
+        projections=projections,
+    )
+
     # Replace the per-adapter in-memory store with the shared manual_tasks repo. This keeps the
     # adapters contract-pure while letting the API read what the gateway wrote.
     if database is not None:
@@ -369,6 +387,7 @@ def _compose(
         scheduler_store=scheduler_store,
         invoker=invoker,
         worker=worker,
+        watch_maturation_worker=watch_maturation_worker,
         control=control,
         swarm_runner=swarm_runner,
         scheduler_driver=scheduler_driver,
@@ -536,6 +555,15 @@ async def _worker_loop(runtime: OperatorRuntime, *, interval_seconds: float) -> 
             raise
         except Exception:  # noqa: BLE001 - one bad item must never kill the worker
             logger.exception("operator worker tick failed")
+        # Phase-2: tick the deferred-settle worker on every loop. It scans for past-deadline
+        # un-fired watches and matures whatever the scheduler hasn't yet touched. One watch per
+        # tick is bounded by construction.
+        try:
+            await runtime.watch_maturation_worker.run_once(datetime.now(UTC))
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001
+            logger.exception("watch maturation tick failed")
         await asyncio.sleep(interval_seconds)
 
 
