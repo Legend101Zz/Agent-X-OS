@@ -3,9 +3,11 @@
 *Companion to [BLUEPRINT.md](./BLUEPRINT.md) (canonical). This doc is the living snapshot: **what is built
 today**, **what is left**, and **how to tackle it**. When this and the blueprint disagree on intent, the
 blueprint wins; when they disagree on *what currently exists in code*, this doc wins (it's verified against
-the tree). Last verified: 2026-06-18 after Sessions D–G. Session E fixed the P0/P1 correctness issues,
-Session F made MiniMax drive the loop and produced sendable leads, and Session G made trigger/approval runs
-repeatable through first-class resume + scheduler-min. Items below marked ✅ are live-proven; remaining
+the tree). Last verified: 2026-06-19 after Sessions D–I + L. Session E fixed the P0/P1 correctness issues,
+Session F made MiniMax drive the loop and produced sendable leads, Session G made trigger/approval runs
+repeatable through first-class resume + scheduler-min, Session H made the Manager Dashboard operable
+end-to-end, Session L added a real-time SSE journal stream + command-feedback toasts, and **Session I made
+the swarm runnable from the dashboard** (G8's `/run` half). Items below marked ✅ are live-proven; remaining
 🟢/🟡 are proven-but-incomplete. See the session proof documents for exact evidence.*
 
 > **Status legend:** ✅ built & proven (live) · 🟢 implemented + live-proven but blocked/incomplete · 🟡 partial / scaffolded · ❌ not built · 🏗️ in progress (parallel agent)
@@ -13,7 +15,18 @@ repeatable through first-class resume + scheduler-min. Items below marked ✅ ar
 > **Session G (2026-06-18) update:** **G2 (repeatable runner + first-class parked-run resume + scheduler-min)**
 > is built and live-proven. A real dental run went trigger→park→ApprovalResolved→kernel resume→verify→settle
 > through Mongo-backed work items; same-key receipt replay added zero journal rows. See
-> [SESSION_G_LIVE_PROOF.md](./SESSION_G_LIVE_PROOF.md). Next: Step D maturation, then P2 polish.
+> [SESSION_G_LIVE_PROOF.md](./SESSION_G_LIVE_PROOF.md).
+
+> **Sessions H/L/I (2026-06-19) update:** **G9 (Manager Dashboard)** is operable end-to-end (Session H),
+> now with a **real-time SSE journal stream + command-feedback toasts** (Session L, `/events` tails the
+> journal by `seq`; a `ToastStack`/recent-commands ledger replaces the single overwriting `commandResult`).
+> **G8's `/run` half is live (Session I):** `POST /commands/run-swarm` drives `indian_b2b_leads_v1` through
+> the kernel in sim, grades it with the promptfoo Judge, gates it (synthetic-only **barred** — invariant #7
+> now demonstrated through the live API, not just a unit test), persists one synthetic `EvalCase`, journals a
+> `ManagerAction(run_swarm)`, and renders the BLUEPRINT §5 timeline in the Foundry's new two-pane Swarm REPL.
+> See [SESSION_I_LIVE_PROOF.md](./SESSION_I_LIVE_PROOF.md) + [SESSION_L_LIVE_PROOF.md](./SESSION_L_LIVE_PROOF.md).
+> **Next:** Step D maturation (G3) + the rest of the Foundry — Creator draft (Session J, G10), promote gate
+> (Session K), per [PROPOSAL_NICE_DASHBOARD_SWARM_CREATOR.md](./PROPOSAL_NICE_DASHBOARD_SWARM_CREATOR.md).
 
 ---
 
@@ -22,8 +35,8 @@ repeatable through first-class resume + scheduler-min. Items below marked ✅ ar
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  CONTROL SURFACE — Manager Dashboard (§6)                                      │
-│  approval inbox · manual queue · instance file · floor · swarm view   🏗️ DONE  │
-│  (built in parallel; backed by KernelControl API — verify integration)         │
+│  approval inbox · manual queue · instance file · floor · SWARM REPL    ✅ DONE  │
+│  realtime SSE journal stream + command toasts (Session L)              ✅       │
 └───────────────────────────────────┬────────────────────────────────────────────┘
                                      │ KernelControl (control.py): approval_inbox,
                                      │ instance_file, floor, approve, set_ring  ✅
@@ -47,7 +60,7 @@ repeatable through first-class resume + scheduler-min. Items below marked ✅ ar
    │  gateway → adapter ladder:    │  │  │  PromotionGate (bars synthetic)     ✅      │
    │  lead_research_batch (Exa/    │  │  │  scenario packs (indian_b2b_v1)     ✅      │
    │   Firecrawl) ✅ · read_url ✅ │  │  │  trace viewer payload               ✅      │
-   │  draft_email (DRAFT only) ✅  │  │  │  swarm REPL surface (cmds)          ❌      │
+   │  draft_email (DRAFT only) ✅  │  │  │  swarm REPL: run-swarm (Sess. I)    🟢      │
    │  queue_manual_action ✅       │  │  │  CREATOR mandate (makes mandates)   ❌      │
    │  mark_outcome ✅              │  │  │  compiler (GEPA growth loop)        ❌      │
    │  HUMAN-TASK tail ✅           │  │  └──────────────────────────────────────────┘
@@ -108,8 +121,8 @@ gap is deferred maturation: reality must promote probation facts and emit real g
 
 ### Invariants enforced
 - Lane isolation + `mandate` holds-no-credentials enforced by `lint-imports` (3/3) + `tests/test_credential_boundary.py`.
-- Gate green after Session G: `mypy --strict` (99 files), `ruff`, `pytest` (111 + 2 live-gated skips),
-  import fences 3/3, seam proof green.
+- Gate green after Sessions H–I/L: `ruff`, `mypy --strict` (101 packages/db/tests + 10 api), `pytest`
+  (112 root + 22 api, + 2 live-gated skips), import fences 3/3, dashboard `npm test` (10) + `npm run build`.
 
 ---
 
@@ -124,8 +137,8 @@ gap is deferred maturation: reality must promote probation facts and emit real g
 | G5 | **Mandate registry / Catalog persistence** | ✅ implemented + live-proven | **Session E P1-3** added a projection-backed `MandateRegistry` that persists `MandateType`/`MandateInstance` and exposes register/instantiate/list via `KernelControl`; live edge persists a real instance. **Live-proven (Session E proof):** a real non-`inst_demo` instance (`agentx_dogfood_…`, customer "Agent-X dogfood") is in Mongo `mandate_instance` and is surfaced by `/instances` with its settled run, facts, and watch ids | §1, §6 (Catalog) |
 | G6 | **Trust-ladder promote/demote automation** | 🟡 | `set_ring` is manual; no "N clean → propose promote / verified failure → demote" mechanics | §4 trust ladder |
 | G7 | **`score_lead` syscall** | 🟡 | Declared in gateway policy but has no adapter (judgment scores in-pod). Harmless, but inconsistent with §7 | §7 |
-| G8 | **Swarm REPL command surface** (`/create /run /watch /patch /promote`) | ❌ | Pieces work; no interactive loop for the founder to iterate a candidate | §5 |
-| G9 | **Manager Dashboard** | ✅ end-to-end operability proven via in-memory OperatorRuntime (Session H) | Dashboard reads `/approvals` separately from `/manual-queue`; commands (`instantiate`, `trigger-run`, `approve`, `reject`, `set-ring`) are journaled + projected through the lifespan-owned `OperatorRuntime`; approve enqueues `ApprovalWork` so the in-process worker pump resumes the parked run through `Phase1RunInvoker.resume`; reject terminalizes without executing the effect; live-mode fail-closed disconnected state; bearer token (`AGENTX_OPERATOR_TOKEN`) on command routes; CORS restricted to `AGENTX_CORS_ORIGINS`. 15 new tests (8 dashboard_api + 7 operator_lifecycle) prove the full lifecycle. Browser-driven proof against Mongo deferred to operator on the real Atlas cluster — see `docs/SESSION_DASHBOARD_OPERABILITY_PROOF.md`. | §6 |
+| G8 | **Swarm REPL command surface** (`/create /run /watch /patch /promote`) | 🟢 `/run` half live (Session I) | **Session I:** `POST /commands/run-swarm` drives a sim swarm on the kernel → promptfoo Judge → PromotionGate (synthetic **barred**) → persists one synthetic `EvalCase` → journals `ManagerAction(run_swarm)`; the Foundry is now a two-pane Swarm REPL (run form + §5 timeline), un-hidden with a "run your first swarm" CTA. **Still ❌:** `/create` (Creator, G10/Session J), `/patch` + `/compare` re-run loop, `/promote` (Session K). See [SESSION_I_LIVE_PROOF.md](./SESSION_I_LIVE_PROOF.md) | §5 |
+| G9 | **Manager Dashboard** | ✅ end-to-end operability proven via in-memory OperatorRuntime (Session H) | Dashboard reads `/approvals` separately from `/manual-queue`; commands (`instantiate`, `trigger-run`, `approve`, `reject`, `set-ring`) are journaled + projected through the lifespan-owned `OperatorRuntime`; approve enqueues `ApprovalWork` so the in-process worker pump resumes the parked run through `Phase1RunInvoker.resume`; reject terminalizes without executing the effect; live-mode fail-closed disconnected state; bearer token (`AGENTX_OPERATOR_TOKEN`) on command routes; CORS restricted to `AGENTX_CORS_ORIGINS`. 15 new tests (8 dashboard_api + 7 operator_lifecycle) prove the full lifecycle. **Session L** added a real-time SSE journal stream (`/events` tails by `seq`) + a `ToastStack`/recent-commands feedback ledger (replacing the single overwriting `commandResult`). **Session I** added the Foundry Swarm REPL + un-hid its nav. Browser-driven proof against Mongo deferred to operator on the real Atlas cluster — see `docs/SESSION_DASHBOARD_OPERABILITY_PROOF.md`. | §6 |
 | G10 | **Creator Mandate** (assemble a Type from a description) | ❌ | On-plan as *later*; Phase-1 Foundry-min is the swarm only | §5 |
 | G11 | **Operator Agent** (founder's chief-of-staff over the control surface) | ❌ | Later; needs the dashboard command/query API as its tool surface | §6.1 |
 | G12 | **Compiler (GEPA growth loop)** | ❌ | Later; needs a full gym of real cases first | §5 |
@@ -174,7 +187,8 @@ and the seam proof passing on the OwnHarness double at every step.
   STEP F  G6/G7  Trust ladder mechanics + score_lead tidy-up (smaller; do after A–E)   ❌ NOT STARTED
 
   ── BEYOND PHASE 1 (use BLUEPRINT §5–7 + this doc; only after A–E settle repeatedly) ──────────
-  G8  Swarm REPL command surface (CLI is fine; don't build MiroFish / don't depend on Hermes Swarm)
+  G8  Swarm REPL command surface — 🟢 `/run` half DONE (Session I: run-swarm from the dashboard, on our
+      gateway via SimAdapter; no MiroFish, no Hermes Swarm). Remaining: `/create` (G10), `/patch`+`/compare`, `/promote`.
   G10 Creator Mandate (assemble Type from description → swarm → gate → catalog)
   G11 Operator Agent (gated privileged user of the dashboard API; never inside the live kernel)
   G12 Compiler / GEPA growth loop (needs a real gym corpus)
