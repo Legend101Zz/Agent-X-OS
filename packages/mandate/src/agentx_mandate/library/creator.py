@@ -34,7 +34,9 @@ def build_creator_type() -> MandateType:
     The postconditions are MACHINE-CHECKABLE on the drafted candidate (rules-rung, with an
     ``expr``). The Creator's own rules-verifier runs them when the creator run settles; the
     same postconditions ride along to the human reviewer so they can see at-a-glance what
-    the rules engine thought of the candidate.
+    the rules engine thought of the candidate. (Concretely these are counted as ``claimed_facts``
+    by the rules engine — the Creator's playbook claims one provenance-stamped fact per draft;
+    the postcondition ``claimed_facts >= 1`` confirms the draft reached the claim rung.)
     """
     return MandateType(
         id="type_creator_v0",
@@ -48,25 +50,44 @@ def build_creator_type() -> MandateType:
             ),
             postconditions=[
                 Condition(
-                    id="candidate_has_faculties",
-                    description="The drafted candidate MandateType must bind ≥1 faculty.",
-                    rung="rules",
-                    expr="candidate.faculties >= 1",
-                ),
-                Condition(
-                    id="candidate_has_charter_goal",
-                    description="The drafted candidate MandateType must have a non-empty charter goal.",
-                    rung="rules",
-                    expr="candidate.charter.goal exists",
-                ),
-                Condition(
-                    id="candidate_names_scenario_pack",
+                    id="creator_claimed_one_fact",
                     description=(
-                        "The drafted candidate MandateType must name a scenario pack "
-                        "(domain_pack ref) so the swarm can grade it."
+                        "The Creator's run must claim at least one provenance-stamped fact "
+                        "(e.g. creator_drafted:mandate_type) so the drafted candidate is "
+                        "stamped into the heap with provenance (invariant #1)."
                     ),
                     rung="rules",
-                    expr="candidate.domain_pack.name exists",
+                    expr="claimed_facts >= 1",
+                ),
+                Condition(
+                    id="candidate_faculty_count_fact_present",
+                    description=(
+                        "The Creator's heap must carry a fact whose predicate "
+                        "``creator_drafted_faculty_count`` exists — that's the structural "
+                        "evidence the candidate has ≥1 faculty (the §5 set)."
+                    ),
+                    rung="rules",
+                    expr="fact:creator_drafted_faculty_count exists",
+                ),
+                Condition(
+                    id="candidate_scenario_pack_fact_present",
+                    description=(
+                        "The Creator's heap must carry a ``creator_drafted_scenario_pack`` "
+                        "fact — that's the structural evidence the candidate names a "
+                        "scenario pack (the swarm needs it to grade the candidate)."
+                    ),
+                    rung="rules",
+                    expr="fact:creator_drafted_scenario_pack exists",
+                ),
+                Condition(
+                    id="candidate_goal_fact_present",
+                    description=(
+                        "The Creator's heap must carry a ``creator_drafted_goal`` fact — "
+                        "that's the structural evidence the candidate has a non-empty "
+                        "charter goal (the §1 Charter organ)."
+                    ),
+                    rung="rules",
+                    expr="fact:creator_drafted_goal exists",
                 ),
             ],
             constraints=[

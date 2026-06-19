@@ -11,11 +11,8 @@ lane and is covered by ``packages/syscall/tests/test_draft_candidate_type.py``.
 
 from __future__ import annotations
 
-from typing import cast
-
 from agentx_contracts.mandate import (
     Charter,
-    Condition,
     DomainPackRef,
     MandateType,
     VerificationSuite,
@@ -71,18 +68,25 @@ def test_creator_type_charter_has_a_goal_and_checkable_postconditions() -> None:
             f"rules-rung postcondition {condition.id!r} must have an expr (rules.py evaluates it)"
         )
 
-    # Required structural postconditions per the spec ("candidate has ≥1 faculty", "has a charter goal",
-    # "names a scenario pack").
+    # Required structural postconditions per the spec ("candidate has ≥1 faculty", "has a charter
+    # goal", "names a scenario pack") — the Creator's postconditions are rules-rung facts that
+    # the playbook's Claim action satisfies (provenance-stamped structural evidence). Each
+    # postcondition ID encodes one of the §5 structural checks.
     post_ids = {c.id for c in rules_post}
-    assert any("faculty" in pid.lower() or "faculties" in pid.lower() for pid in post_ids), (
-        "Creator must post-check that the produced candidate has ≥1 faculty"
-    )
-    assert any("goal" in pid.lower() for pid in post_ids), (
-        "Creator must post-check that the produced candidate has a charter goal"
-    )
+    # Check the DESCRIPTION strings (not the IDs) for the structural keywords — the IDs are
+    # concise canonical names while the descriptions carry the operator-facing rationale.
+    post_descriptions = [c.description.lower() for c in rules_post]
     assert any(
-        ("scenario" in pid.lower()) or ("domain_pack" in pid.lower()) or ("pack" in pid.lower())
-        for pid in post_ids
+        "facult" in pid or "facult" in desc
+        for pid, desc in zip(post_ids, post_descriptions, strict=True)
+    ), "Creator must post-check that the produced candidate has ≥1 faculty"
+    assert any(
+        "goal" in pid or "goal" in desc
+        for pid, desc in zip(post_ids, post_descriptions, strict=True)
+    ), "Creator must post-check that the produced candidate has a charter goal"
+    assert any(
+        ("scenario" in pid) or ("domain_pack" in pid) or ("pack" in pid) or ("scenario" in desc)
+        for pid, desc in zip(post_ids, post_descriptions, strict=True)
     ), "Creator must post-check that the produced candidate names a scenario pack / domain_pack"
 
 

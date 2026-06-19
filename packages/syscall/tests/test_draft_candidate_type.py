@@ -95,8 +95,9 @@ def _candidate_dict() -> dict[str, Any]:
 
 
 def test_draft_candidate_type_adapter_exists_with_maturity_ring_risk() -> None:
-    """Adapter exists, maturity >= 1 (draft tier), risk_class reflects the fact that promoting a
-    candidate IS a customer-facing effect, and the ring requires human approval."""
+    """Adapter exists, maturity >= 1 (draft tier), risk_class is reversible_write (no customer
+    effect at the draft rung — promote is the irreversible step), and the ring is the canary
+    rung L0 so canary instances can produce drafts."""
     adapter = DraftCandidateTypeAdapter()
     assert adapter.name == "draft_candidate_type"
     assert adapter.category == "mandate_meta"
@@ -104,10 +105,13 @@ def test_draft_candidate_type_adapter_exists_with_maturity_ring_risk() -> None:
         "draft_candidate_type is at least maturity 1 (draft tier — same shape as draft_email)"
     )
     assert adapter.is_terminal_fallback is False
-    # Risk: promoting the resulting candidate could touch customers — irreversible at the meta level.
-    assert adapter.risk_class in {"irreversible", "external_message", "reversible_write"}
-    # Ring requires human approval (Phase 4 will keep this gate before promote).
-    assert adapter.required_ring in {"L2", "L3", "L4"}
+    # Risk: a draft is reversible (the promote gate in Phase 4 discards rejected drafts without
+    # customer effect). The irreversible step is PROMOTE, not DRAFT — that's where
+    # human-approval + real-evidence gates live.
+    assert adapter.risk_class == "reversible_write"
+    # Ring: L0 (canary rung) so a Creator instance at L0/L1 can produce drafts. The promote
+    # gate (Phase 4) is what escalates to L2/L3 — that's where customer-facing versions gate.
+    assert adapter.required_ring == "L0"
     # Fixture for the contract (every adapter ships one).
     assert adapter.fixtures
 

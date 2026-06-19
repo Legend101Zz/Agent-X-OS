@@ -532,6 +532,19 @@ class Phase1RunInvoker:
             return None, outcome.result
         if request.risk_class == "read" and outcome.result.status == "ok":
             _apply_read_result(ctx, request, outcome.result.output)
+        # Expose the most recent non-error SyscallResult on the scratchpad so playbooks (e.g. the
+        # Creator's ``creator_playbook``) can react to a draft_candidate_type result without
+        # the playbook needing to know the gateway's receipt-store shape. We only set this when
+        # status == "ok" — error results are already surfaced through the Escalate faculty path.
+        if outcome.result.status == "ok" and request.name != "lead_research_batch":
+            ctx.scratchpad["last_receipt"] = {
+                "syscall": request.name,
+                "idempotency_key": request.idempotency_key,
+                "args": dict(request.args),
+                "output": dict(outcome.result.output),
+                "fulfilled_by": outcome.result.fulfilled_by,
+                "maturity_used": outcome.result.maturity_used,
+            }
         return None, outcome.result
 
 

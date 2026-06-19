@@ -14,6 +14,7 @@ from typing import cast
 
 from agentx_contracts.faculty import Faculty, HarnessAdapterSpec
 from agentx_contracts.jsontypes import JsonObject
+
 from agentx_mandate.harness import FacultyContext, HarnessAction, Think
 
 FACULTY = Faculty(

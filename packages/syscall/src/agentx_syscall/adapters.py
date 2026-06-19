@@ -26,7 +26,6 @@ from agentx_contracts import (
     TenantAuth,
     VerifyOutcome,
 )
-from agentx_contracts.faculty import FacultyBinding
 from agentx_contracts.mandate import MandateType
 from agentx_contracts.security import Credential
 
@@ -732,9 +731,12 @@ class DraftCandidateTypeAdapter(_AdapterBase):
       - **#4 (no brain in the live kernel):** the adapter is a pure transformer (dict → typed
         MandateType). It does not run an autonomous loop.
 
-    The adapter registers at ``required_ring='L2'`` (human approval before promote — same ring
-    as ``draft_email`` and ``send_email``). Risk class is ``irreversible`` because promoting the
-    resulting candidate could touch customers; we keep the draft rung conservative.
+    The adapter registers at ``required_ring='L0'`` (a canary rung — same as ``read_url`` and
+    ``lead_research_batch``). The draft has NO live customer effect: the adapter has no catalog
+    write paths, no network calls, and the resulting candidate stays in the receipt until Phase 4's
+    promote gate escalates it to L2/L3 (which is the irreversible step).
+    Risk class is ``reversible_write`` — a draft that gets rejected by the promote gate is just
+    discarded, no customer-facing effect to undo.
     """
 
     def __init__(self) -> None:
@@ -743,8 +745,8 @@ class DraftCandidateTypeAdapter(_AdapterBase):
             name="draft_candidate_type",
             category="mandate_meta",
             maturity_level=1,
-            risk_class="irreversible",
-            required_ring="L2",
+            risk_class="reversible_write",
+            required_ring="L0",
             tenant_auth="manual",
             fixtures=[
                 SyscallTestCase(
@@ -792,13 +794,24 @@ def _materialise_candidate(args: Mapping[str, Any]) -> MandateType:
     from agentx_contracts.faculty import FacultyBinding as _FacultyBinding
     from agentx_contracts.mandate import (
         Charter as _Charter,
+    )
+    from agentx_contracts.mandate import (
         Condition as _Condition,
+    )
+    from agentx_contracts.mandate import (
         DomainPackRef as _DomainPackRef,
+    )
+    from agentx_contracts.mandate import (
         MandateType as _MandateType,
+    )
+    from agentx_contracts.mandate import (
         SettlementRules as _SettlementRules,
+    )
+    from agentx_contracts.mandate import (
         VerificationSuite as _VerificationSuite,
     )
-    from agentx_contracts.verification import Rubric as _Rubric, RubricCriterion as _RubricCriterion
+    from agentx_contracts.verification import Rubric as _Rubric
+    from agentx_contracts.verification import RubricCriterion as _RubricCriterion
 
     def _opt(args: Mapping[str, Any], key: str, default: str) -> str:
         raw = args.get(key)
