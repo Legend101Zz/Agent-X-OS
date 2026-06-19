@@ -39,6 +39,7 @@ import { FoundryView } from "./foundry-view";
 import { InstanceFile } from "./instance-file";
 import { LedgerView } from "./ledger-view";
 import { RunDetail } from "./run-detail";
+import { StudioView } from "./studio-view";
 import {
   classNames,
   SourceBadge,
@@ -48,6 +49,28 @@ import {
   type ToastTone,
   type ViewId,
 } from "./shared";
+
+type ShellMode = "studio" | "operator";
+
+const SHELL_MODE_STORAGE_KEY = "agentx.shellMode";
+
+function getShellMode(): ShellMode {
+  if (typeof window === "undefined") return "studio";
+  try {
+    return window.localStorage.getItem(SHELL_MODE_STORAGE_KEY) === "operator" ? "operator" : "studio";
+  } catch {
+    return "studio";
+  }
+}
+
+function setShellMode(value: ShellMode) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SHELL_MODE_STORAGE_KEY, value);
+  } catch {
+    /* ignore — localStorage may be unavailable */
+  }
+}
 
 const navItems: Array<{
   id: ViewId;
@@ -117,12 +140,19 @@ export function OperatorDashboard() {
   const [apiBaseUrl, setApiBaseUrl] = useState<string>(
     process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000",
   );
-  const { connected: journalConnected, latestEvent } = useJournalStream({ baseUrl: apiBaseUrl });
+  const { connected: journalConnected, events: journalEvents, latestEvent } = useJournalStream({ baseUrl: apiBaseUrl });
+  const [mode, setMode] = useState<ShellMode>("studio");
 
   useEffect(() => {
     setOperatorTokenState(getOperatorToken());
     const stored = getOperatorToken();
     setOperatorTokenState(stored);
+    setMode(getShellMode());
+  }, []);
+
+  const changeMode = useCallback((next: ShellMode) => {
+    setMode(next);
+    setShellMode(next);
   }, []);
 
   const refresh = useCallback(
@@ -248,6 +278,15 @@ export function OperatorDashboard() {
       setRunDetails((current) => ({ ...current, [runId]: result.data }));
     },
     [apiBaseUrl],
+  );
+
+  // Studio terminus: flip to the operator god-view and open the per-business Business File.
+  const openBusinessFile = useCallback(
+    (instanceId: string) => {
+      changeMode("operator");
+      void selectInstance(instanceId);
+    },
+    [changeMode, selectInstance],
   );
 
   const postCommand = useCallback(
@@ -380,6 +419,51 @@ export function OperatorDashboard() {
     [recordCommand],
   );
 
+  const modeToggle = (
+    <div className="mode-toggle" role="group" aria-label="Shell mode">
+      <button
+        className={classNames("mode-toggle-btn", mode === "studio" && "active")}
+        onClick={() => changeMode("studio")}
+        type="button"
+      >
+        Studio
+      </button>
+      <button
+        className={classNames("mode-toggle-btn", mode === "operator" && "active")}
+        onClick={() => changeMode("operator")}
+        type="button"
+      >
+        Operator
+      </button>
+    </div>
+  );
+
+  const ledgerBar = (
+    <div className="bottom-ledger">
+      <div className="ledger-summary">
+        <GitBranchPlus size={15} />
+        <span>{safeData.overview.last_commit_at}</span>
+        <strong>{safeData.journal[0]?.title}</strong>
+        <span className={classNames("journal-stream-status", journalConnected && "connected")}>
+          {journalConnected ? "SSE live" : "8s fallback"}
+        </span>
+      </div>
+      <div className="recent-command-log" aria-label="Recent manager commands">
+        {recentCommands.length === 0 ? (
+          <span>No manager commands in this session.</span>
+        ) : recentCommands.map((command) => (
+          <span className={classNames("recent-command", `toast-${command.tone}`)} key={command.id}>
+            <time dateTime={command.timestamp}>
+              {new Date(command.timestamp).toLocaleTimeString("en-IN", { hour12: false })}
+            </time>
+            <strong>{command.label}</strong>
+            <span>{command.status}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+
   if (disconnected) {
     return (
       <main className="operator-shell disconnected">
@@ -398,6 +482,55 @@ export function OperatorDashboard() {
             <RefreshCw size={16} /> Retry
           </button>
         </aside>
+      </main>
+    );
+  }
+
+  if (mode === "studio") {
+    return (
+      <main className="studio-shell">
+        <div className="atmosphere" />
+        <header className="studio-topbar">
+          <div className="studio-brand">
+            <Command size={22} />
+            <span>Agent-X</span>
+            <em>Studio</em>
+          </div>
+          <div className="top-actions">
+            {modeToggle}
+            <StatusPill label={safeData.health.status} tone={safeData.health.status === "ok" ? "good" : "warn"} />
+            <SourceBadge source={sourceMode} />
+            <span className="clock">{clock}</span>
+            <input
+              className="studio-token-input"
+              type="password"
+              aria-label="Operator token"
+              placeholder="operator token"
+              defaultValue={operatorToken}
+              onChange={(event) => {
+                const next = event.target.value.trim();
+                setOperatorToken(next);
+                setOperatorTokenState(next);
+              }}
+            />
+            <button className="icon-button" onClick={() => void refresh()} title="Refresh" type="button">
+              {loading ? <Loader2 className="spin" size={17} /> : <RefreshCw size={17} />}
+            </button>
+          </div>
+        </header>
+
+        <StudioView
+          data={safeData}
+          apiBaseUrl={apiBaseUrl}
+          operatorToken={operatorToken}
+          events={journalEvents}
+          onRefresh={() => refresh({ silent: true })}
+          pushToast={pushToast}
+          onOpenBusinessFile={openBusinessFile}
+        />
+
+        <ToastStack onDismiss={dismissToast} toasts={toasts} />
+        {ledgerBar}
       </main>
     );
   }
@@ -529,6 +662,7 @@ export function OperatorDashboard() {
             <h1>Business OS Control Room</h1>
           </div>
           <div className="top-actions">
+            {modeToggle}
             <StatusPill label={safeData.health.status} tone={safeData.health.status === "ok" ? "good" : "warn"} />
             <SourceBadge source={sourceMode} />
             <span className="clock">{clock}</span>
@@ -543,29 +677,7 @@ export function OperatorDashboard() {
 
       <ToastStack onDismiss={dismissToast} toasts={toasts} />
 
-      <div className="bottom-ledger">
-        <div className="ledger-summary">
-          <GitBranchPlus size={15} />
-          <span>{safeData.overview.last_commit_at}</span>
-          <strong>{safeData.journal[0]?.title}</strong>
-          <span className={classNames("journal-stream-status", journalConnected && "connected")}>
-            {journalConnected ? "SSE live" : "8s fallback"}
-          </span>
-        </div>
-        <div className="recent-command-log" aria-label="Recent manager commands">
-          {recentCommands.length === 0 ? (
-            <span>No manager commands in this session.</span>
-          ) : recentCommands.map((command) => (
-            <span className={classNames("recent-command", `toast-${command.tone}`)} key={command.id}>
-              <time dateTime={command.timestamp}>
-                {new Date(command.timestamp).toLocaleTimeString("en-IN", { hour12: false })}
-              </time>
-              <strong>{command.label}</strong>
-              <span>{command.status}</span>
-            </span>
-          ))}
-        </div>
-      </div>
+      {ledgerBar}
     </main>
   );
 }

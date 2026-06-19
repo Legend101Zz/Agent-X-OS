@@ -1285,3 +1285,738 @@ h3 {
     grid-template-columns: 1fr;
   }
 }
+
+/* ===================================================================================== */
+/* Operator Studio — the driver's console (a guided drive→send seat over the same engine) */
+/* Honors the control-room identity (globals vars + keyframes); a "signal down a wire" spine. */
+/* ===================================================================================== */
+
+.mode-toggle {
+  display: inline-flex;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.mode-toggle-btn {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 5px 13px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mode-toggle-btn.active {
+  background: rgba(182, 255, 99, 0.16);
+  color: var(--green);
+}
+
+/* --- shell + topbar ------------------------------------------------------------------- */
+.studio-shell {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+.studio-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line);
+  background: rgba(8, 10, 8, 0.86);
+  padding: 14px 24px;
+  backdrop-filter: blur(18px);
+}
+
+.studio-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--green);
+  font-family: var(--font-mono);
+  font-size: 0.92rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.studio-brand em {
+  border: 1px solid rgba(99, 231, 213, 0.5);
+  border-radius: 999px;
+  padding: 1px 8px;
+  color: var(--cyan);
+  font-size: 0.68rem;
+  font-style: normal;
+}
+
+.studio-token-input {
+  min-height: 30px;
+  width: 150px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(5, 8, 6, 0.78);
+  color: var(--text);
+  padding: 0 12px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.studio-token-input::placeholder {
+  color: var(--muted-2);
+}
+
+/* --- the StudioView container --------------------------------------------------------- */
+.studio {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 22px;
+  width: min(960px, 100%);
+  margin: 0 auto;
+  padding: 30px 24px 84px;
+  align-content: start;
+}
+
+.studio-mono {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+.studio-dim {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted-2);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+}
+
+.studio-empty {
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.18);
+  padding: 18px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.studio-token-warn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(244, 188, 85, 0.5);
+  border-radius: var(--radius);
+  background: rgba(244, 188, 85, 0.08);
+  padding: 10px 14px;
+  color: var(--amber);
+  font-size: 0.84rem;
+}
+
+/* --- drive track (the spine) ---------------------------------------------------------- */
+.studio-track {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, rgba(182, 255, 99, 0.05) 1px, transparent 1px) 0 0 / 24px 24px,
+    rgba(8, 10, 8, 0.6);
+  padding: 10px 18px;
+}
+
+.studio-node {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 1 1 0;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted-2);
+  cursor: default;
+  padding: 4px 6px;
+}
+
+.studio-node.is-reachable {
+  cursor: pointer;
+}
+
+.studio-node:not(:last-child)::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  margin: 0 8px;
+  background: var(--line);
+}
+
+.studio-node.is-done:not(:last-child)::after {
+  background: linear-gradient(90deg, var(--green), var(--cyan));
+}
+
+.studio-node-dot {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.3);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+.studio-node-label {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.studio-node.is-done .studio-node-dot {
+  border-color: rgba(182, 255, 99, 0.6);
+  color: var(--green);
+}
+
+.studio-node.is-active {
+  color: var(--green);
+}
+
+.studio-node.is-active .studio-node-dot {
+  border-color: var(--green);
+  background: rgba(182, 255, 99, 0.16);
+  color: var(--green);
+  animation: approval-breathe 3.2s ease-in-out infinite;
+}
+
+/* --- console card --------------------------------------------------------------------- */
+.studio-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background:
+    radial-gradient(120% 80% at 0% 0%, rgba(99, 231, 213, 0.06), transparent 55%),
+    var(--panel);
+  box-shadow: 0 18px 40px var(--shadow);
+  padding: 22px;
+  display: grid;
+  gap: 18px;
+  animation: floor-in 460ms ease both;
+}
+
+.studio-card-head h2 {
+  font-family: var(--font-display);
+  font-size: clamp(1.4rem, 2.4vw, 2rem);
+  margin-top: 2px;
+}
+
+.studio-armed {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 8px 0 0;
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+/* --- pick stage ----------------------------------------------------------------------- */
+.studio-pick {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+}
+
+.studio-garage-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.studio-garage-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(238, 245, 223, 0.035);
+  color: var(--green);
+  cursor: pointer;
+  padding: 12px;
+  text-align: left;
+  animation: floor-in 460ms ease both;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+.studio-garage-card:hover {
+  border-color: var(--line-strong);
+  background: rgba(182, 255, 99, 0.08);
+}
+
+.studio-garage-card strong {
+  display: block;
+  color: var(--text);
+}
+
+.studio-garage-card span {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+}
+
+.studio-ignite {
+  display: grid;
+  gap: 11px;
+  align-content: start;
+  border-left: 1px solid var(--line);
+  padding-left: 18px;
+}
+
+.studio-field {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+}
+
+.studio-field input,
+.studio-field select {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(5, 8, 6, 0.78);
+  color: var(--text);
+  padding: 0 10px;
+  font-family: var(--font-body);
+  text-transform: none;
+}
+
+.studio-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 10px;
+}
+
+.studio-ignition-readout {
+  margin: 4px 0 0;
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+}
+
+.studio-ignition-readout span {
+  color: var(--green);
+}
+
+/* --- buttons -------------------------------------------------------------------------- */
+.studio-primary,
+.studio-next,
+.studio-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  padding: 0 16px;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+}
+
+.studio-primary {
+  border: 1px solid rgba(182, 255, 99, 0.65);
+  background: rgba(182, 255, 99, 0.13);
+  color: var(--green);
+}
+
+.studio-primary:hover {
+  background: rgba(182, 255, 99, 0.2);
+}
+
+.studio-next {
+  border: 1px solid rgba(99, 231, 213, 0.5);
+  background: rgba(99, 231, 213, 0.1);
+  color: var(--cyan);
+}
+
+.studio-back {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+}
+
+.studio-primary.is-disabled,
+.studio-primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.studio-send {
+  border-color: rgba(182, 255, 99, 0.8);
+  background: rgba(182, 255, 99, 0.2);
+}
+
+/* --- find stage (oscilloscope) -------------------------------------------------------- */
+.studio-find {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.studio-run-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.studio-pulse {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--muted-2);
+}
+
+.studio-pulse.is-live {
+  background: var(--green);
+  box-shadow: 0 0 0 0 rgba(182, 255, 99, 0.5);
+  animation: approval-breathe 1.4s ease-in-out infinite;
+}
+
+.studio-scope {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background:
+    repeating-linear-gradient(0deg, rgba(182, 255, 99, 0.04) 0 1px, transparent 1px 5px),
+    rgba(0, 0, 0, 0.34);
+  padding: 14px;
+}
+
+.studio-scope-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 10px;
+  color: var(--green);
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+}
+
+.studio-trace {
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+}
+
+.studio-trace li {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid rgba(238, 245, 223, 0.06);
+  padding: 5px 2px;
+  color: var(--green);
+  animation: floor-in 360ms ease both;
+}
+
+.studio-trace-kind {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text);
+}
+
+/* --- leads stage ---------------------------------------------------------------------- */
+.studio-leads {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.studio-lead {
+  display: grid;
+  gap: 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(238, 245, 223, 0.035);
+  padding: 14px;
+  animation: floor-in 460ms ease both;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+.studio-lead-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.studio-lead-top > div {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--green);
+}
+
+.studio-lead-top strong {
+  color: var(--text);
+}
+
+.studio-lead-pred {
+  margin: 0;
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+}
+
+.studio-lead-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.studio-dial {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+  min-width: 72px;
+}
+
+.studio-dial strong {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--green);
+}
+
+.studio-dial .progress-rail {
+  width: 64px;
+}
+
+.studio-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  border-top: 1px solid rgba(238, 245, 223, 0.06);
+  padding-top: 9px;
+}
+
+.studio-cite {
+  border: 1px solid rgba(99, 231, 213, 0.34);
+  border-radius: 999px;
+  padding: 2px 9px;
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
+
+/* --- draft stage (compose console) ---------------------------------------------------- */
+.studio-compose {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.34);
+  overflow: hidden;
+}
+
+.studio-compose-line {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 14px;
+}
+
+.studio-compose-line .studio-mono {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.studio-compose-body {
+  padding: 16px;
+  color: var(--text);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.studio-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--green);
+  animation: studio-blink 1.1s step-end infinite;
+}
+
+.studio-gated {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.studio-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 11px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text);
+}
+
+.studio-posture {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.studio-posture.is-live {
+  border: 1px solid rgba(182, 255, 99, 0.5);
+  background: rgba(182, 255, 99, 0.08);
+  color: var(--green);
+}
+
+.studio-posture.is-staged {
+  border: 1px solid rgba(244, 188, 85, 0.5);
+  background: rgba(244, 188, 85, 0.08);
+  color: var(--amber);
+}
+
+/* --- send stage (receipt) ------------------------------------------------------------- */
+.studio-sending {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: var(--muted);
+  padding: 18px 4px;
+  font-family: var(--font-mono);
+  font-size: 0.86rem;
+}
+
+.studio-receipt {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px;
+}
+
+.studio-receipt.is-good {
+  border-color: rgba(182, 255, 99, 0.5);
+  background: rgba(182, 255, 99, 0.06);
+}
+
+.studio-receipt.is-warn {
+  border-color: rgba(244, 188, 85, 0.5);
+  background: rgba(244, 188, 85, 0.06);
+}
+
+.studio-receipt-stamp {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 8px 14px;
+}
+
+.studio-receipt.is-good .studio-receipt-stamp {
+  color: var(--green);
+}
+
+.studio-receipt.is-warn .studio-receipt-stamp {
+  color: var(--amber);
+}
+
+.studio-receipt-stamp strong {
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+}
+
+/* --- nav rows + foot ------------------------------------------------------------------ */
+.studio-nav-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.studio-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+
+.studio-foot .studio-dim strong {
+  font-family: var(--font-mono);
+}
+
+@keyframes studio-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .studio-pick {
+    grid-template-columns: 1fr;
+  }
+
+  .studio-ignite {
+    border-left: 0;
+    padding-left: 0;
+    border-top: 1px solid var(--line);
+    padding-top: 16px;
+  }
+
+  .studio-node-label {
+    display: none;
+  }
+
+  .studio {
+    padding: 20px 14px 90px;
+  }
+}

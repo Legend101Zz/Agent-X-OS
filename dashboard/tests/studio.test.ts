@@ -177,6 +177,30 @@ test("mapScoredLeads returns an empty array when there are no claimed facts", ()
   assert.deepEqual(mapScoredLeads({}), []);
 });
 
+test("mapScoredLeads also reads an instance-detail 'facts' array (durable leads)", () => {
+  // GET /instances/{id} returns committed HEAP_FACT docs under `facts` — same Fact shape as
+  // a settled run's claimed_facts. The Studio reuses one mapper for both sources.
+  const instanceDetail = {
+    instance: { id: "inst_acme_123" },
+    facts: [
+      {
+        subject: "lead_nova",
+        predicate: "qualified_lead_score",
+        object: "0.71",
+        confidence: 0.71,
+        provenance: { run_id: "run_2", evidence: ["https://nova.example/about"], note: "expansion signal" },
+      },
+    ],
+  };
+
+  const leads = mapScoredLeads(instanceDetail);
+
+  assert.equal(leads.length, 1);
+  assert.equal(leads[0].lead, "lead_nova");
+  assert.equal(leads[0].score, 0.71);
+  assert.deepEqual(leads[0].evidence, ["https://nova.example/about"]);
+});
+
 // --- deriveSendPosture -------------------------------------------------------------------
 
 test("deriveSendPosture is live when a send_email adapter is registered", () => {

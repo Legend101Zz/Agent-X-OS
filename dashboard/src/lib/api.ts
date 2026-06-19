@@ -460,9 +460,16 @@ export async function approveRun(
   };
 }
 
-/** Map a ``GET /runs/{id}`` payload's ``claimed_facts`` into scored leads with cited evidence. */
+/**
+ * Map kernel ``Fact`` docs into scored leads with cited evidence. Reads a settled run's
+ * ``claimed_facts`` (``GET /runs/{id}``) or, falling back, a committed instance's ``facts``
+ * (``GET /instances/{id}``) — both carry the same Fact shape (invariant #1: every fact cites
+ * its provenance).
+ */
 export function mapScoredLeads(raw: unknown): ScoredLead[] {
-  return unwrapArray(asRecord(raw).claimed_facts, "facts").map((item) => {
+  const record = asRecord(raw);
+  const source = Array.isArray(record.claimed_facts) ? record.claimed_facts : record.facts;
+  return unwrapArray(source, "facts").map((item) => {
     const value = asRecord(item);
     const provenance = asRecord(value.provenance);
     const parsed = Number.parseFloat(stringValue(value.object, ""));
@@ -485,6 +492,19 @@ export function deriveSendPosture(capabilities: Capability[]): SendPosture {
     (capability) => capability.syscall === "send_email" || capability.id === "send_email",
   );
   return hasSendEmail ? "live" : "staged";
+}
+
+/** Raw ``GET /runs/{id}`` JSON (un-mapped) so the Studio can read ``claimed_facts`` via mapScoredLeads. */
+export function fetchRunRaw(runId: string, options: RequestOptions = {}): Promise<ApiResult<unknown>> {
+  return fetchJson<unknown>(`/runs/${encodeURIComponent(runId)}`, {}, options);
+}
+
+/** Raw ``GET /instances/{id}`` JSON (un-mapped) so the Studio can read committed ``facts``. */
+export function fetchInstanceRaw(
+  instanceId: string,
+  options: RequestOptions = {},
+): Promise<ApiResult<unknown>> {
+  return fetchJson<unknown>(`/instances/${encodeURIComponent(instanceId)}`, {}, options);
 }
 
 function mapHealth(raw: unknown): HealthStatus {
