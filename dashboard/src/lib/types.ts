@@ -150,6 +150,62 @@ export interface EvalCase {
   promotion: "blocked" | "eligible";
 }
 
+// --- Swarm REPL view models (Session I) ----------------------------------------------------
+// These are DASHBOARD view models, not contracts. The packages/contracts seam stays frozen; these
+// only shape the JSON that POST /commands/run-swarm returns for the §5 timeline.
+
+export interface SwarmTraceEvent {
+  seq: number;
+  ts: string;
+  kind: string;
+  summary: string;
+  detail: Record<string, unknown>;
+}
+
+export interface ScorecardCriterionView {
+  criterion_id: string;
+  passed: boolean;
+  score: number;
+  comment?: string;
+}
+
+export interface ScorecardView {
+  run_id: string;
+  rubric_name: string;
+  score: number;
+  passed: boolean;
+  origin: string;
+  criteria: ScorecardCriterionView[];
+  failure_reasons: string[];
+  judge_comments: string[];
+}
+
+export interface GateDecisionView {
+  allowed: boolean;
+  reasons: string[];
+  live_ring: string | null;
+}
+
+export interface SwarmRunReport {
+  supported: boolean;
+  run_id: string;
+  type_ref: string;
+  pack_id: string;
+  events: SwarmTraceEvent[];
+  scorecard: ScorecardView | null;
+  gate_decision: GateDecisionView | null;
+  eval_case_id: string;
+  message?: string;
+}
+
+export interface RunSwarmPayload {
+  type_ref: string;
+  pack_id: string;
+  ring?: string;
+  judge_live?: boolean;
+  actor?: string;
+}
+
 export interface ManualTask {
   id: string;
   instance_id: string;

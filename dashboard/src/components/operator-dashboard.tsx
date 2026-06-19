@@ -449,7 +449,14 @@ export function OperatorDashboard() {
       case "ledger":
         return <LedgerView data={safeData} />;
       case "foundry":
-        return <FoundryView data={safeData} />;
+        return (
+          <FoundryView
+            data={safeData}
+            operatorToken={operatorToken}
+            apiBaseUrl={apiBaseUrl}
+            onRefresh={() => void refresh()}
+          />
+        );
       case "floor":
       default:
         return <FloorView data={safeData} onSelectInstance={selectInstance} onSelectRun={selectRun} />;
@@ -466,7 +473,8 @@ export function OperatorDashboard() {
         </div>
         <nav>
           {navItems
-            .filter((item) => item.id !== "foundry" || safeData.evalCases.length > 0)
+            // Foundry is always reachable now (Session I): the empty state is a "run your first
+            // swarm" CTA, not a hidden nav item.
             .map((item) => {
               const Icon = item.icon;
               return (

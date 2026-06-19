@@ -19,18 +19,6 @@ CORE_GAPS: Final[list[JsonObject]] = [
         ),
     },
     {
-        "id": "command.run_swarm",
-        "title": "Run swarm test from dashboard",
-        "detail": (
-            "Swarm tests exist in packages/swarm (SimAdapter + promptfoo judge + PromotionGate) "
-            "but no HTTP command yet drives a swarm pack + captures scorecards into EVAL_CASE."
-        ),
-        "needed_core_surface": (
-            "Journaled run_swarm command that calls the existing swarm runner and persists the "
-            "resulting scorecard with origin='synthetic'."
-        ),
-    },
-    {
         "id": "command.promote",
         "title": "Promote mandate version",
         "detail": (
@@ -76,6 +64,7 @@ KNOWN_CLOSED: Final[frozenset[str]] = frozenset(
         "command.instantiate",
         "command.trigger_run",
         "command.reject_approval",
+        "command.run_swarm",
         "projection.manual_queue_durable",
     }
 )

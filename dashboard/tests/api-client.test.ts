@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildApiUrl, fetchJson, loadDashboardData } from "../src/lib/api";
+import { buildApiUrl, fetchJson, loadDashboardData, runSwarm } from "../src/lib/api";
 
 test("buildApiUrl preserves path and omits empty query values", () => {
   const url = buildApiUrl("http://127.0.0.1:8000", "/runs", {
@@ -174,4 +174,63 @@ test("loadDashboardData maps the FastAPI envelope into dashboard view models", a
   assert.equal(data.capabilities[0].maturity, "live");
   assert.equal(data.manualQueue[0].title, "queue_manual_action");
   assert.equal(data.coreGaps[0].id, "command.instantiate");
+});
+
+test("runSwarm maps the swarm report into the timeline view model", async () => {
+  const fetcher = async () =>
+    new Response(
+      JSON.stringify({
+        supported: true,
+        run_id: "run_sim_1",
+        type_ref: "lead-finder@0.1.0",
+        pack_id: "indian_b2b_leads_v1",
+        eval_case_id: "eval_run_sim_1",
+        trace: {
+          run_id: "run_sim_1",
+          events: [
+            { seq: 0, ts: "2026-06-19T00:00:00Z", kind: "thought", summary: "hydrated", detail: {} },
+            {
+              seq: 1,
+              ts: "2026-06-19T00:00:01Z",
+              kind: "syscall_result",
+              summary: "draft_email",
+              detail: { fulfilled_by: "sim_adapter" },
+            },
+          ],
+          scorecard: { run_id: "run_sim_1", score: 1, passed: true, origin: "synthetic" },
+        },
+        scorecard: {
+          run_id: "run_sim_1",
+          rubric_name: "lead_quality",
+          score: 1,
+          passed: true,
+          origin: "synthetic",
+          criteria: [{ criterion_id: "research", passed: true, score: 1, comment: "ok" }],
+          failure_reasons: [],
+          judge_comments: ["deterministic fallback"],
+        },
+        gate_decision: {
+          allowed: false,
+          reasons: ["synthetic-only evidence cannot promote customer-facing versions"],
+          live_ring: null,
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+
+  const result = await runSwarm(
+    { type_ref: "lead-finder@0.1.0", pack_id: "indian_b2b_leads_v1", ring: "L2" },
+    { baseUrl: "http://api.test", token: "swarm-token", fetcher },
+  );
+
+  assert.equal(result.source, "api");
+  assert.equal(result.data.run_id, "run_sim_1");
+  assert.equal(result.data.events.length, 2);
+  assert.equal(result.data.events[1].kind, "syscall_result");
+  assert.equal(result.data.events[1].summary, "draft_email");
+  assert.equal(result.data.events[1].detail.fulfilled_by, "sim_adapter");
+  assert.equal(result.data.scorecard?.passed, true);
+  assert.equal(result.data.scorecard?.origin, "synthetic");
+  assert.equal(result.data.gate_decision?.allowed, false);
+  assert.equal(result.data.eval_case_id, "eval_run_sim_1");
 });
