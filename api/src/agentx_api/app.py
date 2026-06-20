@@ -165,10 +165,37 @@ class PromoteCommand(BaseModel):
 
 
 def _env_flag(name: str) -> bool:
+    """Read a bool flag. Prefers ``get_settings()`` (pydantic-settings, reads .env) so this works
+    whether or not the start script manually exported the var into the process env. Falls back to
+    ``os.getenv`` for the rare case where the Settings field doesn't exist yet (test fixtures)."""
+    try:
+        from agentx_contracts.config import get_settings
+
+        settings_map = {
+            "AGENTX_API_ALLOW_FIXTURES": "agentx_api_allow_fixtures",
+            "RUN_LIVE_EMAIL": "run_live_email",
+        }
+        attr = settings_map.get(name)
+        if attr is not None:
+            return bool(getattr(get_settings(), attr, False))
+    except Exception:  # noqa: BLE001 - never fail flag reads (settings may be uninitialised)
+        pass
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _env_list(name: str) -> list[str]:
+    """Read a comma-separated list. Prefers ``get_settings()`` (typed .env loader) over
+    ``os.getenv`` so the start script doesn't have to manually export .env into the process env."""
+    try:
+        from agentx_contracts.config import get_settings
+
+        settings_map = {"AGENTX_CORS_ORIGINS": "agentx_cors_origins"}
+        attr = settings_map.get(name)
+        if attr is not None:
+            raw = str(getattr(get_settings(), attr, "") or "")
+            return [item.strip() for item in raw.split(",") if item.strip()]
+    except Exception:  # noqa: BLE001
+        pass
     raw = os.getenv(name, "").strip()
     if not raw:
         return []
@@ -180,8 +207,19 @@ def _operator_token() -> str:
 
     When the env var is unset the API still works but every command route returns 401 — fail
     closed until the operator explicitly opts into the local-only trust boundary by setting a
-    token.
+    token. Prefers ``get_settings()`` (reads .env) over ``os.getenv`` so the start script doesn't
+    have to manually export the var.
     """
+    try:
+        from agentx_contracts.config import get_settings
+
+        tok = getattr(get_settings(), "agentx_operator_token", None)
+        if tok is not None:
+            secret = tok.get_secret_value() if hasattr(tok, "get_secret_value") else str(tok)
+            if secret.strip():
+                return secret.strip()
+    except Exception:  # noqa: BLE001
+        pass
     return os.getenv("AGENTX_OPERATOR_TOKEN", "").strip()
 
 

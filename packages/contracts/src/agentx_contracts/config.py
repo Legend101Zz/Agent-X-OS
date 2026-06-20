@@ -49,6 +49,23 @@ class Settings(BaseSettings):
     # --- Eval / judge / gate (Codex lane) ---
     promptfoo_api_key: SecretStr | None = None
 
+    # --- Email send (Phase 1 — Gmail SMTP via the operator's App Password) ---
+    # `email_transports.py` reads these directly via its own dotenv dance (the SMTP path was added
+    # in a later session and predates the Settings widening). We declare them here too so the
+    # typed loader sees them and `get_settings()` is the single source of truth.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: SecretStr | None = None
+    email_from: str = ""
+    email_from_name: str = ""
+    run_live_email: bool = False  # gated master switch for real outbound send
+
+    # --- API runtime controls (read by api/app.py via os.getenv OR get_settings()) ---
+    agentx_api_allow_fixtures: bool = False  # if True, dashboard may fall back to fake data
+    agentx_cors_origins: str = ""  # comma-separated; empty = same-origin only (browser will block cross-origin)
+    agentx_operator_token: SecretStr | None = None  # bearer required for /commands/*
+
     # --- Runtime ---
     agentx_env: Literal["dev", "test", "prod"] = "dev"
 

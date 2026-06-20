@@ -120,7 +120,17 @@ class DashboardState:
                 raw_id = instance.get("id")
                 if isinstance(raw_id, str):
                     events.extend(await self.journal.read_instance(raw_id))
-            events.sort(key=lambda event: (event.ts, event.instance_id, event.seq))
+            # Normalise tz-awareness before sorting: BSON datetimes from Mongo are UTC-aware, but
+            # in-memory JournalEvent.ts values created via datetime.now() are naive. Mixing the two
+            # in a sort key raises `TypeError: can't compare offset-naive and offset-aware datetimes`
+            # (real-world bug — surfaced the moment the API went live with mixed sources).
+            def _sort_key(event: JournalEvent) -> tuple[Any, str, int]:
+                ts = event.ts
+                if isinstance(ts, datetime) and ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=UTC)
+                return (ts, event.instance_id, event.seq)
+
+            events.sort(key=_sort_key)
         if kind is not None:
             events = [event for event in events if event.kind == kind]
         return events[-limit:]
@@ -578,7 +588,11 @@ def _summarize_run(run_id: str, events: list[JournalEvent]) -> JsonObject:
     parked_reason: str | None = None
     required_ring: str | None = None
     for event in events:
-        last_ts = max(last_ts, event.ts)
+        # Normalise naive datetimes to UTC-aware so we don't crash on BSON-vs-memory mixes.
+        ts = event.ts
+        if isinstance(ts, datetime) and ts.tzinfo is None:
+            ts = ts.replace(tzinfo=UTC)
+        last_ts = max(last_ts, ts)
         instance_id = event.instance_id or instance_id
         if isinstance(event, RunCreated):
             state_value = "running"
