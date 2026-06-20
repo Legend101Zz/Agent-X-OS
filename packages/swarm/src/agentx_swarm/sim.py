@@ -47,6 +47,7 @@ class SimAdapter:
             SyscallTestCase(name="lead_research_batch", input={"limit": 3}, expect_status="ok"),
             SyscallTestCase(name="read_url", input={"url": "https://example.invalid"}, expect_status="ok"),
             SyscallTestCase(name="draft_email", input={"to": "buyer@example.invalid"}, expect_status="ok"),
+            SyscallTestCase(name="send_email", input={"to": "buyer@example.invalid"}, expect_status="ok"),
             SyscallTestCase(
                 name="queue_manual_action",
                 input={"action": "approve_draft"},
@@ -110,6 +111,16 @@ class SimAdapter:
                 "draft_mode": True,
                 "subject": "Potential fit for your growth workflow",
                 "body": "Synthetic draft only. Requires human approval before any external send.",
+            }
+        if req.name == "send_email":
+            # The wind-tunnel NEVER sends a real email: a send_email in sim is a simulated, gated
+            # outreach (human approval still parks it before this rung in a live run).
+            return {
+                "effect": "simulated",
+                "fingerprint": fingerprint,
+                "simulated_send": True,
+                "subject": "Potential fit for your growth workflow",
+                "body": "Synthetic outreach — simulated send only; no real email left the wind-tunnel.",
             }
         if req.name == "queue_manual_action":
             return {

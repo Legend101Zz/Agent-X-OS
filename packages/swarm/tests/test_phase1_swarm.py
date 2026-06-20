@@ -81,7 +81,7 @@ def test_sim_adapter_can_handle_phase1_syscalls_without_autonomous_loop() -> Non
         ring="L0",
         now=datetime(2026, 6, 17, tzinfo=UTC),
     )
-    names = {"lead_research_batch", "read_url", "draft_email", "queue_manual_action", "mark_outcome"}
+    names = {"lead_research_batch", "read_url", "draft_email", "send_email", "queue_manual_action", "mark_outcome"}
 
     assert {fixture.name for fixture in adapter.fixtures} == names
     for name in names:

@@ -45,10 +45,10 @@ def test_playbook_opens_with_think_then_a_research_read_intent() -> None:
 
 def test_playbook_finishes_when_no_leads_get_fulfilled() -> None:
     # Driven without the run-loop, the research read is never fulfilled, so downstream faculties see
-    # an empty scratchpad: no Claim, no draft, terminate with Finish.
+    # an empty scratchpad: no Claim, no outreach, terminate with Finish.
     actions = list(lead_finder_playbook(_ctx(), _faculties()))
     assert isinstance(actions[-1], Finish)
-    assert not any(isinstance(a, Call) and a.request.name == "draft_email" for a in actions)
+    assert not any(isinstance(a, Call) and a.request.name == "send_email" for a in actions)
 
 
 def test_build_outreach_call_targets_best_actionable_lead_with_grounded_body() -> None:
@@ -73,7 +73,7 @@ def test_build_outreach_call_targets_best_actionable_lead_with_grounded_body() -
     )
     call = build_outreach_call(ctx)
     assert call is not None
-    assert call.request.name == "draft_email"
+    assert call.request.name == "send_email"
     assert call.request.risk_class == "external_message"
     body = str(call.request.args["body"])
     assert "Hi Dr. Asha Kulkarni" in body

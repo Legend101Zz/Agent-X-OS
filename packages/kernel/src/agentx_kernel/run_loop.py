@@ -453,8 +453,18 @@ class Phase1RunInvoker:
         ):
             sender = instance.channel_binding.sender_identity
             existing_args = dict(request.args)
+            changed = False
             if existing_args.get("sender_identity") != sender:
                 existing_args["sender_identity"] = sender
+                changed = True
+            # Phase-1 dogfood default: with no explicit recipient, the outreach goes to the instance's
+            # own sender (review-in-your-own-inbox). A real send can then only ever reach the operator,
+            # never an unverified address — and the founder reviews/forwards it from their own inbox.
+            recipient = existing_args.get("to")
+            if not (isinstance(recipient, str) and recipient.strip()):
+                existing_args["to"] = sender
+                changed = True
+            if changed:
                 request = request.model_copy(update={"args": existing_args})
 
         if request.risk_class == "read" and mode == "sim":

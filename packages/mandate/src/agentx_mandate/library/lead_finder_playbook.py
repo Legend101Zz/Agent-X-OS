@@ -67,43 +67,52 @@ def first_actionable_lead_id(ctx: FacultyContext) -> str | None:
 
 
 def build_outreach_call(ctx: FacultyContext) -> Call | None:
-    """Build the per-lead draft_email Call for the best actionable lead, or None if there is none."""
+    """Build the per-lead ``send_email`` Call for the best actionable lead, or None if there is none.
+
+    The effect is a GATED real send: ``send_email`` is external_message at L2, so at an instance ring
+    below L2 the gateway PARKS it for human approval (the approval card shows this composed email);
+    only on Approve does the resumed run perform the real send via the configured transport. With no
+    transport configured the registry resolves it to the human_task tail (invariant #5). The kernel
+    run-loop stamps the From from the instance's ``ChannelBinding.sender_identity`` (invariant #8) and
+    defaults an unset recipient to that same sender (review-in-your-own-inbox dogfood).
+    """
 
     lead_id = first_actionable_lead_id(ctx)
     if lead_id is None:
         return None
     return Call(
         request=SyscallRequest(
-            name="draft_email",
-            args=_draft_args(ctx, lead_id),
+            name="send_email",
+            args=_outreach_args(ctx, lead_id),
             instance_id=ctx.instance_id,
             run_id=ctx.run_id,
-            idempotency_key=f"{ctx.run_id}:draft_email",
+            idempotency_key=f"{ctx.run_id}:send_email",
             ring=ctx.ring,
             risk_class="external_message",
         )
     )
 
 
-def _draft_args(ctx: FacultyContext, lead_id: str) -> JsonObject:
+def _outreach_args(ctx: FacultyContext, lead_id: str) -> JsonObject:
     company = _lead_value(ctx, lead_id, "company", "name") or lead_id
     contact_name = _lead_value(ctx, lead_id, "contact_name")
     contact_role = _lead_value(ctx, lead_id, "contact_role") or "business owner"
     contact_url = _lead_value(ctx, lead_id, "contact_url") or _lead_value(ctx, lead_id, "url") or ""
     signal = _lead_value(ctx, lead_id, "buying_signal") or "an active growth initiative"
     greeting = contact_name or contact_role
+    # An optional explicit recipient (e.g. a shared ops inbox). When absent, the kernel run-loop fills
+    # ``to`` with the instance's own sender (send-to-self) so the founder reviews/forwards from their
+    # inbox — a real send can then only ever reach the operator, never an unverified address.
+    recipient = ctx.target.get("review_recipient")
     return {
         "lead_id": lead_id,
-        "mode": "draft",
-        "to": "founder-review@agent-x.local",
-        "subject": f"Draft outreach to {company}",
+        "to": recipient if isinstance(recipient, str) and recipient.strip() else "",
+        "subject": f"Quick idea for {company}",
         "body": (
             f"Hi {greeting},\n\n"
             f"I noticed this signal at {company}: {signal.rstrip('.')}. "
-            "We are testing an accountable lead-finding workflow that researches prospects, cites the signal, "
-            "and keeps every outreach message in draft for owner approval. "
-            f"If lead follow-up is a priority, I would value a short conversation. Reference: {contact_url}\n\n"
-            "Draft only — not sent."
+            "We help teams act on prospect signals like this with researched, evidence-cited outreach. "
+            f"If lead follow-up is a priority right now, I'd value a short conversation. Reference: {contact_url}"
         ),
     }
 

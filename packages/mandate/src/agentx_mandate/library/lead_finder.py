@@ -40,7 +40,10 @@ def build_lead_finder_type() -> MandateType:
                     expr="fact:actionable_lead exists",
                 ),
             ],
-            constraints=["read-only research first", "draft email only; never send in Phase 1"],
+            constraints=[
+                "read-only research first",
+                "outreach is sent only after explicit human approval (gated send_email)",
+            ],
             target={"icp": "independent dental clinics", "location": "Pune", "count": 1},
         ),
         faculties=[

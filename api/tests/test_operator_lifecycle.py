@@ -142,16 +142,16 @@ async def test_approvals_endpoint_separate_from_manual_queue_after_park(client: 
         {"instance_id": instance_id, "mode": "sim"},
     )
 
-    # Drain the worker once — the lead-finder OwnHarness playbook parks at draft_email.
+    # Drain the worker once — the lead-finder OwnHarness playbook parks at the gated send_email.
     results = await _drive_worker(client._transport.app)  # type: ignore[attr-defined]
     assert len(results) == 1
     assert results[0].state == "parked"
 
-    # The Approval Inbox is the FIRST-CLASS view that shows the parked draft card.
+    # The Approval Inbox is the FIRST-CLASS view that shows the parked outreach card.
     approvals = (await client.get("/approvals", params={"instance_id": instance_id})).json()
     assert len(approvals["items"]) == 1
     card = approvals["items"][0]
-    assert card["drafted_effect"]["syscall"] == "draft_email"
+    assert card["drafted_effect"]["syscall"] == "send_email"
     assert "idempotency_key" in card["drafted_effect"]
 
     # Manual queue is independent — empty here, since the harness never routed to the human tail.

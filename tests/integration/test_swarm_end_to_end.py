@@ -77,9 +77,9 @@ async def test_swarm_sim_run_judged_and_gate_bars_synthetic_only() -> None:
     assert result.state == "settled", result.state
     assert result.settlement is not None and result.settlement.facts
     assert all(fact.provenance.run_id == result.run_id for fact in result.settlement.facts)
-    # The SimAdapter actually fulfilled the effectful draft_email (proves the run executed on the kernel).
+    # The SimAdapter actually fulfilled the effectful send_email (proves the run executed on the kernel).
     assert any(
-        event.kind == "syscall_result" and event.summary == "draft_email" for event in result.trace.events
+        event.kind == "syscall_result" and event.summary == "send_email" for event in result.trace.events
     )
 
     # --- judge: grade the REAL kernel trace (offline/deterministic path) ---

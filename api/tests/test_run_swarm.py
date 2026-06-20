@@ -78,9 +78,9 @@ async def test_run_swarm_returns_scorecard_gate_and_trace(client: AsyncClient) -
     assert trace["run_id"] == body["run_id"]
     assert trace["events"], "expected a non-empty sim trace timeline"
     assert any(
-        event["kind"] == "syscall_result" and event["summary"] == "draft_email"
+        event["kind"] == "syscall_result" and event["summary"] == "send_email"
         for event in trace["events"]
-    ), "the L2 sim run should fulfil draft_email via the SimAdapter"
+    ), "the L2 sim run should fulfil send_email via the SimAdapter"
 
 
 async def test_run_swarm_persists_exactly_one_synthetic_eval_case(client: AsyncClient) -> None:

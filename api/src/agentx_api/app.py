@@ -106,6 +106,9 @@ class InstantiateCommand(BaseModel):
     business_name: str = Field(min_length=1)
     ring: Ring = "L0"
     target_override: JsonObject | None = None
+    # The per-instance outbound sender identity (invariant #8). When set, the instance gets an email
+    # ChannelBinding so the gated send_email rung can send as THIS sender (and never a shared global).
+    sender_identity: str | None = None
     actor: str = "manager:dashboard"
 
 
@@ -531,6 +534,15 @@ def _install_routes(app: FastAPI) -> None:
                     "charter": mandate.charter.model_copy(update={"target": target_override}),
                 }
             )
+        channel_binding = None
+        if command.sender_identity and command.sender_identity.strip():
+            from agentx_contracts.mandate import ChannelBinding
+
+            channel_binding = ChannelBinding(
+                channel="email",
+                sender_identity=command.sender_identity.strip(),
+                opt_in=True,
+            )
         instance = MandateInstance(
             id=instance_id,
             type_ref=(
@@ -541,6 +553,7 @@ def _install_routes(app: FastAPI) -> None:
             customer_id=command.business_name,
             ring=command.ring,
             heap_region_id=f"tenant_{instance_id}",
+            channel_binding=channel_binding,
         )
         try:
             persisted = await state.control.instantiate_mandate(instance)

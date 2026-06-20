@@ -84,6 +84,35 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+async def _drive_worker(app: Any, *, max_ticks: int = 6) -> list[Any]:
+    """Pump the scheduler worker; return the RunResult per claimed tick."""
+    state = app.state.dashboard
+    results: list[Any] = []
+    for _ in range(max_ticks):
+        result = await state.runtime.worker.run_once(_now())
+        if result is None:
+            break
+        results.append(result)
+    return results
+
+
+async def _instantiate_lead_finder(
+    client: AsyncClient, *, business_name: str, sender_identity: str | None
+) -> str:
+    payload: dict[str, Any] = {
+        "type_ref": "lead-finder@0.1.0",
+        "customer_id": business_name,
+        "business_name": business_name,
+        "ring": "L1",
+        "target_override": {"icp": "dental clinics", "location": "Pune", "count": 1},
+    }
+    if sender_identity is not None:
+        payload["sender_identity"] = sender_identity
+    resp = await client.post("/commands/instantiate", json=payload)
+    assert resp.status_code in (200, 201), resp.text
+    return str(resp.json()["instance"]["id"])
+
+
 # --- Tests ---------------------------------------------------------------
 
 
@@ -302,3 +331,135 @@ async def test_send_email_idempotency_at_adapter_blocks_double_send() -> None:
             or second.result.output.get("message_id") == first.result.output.get("message_id")
         )
         assert len(recording.calls) == 1, f"transport was called {len(recording.calls)} times"
+
+
+# --- The session done-when: lead-finder run -> park -> approve -> REAL send -> settle ----------
+
+
+async def test_lead_finder_parks_send_email_then_sends_for_real_on_approval() -> None:
+    """The whole point: a lead-finder run composes outreach, PARKS (no send), and only the human
+    Approve resumes the run into a real send via the configured transport (settles sent:True)."""
+    recording = _RecordingTransport()
+    app = create_app(
+        use_mongo=False,
+        seed_demo=False,
+        operator_token="tok-send-loop-1",
+        start_worker=False,
+        send_email_transport=recording,
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers={"Authorization": "Bearer tok-send-loop-1"},
+    ) as client:
+        instance_id = await _instantiate_lead_finder(
+            client, business_name="Dogfood Co", sender_identity="founder@gmail.com"
+        )
+        await _post(client, "/commands/trigger-run", {"instance_id": instance_id, "mode": "sim"})
+
+        parked = await _drive_worker(app)
+        assert parked and parked[-1].state == "parked", parked
+        run_id = parked[-1].run_id
+
+        # The approval card shows the send_email effect — and NOTHING has been sent yet (the gate).
+        approvals = (await client.get("/approvals", params={"instance_id": instance_id})).json()
+        card = approvals["items"][0]
+        assert card["drafted_effect"]["syscall"] == "send_email"
+        assert card["drafted_effect"]["args"]["to"], "recipient must be resolved on the card"
+        assert recording.calls == [], "a real email must NEVER leave before a human Approve"
+
+        approve = await _post(
+            client,
+            "/commands/approve",
+            {"instance_id": instance_id, "run_id": run_id, "actor": "dashboard:operator"},
+        )
+        assert approve.status_code == 202, approve.text
+
+        resumed = await _drive_worker(app)
+        assert resumed and resumed[-1].state == "settled", resumed
+
+        # Exactly one real send, From = the instance's own sender (invariant #8), To = self (dogfood).
+        assert len(recording.calls) == 1, f"transport called {len(recording.calls)} times"
+        assert recording.calls[0].from_addr == "founder@gmail.com"
+        assert recording.calls[0].to == "founder@gmail.com"
+
+
+async def test_lead_finder_send_email_without_transport_lands_in_manual_queue() -> None:
+    """Invariant #5: with no transport configured, the approved send resolves to the human_task tail
+    (the manual queue) — nothing silently fails, and no real email is attempted."""
+    app = create_app(
+        use_mongo=False,
+        seed_demo=False,
+        operator_token="tok-send-loop-2",
+        start_worker=False,
+        send_email_transport=None,
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers={"Authorization": "Bearer tok-send-loop-2"},
+    ) as client:
+        instance_id = await _instantiate_lead_finder(
+            client, business_name="No Transport Co", sender_identity="founder@gmail.com"
+        )
+        await _post(client, "/commands/trigger-run", {"instance_id": instance_id, "mode": "sim"})
+        parked = await _drive_worker(app)
+        assert parked and parked[-1].state == "parked"
+        run_id = parked[-1].run_id
+
+        await _post(
+            client,
+            "/commands/approve",
+            {"instance_id": instance_id, "run_id": run_id, "actor": "dashboard:operator"},
+        )
+        resumed = await _drive_worker(app)
+        assert resumed and resumed[-1].state == "settled"
+
+        # With no SendEmailAdapter registered, the approved send_email resolves to the human_task
+        # terminal tail (invariant #5) — proven here on the trace (in Mongo mode this same task is
+        # visible on the durable /manual-queue). Nothing silently fails: the run still settles.
+        tail = [
+            event
+            for event in resumed[-1].trace.events
+            if event.kind == "syscall_result"
+            and event.summary == "send_email"
+            and event.detail.get("fulfilled_by") == "human_task"
+        ]
+        assert tail, [e.detail for e in resumed[-1].trace.events if e.kind == "syscall_result"]
+
+
+async def test_lead_finder_second_approve_never_double_sends() -> None:
+    """Idempotency end-to-end: re-approving a settled run must not produce a second real send."""
+    recording = _RecordingTransport()
+    app = create_app(
+        use_mongo=False,
+        seed_demo=False,
+        operator_token="tok-send-loop-3",
+        start_worker=False,
+        send_email_transport=recording,
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers={"Authorization": "Bearer tok-send-loop-3"},
+    ) as client:
+        instance_id = await _instantiate_lead_finder(
+            client, business_name="Idem Co", sender_identity="founder@gmail.com"
+        )
+        await _post(client, "/commands/trigger-run", {"instance_id": instance_id, "mode": "sim"})
+        parked = await _drive_worker(app)
+        run_id = parked[-1].run_id
+        await _post(
+            client,
+            "/commands/approve",
+            {"instance_id": instance_id, "run_id": run_id, "actor": "dashboard:operator"},
+        )
+        await _drive_worker(app)
+        # A second approve of an already-settled run resolves with no new effect.
+        await _post(
+            client,
+            "/commands/approve",
+            {"instance_id": instance_id, "run_id": run_id, "actor": "dashboard:operator"},
+        )
+        await _drive_worker(app)
+        assert len(recording.calls) == 1, f"transport called {len(recording.calls)} times"
