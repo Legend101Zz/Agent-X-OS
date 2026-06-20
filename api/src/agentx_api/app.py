@@ -659,8 +659,16 @@ def _install_routes(app: FastAPI) -> None:
         mandate = mandate.model_copy(
             update={"charter": mandate.charter.model_copy(update={"target": target})}
         )
-        # Re-register the mandate with the merged target so the worker sees it.
-        await state.control.register_mandate_type(mandate)
+        # Re-register the mandate with the merged target so the worker sees it. The catalog
+        # raises MandateTypeConflict on exact duplicate ids; that means the target override
+        # is unchanged from a prior trigger — that's the steady-state, just skip the write
+        # and proceed to enqueue the trigger.
+        try:
+            await state.control.register_mandate_type(mandate)
+        except Exception as exc:  # noqa: BLE001 - narrow to MandateTypeConflict below
+            from agentx_kernel.errors import MandateTypeConflict
+            if not isinstance(exc, MandateTypeConflict):
+                raise
         trigger = DeadlineTrigger(
             ts=datetime.now(UTC),
             reason="dashboard:trigger_run",
