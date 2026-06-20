@@ -1,0 +1,880 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Agent-X-OS — Visual Status (v3) · Hermes-managed workflow live</title>
+<style>
+  :root{
+    --bg:#07090e;
+    --panel:#0f131c;
+    --panel2:#161c2a;
+    --line:#1f2638;
+    --line2:#2c3650;
+    --text:#e8eef9;
+    --muted:#8a96ad;
+    --dim:#5b667a;
+    --g:#22c55e;
+    --a:#f59e0b;
+    --r:#ef4444;
+    --s:#38bdf8;
+    --v:#a78bfa;
+    --t:#2dd4bf;
+    --p:#f472b6;
+    --o:#fb923c;
+    --good:#0c1d18;
+    --good-b:#1f4d3f;
+    --warn:#1d1606;
+    --warn-b:#5c4515;
+    --bad:#1d0a0a;
+    --bad-b:#5a2222;
+    --g-bg:rgba(34,197,94,.07);
+    --a-bg:rgba(245,158,11,.08);
+    --r-bg:rgba(239,68,68,.07);
+    --s-bg:rgba(56,189,248,.08);
+    --v-bg:rgba(167,139,250,.08);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Display","Inter",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  a{color:var(--s);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code,.mono{font:12.5px/1.5 "SF Mono",ui-monospace,Menlo,Consolas,monospace}
+  pre{background:#05080f;border:1px solid var(--line);border-radius:8px;
+    padding:12px 14px;overflow-x:auto;color:#cdd5e6}
+  pre code{color:inherit}
+
+  /* sticky nav */
+  .nav{position:sticky;top:0;z-index:50;background:rgba(7,9,14,.92);
+    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--line);padding:10px 24px;
+    display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+  .nav .brand{font-weight:700;letter-spacing:.3px;font-size:14px}
+  .nav .brand span{color:var(--v)}
+  .nav .meta{margin-left:auto;color:var(--dim);font-size:12px}
+  .nav a{color:var(--muted);font-size:12.5px}
+  .nav a:hover{color:var(--text)}
+
+  .wrap{max-width:1320px;margin:0 auto;padding:24px}
+
+  /* stat strip */
+  .stats{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin:8px 0 24px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:14px 16px;position:relative;overflow:hidden}
+  .stat::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
+    background:var(--g)}
+  .stat.amber::before{background:var(--a)}
+  .stat.red::before{background:var(--r)}
+  .stat.violet::before{background:var(--v)}
+  .stat.sky::before{background:var(--s)}
+  .stat.teal::before{background:var(--t)}
+  .stat .num{font-size:28px;font-weight:700;letter-spacing:-.5px;line-height:1}
+  .stat .lbl{margin-top:6px;color:var(--text);font-weight:600;font-size:13px}
+  .stat .sub{margin-top:2px;color:var(--muted);font-size:11.5px}
+
+  /* verdict */
+  .verdict{margin:8px 0 28px;padding:14px 18px;border-radius:12px;
+    border:1px solid var(--good-b);background:var(--good);
+    display:flex;gap:12px;align-items:flex-start}
+  .verdict .dot{width:10px;height:10px;border-radius:50%;background:var(--g);
+    margin-top:6px;flex-shrink:0;box-shadow:0 0 12px var(--g)}
+  .verdict .txt{font-size:14.5px;line-height:1.55;color:#cfe9d9}
+
+  /* sections */
+  .sec{margin-top:32px}
+  .sec h2{margin:0 0 12px;font-size:17px;font-weight:700;letter-spacing:.2px;
+    display:flex;align-items:center;gap:10px}
+  .sec h2 .pill{font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:10px;
+    background:var(--line);color:var(--muted);text-transform:uppercase;letter-spacing:.8px}
+
+  /* cards grid */
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:16px;position:relative;overflow:hidden}
+  .card .top{height:3px;position:absolute;left:0;right:0;top:0;background:var(--g)}
+  .card.amber .top{background:var(--a)}
+  .card.red .top{background:var(--r)}
+  .card.violet .top{background:var(--v)}
+  .card.sky .top{background:var(--s)}
+  .card h3{margin:0 0 6px;font-size:14px;font-weight:700}
+  .card .meta{color:var(--muted);font-size:12px;margin-bottom:8px}
+  .card .meta code{color:var(--s)}
+  .card p{margin:6px 0;color:#c4cbdb;font-size:13px}
+  .card ul{margin:6px 0;padding-left:18px;color:#c4cbdb;font-size:12.5px}
+  .card li{margin-bottom:3px}
+  .card .file{margin-top:8px;font-size:11.5px;color:var(--dim)}
+  .card .file a{color:var(--s)}
+
+  /* svg diagram */
+  .arch{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:8px;position:relative}
+  .arch svg{width:100%;height:auto;display:block}
+  .info{position:fixed;right:24px;bottom:24px;width:340px;max-width:90vw;
+    background:var(--panel2);border:1px solid var(--line2);border-radius:12px;
+    padding:14px 16px;box-shadow:0 14px 40px rgba(0,0,0,.5);
+    transform:translateY(20px);opacity:0;pointer-events:none;
+    transition:.2s ease;z-index:60}
+  .info.show{transform:none;opacity:1;pointer-events:auto}
+  .info .title{font-weight:700;font-size:14px;margin-bottom:6px;
+    display:flex;justify-content:space-between;align-items:center}
+  .info .close{background:none;border:none;color:var(--muted);cursor:pointer;
+    font-size:20px;line-height:1;padding:0 4px}
+  .info .close:hover{color:var(--text)}
+  .info .desc{color:#c4cbdb;font-size:12.5px;line-height:1.5;margin-bottom:8px}
+  .info .file{font:11.5px/1.4 "SF Mono",ui-monospace,Menlo,Consolas,monospace;
+    color:var(--s);background:#05080f;border:1px solid var(--line);border-radius:6px;
+    padding:6px 8px;word-break:break-all}
+  .info .file a{color:var(--s)}
+
+  /* legend */
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);
+    margin:6px 4px 0}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .legend .sw{width:10px;height:10px;border-radius:2px}
+
+  /* board table */
+  table.board{width:100%;border-collapse:collapse;font-size:12.5px}
+  table.board th,table.board td{text-align:left;padding:8px 10px;
+    border-bottom:1px solid var(--line)}
+  table.board th{background:var(--panel);color:var(--muted);font-weight:600;
+    text-transform:uppercase;letter-spacing:.5px;font-size:11px}
+  table.board tr:hover td{background:var(--panel2)}
+  .tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;
+    font-weight:600;background:var(--line);color:var(--text)}
+  .tag.triage{background:#3b1f5c;color:#d8b4fe}
+  .tag.ready{background:#0e3a2e;color:#86efac}
+  .tag.todo{background:#3a2e0e;color:#fcd34d}
+  .tag.in_progress{background:#1e3a8a;color:#bfdbfe}
+  .tag.blocked{background:#5c1d1d;color:#fca5a5}
+  .tag.done{background:#1a3a2c;color:#86efac}
+
+  /* gap bars */
+  .gap{display:flex;align-items:center;gap:10px;margin:8px 0;font-size:13px}
+  .gap .name{width:240px;color:var(--text);font-weight:600}
+  .gap .bar{flex:1;height:8px;background:var(--line);border-radius:4px;overflow:hidden}
+  .gap .bar .fill{height:100%;background:var(--g);border-radius:4px}
+  .gap .bar .fill.amber{background:var(--a)}
+  .gap .pct{width:54px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+
+  /* roles */
+  .role{display:flex;align-items:center;gap:8px;font-size:12.5px;color:#c4cbdb}
+  .role .dot{width:8px;height:8px;border-radius:50%;background:var(--s)}
+  .role.violet .dot{background:var(--v)}
+  .role.green .dot{background:var(--g)}
+  .role.amber .dot{background:var(--a)}
+  .role.red .dot{background:var(--r)}
+
+  /* footer */
+  footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);
+    color:var(--dim);font-size:11.5px;display:flex;gap:18px;flex-wrap:wrap;
+    justify-content:space-between}
+
+  @media (max-width:980px){
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .grid2,.grid3,.grid4{grid-template-columns:1fr}
+    .gap .name{width:auto}
+  }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <div class="brand">Agent-X-OS · <span>visual status v3</span></div>
+  <a href="#verdict">verdict</a>
+  <a href="#arch">architecture</a>
+  <a href="#profiles">profiles</a>
+  <a href="#board">board</a>
+  <a href="#gaps">gaps</a>
+  <a href="#next">next 3</a>
+  <a href="#thisweek">this week</a>
+  <a href="#history">history</a>
+  <div class="meta">main · 8daa619 · 2026-06-21 · Hermes-managed workflow live</div>
+</div>
+
+<div class="wrap">
+
+  <!-- STAT STRIP -->
+  <div class="stats">
+    <div class="stat green">
+      <div class="num">196</div>
+      <div class="lbl">pytest passing</div>
+      <div class="sub">2 live-gated skip · 0 failures</div>
+    </div>
+    <div class="stat green">
+      <div class="num">116</div>
+      <div class="lbl">mypy --strict clean</div>
+      <div class="sub">Python source files, 0 issues</div>
+    </div>
+    <div class="stat violet">
+      <div class="num">6</div>
+      <div class="lbl">Hermes profiles</div>
+      <div class="sub">default + 5 specialists</div>
+    </div>
+    <div class="stat amber">
+      <div class="num">0</div>
+      <div class="lbl">kanban cards live</div>
+      <div class="sub">clean board · ready for next big task</div>
+    </div>
+    <div class="stat sky">
+      <div class="num">1</div>
+      <div class="lbl">real email send</div>
+      <div class="sub">Settle #1 of ~100 (2026-06-20)</div>
+    </div>
+    <div class="stat red">
+      <div class="num">7-8</div>
+      <div class="lbl">session memory tax</div>
+      <div class="sub">FIXED: visual status + handoff protocol</div>
+    </div>
+  </div>
+
+  <!-- VERDICT -->
+  <div class="verdict" id="verdict">
+    <div class="dot"></div>
+    <div class="txt">
+      <strong>Three-role workflow contract is live.</strong>
+      Big task drops in as <code style="color:#d8b4fe">user</code> → <code style="color:#d8b4fe">orchestrator</code> decomposes it → <code style="color:#86efac">child</code> cards spawn in parallel (Hermes-self / Claude Code / Codex / fixer / status) → children with parents stay <code style="color:#fcd34d">todo</code> until ready → orchestrator validates each → <strong>approve</strong>, <strong>rework</strong>, or <strong>reassign</strong> → when all children done, orchestrator marks root done → auto-regenerates <code style="color:#86efac">AGENTX_STATUS_V3.html</code>. 6 profiles, 73 skills each, all build/test gates green, contracts frozen, lane fence 3/3.
+    </div>
+  </div>
+
+  <!-- INTERACTIVE ARCHITECTURE -->
+  <div class="sec" id="arch">
+    <h2>Interactive architecture <span class="pill">click any box</span></h2>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--g)"></span> live & proven</span>
+      <span><span class="sw" style="background:var(--a)"></span> mechanism only</span>
+      <span><span class="sw" style="background:var(--r)"></span> not built</span>
+      <span><span class="sw" style="background:var(--v)"></span> new (Hermes layer)</span>
+    </div>
+    <div class="arch">
+      <svg viewBox="0 0 1300 760" id="archSvg">
+        <defs>
+          <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#2c3650"/>
+          </marker>
+          <marker id="arrV" viewBox="0 0 10 10" refX="9" refY="5"
+                  markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#a78bfa"/>
+          </marker>
+        </defs>
+
+        <!-- YOU -->
+        <g class="box" data-name="you" data-file="the user (you)"
+           data-desc="The founder. Talks to Hermes in natural language. Hermes decides routing. You approve / unblock / steer.">
+          <rect x="540" y="20" width="220" height="48" rx="10"
+                fill="#1a1330" stroke="#a78bfa" stroke-width="1.5"/>
+          <text class="bold" x="650" y="42" text-anchor="middle" fill="#d8b4fe"
+                font-size="13" font-weight="700">YOU (founder)</text>
+          <text x="650" y="58" text-anchor="middle" fill="#8a96ad" font-size="11">
+            "revamp the dashboard" → Hermes handles the rest
+          </text>
+        </g>
+
+        <!-- HERMES (NEW) -->
+        <g class="box" data-name="hermes" data-file="hermes-agent / ~/.hermes/"
+           data-desc="The orchestrator. Decides per-task which engine (Hermes-self, Claude Code, Codex, fixer, status) is right. Owns Kanban, profiles, status, docs, decomposition. Read-heavy by intent.">
+          <rect x="380" y="110" width="540" height="120" rx="12"
+                fill="#1a1330" stroke="#a78bfa" stroke-width="2"/>
+          <text class="bold" x="650" y="138" text-anchor="middle" fill="#d8b4fe"
+                font-size="16" font-weight="800">HERMES  (orchestrator · NEW)</text>
+          <text x="650" y="160" text-anchor="middle" fill="#c4cbdb" font-size="12">
+            decomposer · kanban dispatcher · profile router · visual status · docs
+          </text>
+          <text x="650" y="180" text-anchor="middle" fill="#8a96ad" font-size="11">
+            profiles: orchestrator · claude-coder · codex-coder · fixer · status
+          </text>
+          <text x="650" y="200" text-anchor="middle" fill="#8a96ad" font-size="11">
+            board: agent-x-os · 8 cards · auto-decompose ON
+          </text>
+          <text x="650" y="220" text-anchor="middle" fill="#86efac" font-size="11">
+            NEW: AGENTS.md / CLAUDE.md / MINIMAX-TASK.md rewritten as Hermes→CLI lane specs
+          </text>
+        </g>
+
+        <!-- arrow you → hermes -->
+        <path d="M 650 70 L 650 108" stroke="#a78bfa" stroke-width="1.5"
+              fill="none" marker-end="url(#arrV)"/>
+
+        <!-- ENGINES ROW -->
+        <g class="box built" data-name="claude-code-engine"
+           data-file="/opt/homebrew/bin/claude (Claude Code v2.1.183)"
+           data-desc="Claude Code CLI. Spawned by agentx-claude-coder for TS/React/Python kernel work. Receives the lane spec + the task body. Commits with [claude] prefix.">
+          <rect x="60" y="290" width="220" height="80" rx="10"
+                fill="#0c1018" stroke="#22c55e" stroke-width="1.5"/>
+          <text class="bold" x="170" y="316" text-anchor="middle" fill="#86efac"
+                font-size="13" font-weight="700">CLAUDE CODE</text>
+          <text x="170" y="334" text-anchor="middle" fill="#c4cbdb" font-size="11">
+            kernel + mandate + dashboard
+          </text>
+          <text x="170" y="350" text-anchor="middle" fill="#8a96ad" font-size="11">
+            reads CLAUDE.md as lane spec
+          </text>
+        </g>
+
+        <g class="box built" data-name="codex-engine"
+           data-file="/Users/comreton/.local/bin/codex (codex-cli 0.141.0)"
+           data-desc="OpenAI Codex CLI. Spawned by agentx-codex-coder for Python adapter/swarm work. Receives the lane spec + the task body. Commits with [codex] prefix.">
+          <rect x="320" y="290" width="220" height="80" rx="10"
+                fill="#0c1018" stroke="#22c55e" stroke-width="1.5"/>
+          <text class="bold" x="430" y="316" text-anchor="middle" fill="#86efac"
+                font-size="13" font-weight="700">CODEX</text>
+          <text x="430" y="334" text-anchor="middle" fill="#c4cbdb" font-size="11">
+            syscall + swarm + adapter framework
+          </text>
+          <text x="430" y="350" text-anchor="middle" fill="#8a96ad" font-size="11">
+            reads AGENTS.md as lane spec
+          </text>
+        </g>
+
+        <g class="box" data-name="hermes-self-engine"
+           data-file="default profile (MiniMax-M3) / current session"
+           data-desc="Hermes running as a worker (this profile). For planning, docs, status, glue, refactors, multi-file patches that don't need CLI delegation.">
+          <rect x="580" y="290" width="220" height="80" rx="10"
+                fill="#1a1330" stroke="#a78bfa" stroke-width="1.5"/>
+          <text class="bold" x="690" y="316" text-anchor="middle" fill="#d8b4fe"
+                font-size="13" font-weight="700">HERMES-SELF</text>
+          <text x="690" y="334" text-anchor="middle" fill="#c4cbdb" font-size="11">
+            planning · docs · glue · status
+          </text>
+          <text x="690" y="350" text-anchor="middle" fill="#8a96ad" font-size="11">
+            for refactors & cross-lane reads
+          </text>
+        </g>
+
+        <g class="box" data-name="fixer-engine"
+           data-file="agentx-fixer profile"
+           data-desc="Recovery specialist. Triggered when something breaks (failing gate, broken worktree, bad merge, double-click race). Loads systematic-debugging + simplify-code. Will NOT add features.">
+          <rect x="840" y="290" width="200" height="80" rx="10"
+                fill="#1a1330" stroke="#a78bfa" stroke-width="1.5"/>
+          <text class="bold" x="940" y="316" text-anchor="middle" fill="#d8b4fe"
+                font-size="13" font-weight="700">FIXER</text>
+          <text x="940" y="334" text-anchor="middle" fill="#c4cbdb" font-size="11">
+            cleanup · revert · restore gate
+          </text>
+          <text x="940" y="350" text-anchor="middle" fill="#8a96ad" font-size="11">
+            only when something breaks
+          </text>
+        </g>
+
+        <g class="box" data-name="status-engine"
+           data-file="agentx-status profile"
+           data-desc="Visual status generator. Produces this file. Reads STATE_AND_ROADMAP.md + git log + test results + active kanban cards.">
+          <rect x="1080" y="290" width="200" height="80" rx="10"
+                fill="#1a1330" stroke="#a78bfa" stroke-width="1.5"/>
+          <text class="bold" x="1180" y="316" text-anchor="middle" fill="#d8b4fe"
+                font-size="13" font-weight="700">STATUS</text>
+          <text x="1180" y="334" text-anchor="middle" fill="#c4cbdb" font-size="11">
+            this HTML file · on demand
+          </text>
+          <text x="1180" y="350" text-anchor="middle" fill="#8a96ad" font-size="11">
+            visual-status-report skill
+          </text>
+        </g>
+
+        <!-- arrows hermes → engines -->
+        <path d="M 480 232 L 170 286" stroke="#a78bfa" stroke-width="1.5" fill="none" marker-end="url(#arrV)"/>
+        <path d="M 555 232 L 430 286" stroke="#a78bfa" stroke-width="1.5" fill="none" marker-end="url(#arrV)"/>
+        <path d="M 650 232 L 690 286" stroke="#a78bfa" stroke-width="1.5" fill="none" marker-end="url(#arrV)"/>
+        <path d="M 750 232 L 940 286" stroke="#a78bfa" stroke-width="1.5" fill="none" marker-end="url(#arrV)"/>
+        <path d="M 830 232 L 1180 286" stroke="#a78bfa" stroke-width="1.5" fill="none" marker-end="url(#arrV)"/>
+
+        <!-- THE EXISTING PYTHON MONOREPO (UNCHANGED) -->
+        <rect x="60" y="430" width="1220" height="290" rx="14"
+              fill="#0a0d15" stroke="#1f2638" stroke-width="1" stroke-dasharray="4 4"/>
+        <text x="80" y="455" fill="#8a96ad" font-size="11" font-weight="700" letter-spacing="1.5">
+          ↓ THE EXISTING PYTHON MONOREPO (unchanged · contracts frozen · lane fence 3/3)
+        </text>
+
+        <!-- kernel -->
+        <g class="box built" data-name="kernel"
+           data-file="packages/kernel/src/agentx_kernel/run_loop.py"
+           data-desc="Online kernel. Run-loop, gateway (ring/idempotency/credential-inject/journal), verifier, settlement, projections, hydration, durable resume, scheduler worker. All live-proven.">
+          <rect x="80" y="475" width="220" height="100" rx="10"
+                fill="#0c1018" stroke="#22c55e" stroke-width="1.5"/>
+          <text class="bold" x="190" y="502" text-anchor="middle" fill="#86efac"
+                font-size="13" font-weight="700">ONLINE KERNEL</text>
+          <text x="190" y="520" text-anchor="middle" fill="#c4cbdb" font-size="11">
+            run_loop · gateway · verifier
+          </text>
+          <text x="190" y="538" text-anchor="middle" fill="#c4cbdb" font-size="11">
+            settlement · projections · hydration
+          </text>
+          <text x="190" y="556" text-anchor="middle" fill="#86efac" font-size="11">
+            live · 196 tests green
+          </text>
+        </g>
+
+        <!-- mandate -->
+        <g class="box built" data-name="mandate"
+           data-file="packages/mandate/src/agentx_mandate/library/lead_finder.py"
+           data-desc="Mandate layer. 4 Phase-1 faculties (research/judgment/memory-craft/escalation) + enrichment. Harness seam. build_lead_finder_type().">
+          <rect x="320" y="475" width="220" height="100" rx="10"
+                fill="#0c1018" stroke="#22c55e" stroke-width="1.5"/>
+          <text class="bold" x="430" y="502" text-anchor="middle" fill="#86efac"
+                font-size="13" font-weight="700">MANDATE</text>
+          <text x="430" y="520" text-anchor="middle" fill="#c4cbdb" font-size="11">
+            4 faculties · enrichment
+          </text>
+          <text x="430" y="538" text-anchor="middle" fill="#c4cbdb" font-size="11">
+            lead-finder · creator (draft)
+          </text>
+          <text x="430" y="556" text-anchor="middle" fill="#86efac" font-size="11">
+            live · 1 real send
+          </text>
+        </g>
+
+        <!-- syscall -->
+        <g class="box built" data-name="syscall"
+           data-file="packages/syscall/src/agentx_syscall/registry.py"
+           data-desc="Syscall ladder. _AdapterBase pattern, 8 adapters incl. send_email (Gmail SMTP), human_task tail. build_phase1_registry.">
+          <rect x="560" y="475" width="220" height="100" rx="10"
+                fill="#0c1018" stroke="#22c55e" stroke-width="1.5"/>
+          <text class="bold" x="670" y="502" text-anchor="middle" fill="#86efac"
+                font-size="13" font-weight="700">SYSCALL</text>
+          <text x="670" y="520" text-anchor="middle" fill="#c4cbdb" font-size="11">
+            8 adapters · L0–L2 rings
+          </text>
+          <text x="670" y="538" text-anchor="middle" fill="#c4cbdb" font-size="11">
+            send_email · human_task tail
+          </text>
+          <text x="670" y="556" text-anchor="middle" fill="#86efac" font-size="11">
+            live · idempotent · per-instance
+          </text>
+        </g>
+
+        <!-- swarm -->
+        <g class="box" data-name="swarm"
+           data-file="packages/swarm/src/agentx_swarm/judge.py"
+           data-desc="Swarm/Foundry. SimAdapter, promptfoo Judge (offline fallback), PromotionGate (synthetic-barred), scenario packs, trace data. Compiler mechanism scaffolded.">
+          <rect x="800" y="475" width="220" height="100" rx="10"
+                fill="#0c1018" stroke="#f59e0b" stroke-width="1.5"/>
+          <text class="bold" x="910" y="502" text-anchor="middle" fill="#fcd34d"
+                font-size="13" font-weight="700">SWARM / FOUNDRY</text>
+          <text x="910" y="520" text-anchor="middle" fill="#c4cbdb" font-size="11">
+            SimAdapter · promptfoo Judge
+          </text>
+          <text x="910" y="538" text-anchor="middle" fill="#c4cbdb" font-size="11">
+            PromotionGate · scenarios
+          </text>
+          <text x="910" y="556" text-anchor="middle" fill="#fcd34d" font-size="11">
+            compiler: mechanism only
+          </text>
+        </g>
+
+        <!-- contracts -->
+        <g class="box built" data-name="contracts"
+           data-file="packages/contracts/src/agentx_contracts/"
+           data-desc="THE SEAM. Frozen Pydantic v2 models + typing.Protocol interfaces. Changing this is a stop-and-coordinate event. lint-imports enforces 3 contracts.">
+          <rect x="1040" y="475" width="220" height="100" rx="10"
+                fill="#0c1018" stroke="#22c55e" stroke-width="1.5"/>
+          <text class="bold" x="1150" y="502" text-anchor="middle" fill="#86efac"
+                font-size="13" font-weight="700">CONTRACTS (frozen)</text>
+          <text x="1150" y="520" text-anchor="middle" fill="#c4cbdb" font-size="11">
+            MandateType · EvalCase
+          </text>
+          <text x="1150" y="538" text-anchor="middle" fill="#c4cbdb" font-size="11">
+            Scorecard · Faculty · Syscall
+          </text>
+          <text x="1150" y="556" text-anchor="middle" fill="#86efac" font-size="11">
+            FROZEN · stop-and-coordinate
+          </text>
+        </g>
+
+        <!-- api edge -->
+        <g class="box built" data-name="api-edge"
+           data-file="api/src/agentx_api/app.py"
+           data-desc="Composition edge. FastAPI: /commands/* + /approvals + SSE journal stream + swarm_runner + OperatorRuntime. Bearer-token auth. Fail-closed when disconnected.">
+          <rect x="320" y="600" width="500" height="100" rx="10"
+                fill="#0c1018" stroke="#22c55e" stroke-width="1.5"/>
+          <text class="bold" x="570" y="627" text-anchor="middle" fill="#86efac"
+                font-size="13" font-weight="700">API COMPOSITION EDGE (api/)</text>
+          <text x="570" y="645" text-anchor="middle" fill="#c4cbdb" font-size="11">
+            /commands/* · /approvals · SSE /events
+          </text>
+          <text x="570" y="663" text-anchor="middle" fill="#c4cbdb" font-size="11">
+            OperatorRuntime · swarm_runner · bearer auth
+          </text>
+          <text x="570" y="681" text-anchor="middle" fill="#86efac" font-size="11">
+            live · 15 tests green
+          </text>
+        </g>
+
+        <!-- dashboard (BEING REVAMPED) -->
+        <g class="box" data-name="dashboard-revamp"
+           data-file="dashboard/src/components/*.tsx"
+           data-desc="Next.js dashboard. Currently BEING REVAMPED per the first big TRIAGE card (t_abe6693a) → 7 subtasks. Goal: match Hermes Kanban tutorial. Add AsyncButton + loaders + click-debounce.">
+          <rect x="840" y="600" width="420" height="100" rx="10"
+                fill="#1d1606" stroke="#f59e0b" stroke-width="2"/>
+          <text class="bold" x="1050" y="627" text-anchor="middle" fill="#fcd34d"
+                font-size="13" font-weight="700">DASHBOARD (revamp in progress)</text>
+          <text x="1050" y="645" text-anchor="middle" fill="#c4cbdb" font-size="11">
+            12 components · 2,991 LOC · Next.js 15
+          </text>
+          <text x="1050" y="663" text-anchor="middle" fill="#c4cbdb" font-size="11">
+            TRIAGE t_abe6693a → 7 subtasks, 3 ready
+          </text>
+          <text x="1050" y="681" text-anchor="middle" fill="#fcd34d" font-size="11">
+            target: like Hermes kanban tutorial
+          </text>
+        </g>
+
+      </svg>
+    </div>
+    <div class="info" id="archInfo">
+      <div class="title">
+        <span id="archInfoTitle">Component</span>
+        <button class="close" onclick="hideInfo()">×</button>
+      </div>
+      <p id="archInfoDesc">Description</p>
+      <div class="file" id="archInfoFile">file path</div>
+    </div>
+  </div>
+
+  <!-- PROFILES -->
+  <div class="sec" id="profiles">
+    <h2>Hermes profiles <span class="pill">6 total</span></h2>
+    <div class="grid3">
+      <div class="card violet">
+        <h3>default</h3>
+        <div class="meta">MiniMax-M3 · gateway running · 80 skills</div>
+        <p>Current session. Full toolset. Used for planning, docs, status, glue, multi-file patches.</p>
+        <div class="file">created automatically by Hermes install</div>
+      </div>
+      <div class="card violet">
+        <h3>agentx-orchestrator</h3>
+        <div class="meta">read-heavy by intent</div>
+        <p>Planner/decomposer. Reads requests, creates Kanban cards with parent/child links, never writes code.</p>
+        <div class="file">hermes profile create agentx-orchestrator</div>
+      </div>
+      <div class="card violet">
+        <h3>agentx-claude-coder</h3>
+        <div class="meta">spawns Claude Code CLI</div>
+        <p>Delegates coding to Claude Code v2.1.183. Best for TS/React/Next.js, Python kernel work, frontend refactors.</p>
+        <div class="file">skill: claude-code</div>
+      </div>
+      <div class="card violet">
+        <h3>agentx-codex-coder</h3>
+        <div class="meta">spawns Codex CLI</div>
+        <p>Delegates coding to OpenAI Codex CLI 0.141.0. Best for Python adapter/swarm work, async services, scenario packs.</p>
+        <div class="file">skill: codex</div>
+      </div>
+      <div class="card violet">
+        <h3>agentx-fixer</h3>
+        <div class="meta">cleanup · revert · restore gate</div>
+        <p>Recovery specialist. Triggered when something breaks (failing gate, bad merge, double-click race). Will NOT add features.</p>
+        <div class="file">skills: systematic-debugging · simplify-code</div>
+      </div>
+      <div class="card violet">
+        <h3>agentx-status</h3>
+        <div class="meta">generates this HTML</div>
+        <p>Visual status generator. Reads STATE_AND_ROADMAP.md + git log + tests + kanban, writes docs/AGENTX_STATUS_<DATE>.html.</p>
+        <div class="file">skill: visual-status-report</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WORKFLOW CONTRACT -->
+  <div class="sec" id="workflow">
+    <h2>The workflow contract <span class="pill">user → orchestrator → child</span></h2>
+    <div class="grid3">
+      <div class="card violet">
+        <h3>user role</h3>
+        <div class="meta">created_by = you · no parent</div>
+        <p>Your big asks. Drop on the board via natural language or <code style="color:var(--s)">hermes kanban --board agent-x-os create --triage</code>. The orchestrator picks it up and decomposes.</p>
+        <pre><code>"do X"
+   ↓
+hermes kanban create \
+  --title "TASK: do X"</code></pre>
+      </div>
+      <div class="card violet">
+        <h3>orchestrator role</h3>
+        <div class="meta">agentx-orchestrator profile</div>
+        <p>Decomposes user tasks into N children. Routes each child to the best-fit subagent. Validates each child's handoff and decides: <strong>approve</strong>, <strong>rework</strong>, or <strong>reassign</strong>. Closes the root when all children are done, then triggers status regeneration.</p>
+        <pre><code>comment + edit body + unblock
+   ↓ (rework)
+hermes kanban reassign \
+  --reclaim (wrong engine)</code></pre>
+      </div>
+      <div class="card green">
+        <h3>child role</h3>
+        <div class="meta">has a parent · assigned to a subagent</div>
+        <p>One unit of work. The orchestrator decides which subagent handles it. Children can be <code style="color:#fcd34d">todo</code> (waiting on parent or schedule), <code style="color:#86efac">ready</code>, <code style="color:#bfdbfe">in_progress</code>, <code style="color:#fca5a5">blocked</code>, or <code style="color:#86efac">done</code>.</p>
+        <pre><code>kanban_complete(
+  summary=...,
+  metadata={files, tests, ...}
+)</code></pre>
+      </div>
+    </div>
+
+    <h2 style="margin-top:18px">Lifecycle <span class="pill">end to end</span></h2>
+    <div class="card" style="padding:14px 18px">
+<pre><code>you: "do X"
+  ↓
+[TRIAGE] → auto-decomposer fires (~60s)
+  ↓
+[USER card · todo · assignee=default]   ← root, awaits decomposition
+  ↓
+[CHILD 1] [CHILD 2] ... [CHILD N]   ← orchestrator creates, each with parent=root
+  ↓
+parent = in_progress → children auto-promote todo → ready
+  ↓
+[CHILD x · in_progress] → worker spawns → kanban_complete or kanban_block
+  ↓
+orchestrator validates each child
+  ├─ APPROVED → done → next sibling auto-promotes → eventually all done → root auto-promotes
+  ├─ REWORK  → orchestrator: comment + edit body + unblock → worker respawns
+  └─ REASSIGN → orchestrator: reassign to different subagent (wrong engine picked)
+  ↓
+[USER card · ready] → orchestrator picks it up → marks done with summary
+  ↓
+[STATUS card] → agentx-status regenerates AGENTX_STATUS_<DATE>.html
+  ↓
+you see the new visual status</code></pre>
+    </div>
+  </div>
+
+  <!-- BOARD -->
+  <div class="sec" id="board">
+    <h2>agent-x-os Kanban board <span class="pill">live · auto-decompose ON</span></h2>
+    <p style="color:var(--muted);margin:0 0 10px;font-size:12.5px">
+      Board slug: <code style="color:var(--s)">agent-x-os</code> · DB:
+      <code style="color:var(--s)">~/.hermes/kanban/boards/agent-x-os/kanban.db</code> · Triage auto-feeds the decomposer.
+    </p>
+    <div class="card" style="padding:0">
+      <div class="card" style="text-align:center;padding:32px 18px">
+        <p style="font-size:18px;color:var(--text);margin:0 0 6px">The board is empty.</p>
+        <p style="color:var(--muted);font-size:13px;margin:0 0 14px">All 8 dashboard-revamp cards from the previous turn were archived. The orchestrator is waiting on a fresh user task.</p>
+        <pre style="display:inline-block;text-align:left;margin:0"><code>hermes kanban --board agent-x-os create \
+  --triage \
+  --title "TASK: &lt;your big ask&gt;" \
+  --body "&lt;context, files, done-when&gt;"</code></pre>
+        <p style="color:var(--dim);font-size:12px;margin:14px 0 0">Or just talk to me. "show me Agent-X status" works too.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- GAPS -->
+  <div class="sec" id="gaps">
+    <h2>Phase-by-phase progress <span class="pill">from docs/HERMES_BUILD_PLAN.md</span></h2>
+    <div class="card">
+      <div class="gap">
+        <div class="name">P1 · Gated real email SEND</div>
+        <div class="bar"><div class="fill" style="width:100%"></div></div>
+        <div class="pct">100% · ✅</div>
+      </div>
+      <div class="gap">
+        <div class="name">P2 · Step-D reality feedback</div>
+        <div class="bar"><div class="fill amber" style="width:75%"></div></div>
+        <div class="pct">75% · 🟢</div>
+      </div>
+      <div class="gap">
+        <div class="name">P3 · Creator mandate draft path</div>
+        <div class="bar"><div class="fill amber" style="width:70%"></div></div>
+        <div class="pct">70% · 🟢</div>
+      </div>
+      <div class="gap">
+        <div class="name">P4 · Promote gate + canary</div>
+        <div class="bar"><div class="fill" style="width:100%"></div></div>
+        <div class="pct">100% · ✅</div>
+      </div>
+      <div class="gap">
+        <div class="name">P5 · Compiler scaffold</div>
+        <div class="bar"><div class="fill amber" style="width:60%"></div></div>
+        <div class="pct">60% · 🟢 mechanism</div>
+      </div>
+      <div class="gap">
+        <div class="name">P6 · End-to-end phase chain</div>
+        <div class="bar"><div class="fill" style="width:100%"></div></div>
+        <div class="pct">100% · ✅</div>
+      </div>
+      <div class="gap">
+        <div class="name">P7 · Closed-loop Step-D with reply-watch</div>
+        <div class="bar"><div class="fill" style="width:0%"></div></div>
+        <div class="pct">0% · next</div>
+      </div>
+      <div class="gap">
+        <div class="name">Dashboard revamp (parallel)</div>
+        <div class="bar"><div class="fill amber" style="width:5%"></div></div>
+        <div class="pct">5% · 3/8 cards ready</div>
+      </div>
+    </div>
+  </div>
+
+<!-- MODELS + HANDOFF -->
+  <div class="sec" id="models">
+    <h2>Model menu + session-limit handoff <span class="pill">OAuth subscriptions · no OpenRouter</span></h2>
+    <div style="margin:6px 0 14px;padding:10px 14px;border:1px solid var(--v);border-radius:10px;background:rgba(167,139,250,.06);font-size:12.5px;color:#d8b4fe">
+      <strong>⚠ Provider rule:</strong> Agent-X-OS work does NOT route through OpenRouter. Codex and Claude Code are wired in via OAuth subscriptions on this machine. OpenRouter is kept only as last-resort fallback.
+    </div>
+    <div class="grid2">
+      <div class="card violet">
+        <h3>Codex engine</h3>
+        <div class="meta">profile: <code style="color:var(--s)">agentx-codex-coder</code> · shell-out to local CLI</div>
+        <p><strong>Local CLI:</strong> <code style="color:var(--s)">~/.local/bin/codex</code> v0.141.0 · OpenAI device-code OAuth at <code style="color:var(--s)">~/.codex/auth.json</code>. Default model in <code style="color:var(--s)">~/.codex/config.toml</code>: <code style="color:var(--s)">model = "gpt-5.5"</code>, <code style="color:var(--s)">model_reasoning_effort = "high"</code>.</p>
+        <ul>
+          <li><code style="color:var(--s)">gpt-5.5</code> (default) — hardest problems, deep debugging</li>
+          <li><code style="color:var(--s)">gpt-5.5-codex</code> — codex-tuned variant, stable on large tasks</li>
+          <li><code style="color:var(--s)">gpt-5-mini</code> — cheap scaffolding, fixtures, repetitive edits</li>
+          <li><code style="color:var(--s)">gpt-5-nano</code> — trivial patches, one-liners</li>
+        </ul>
+        <p style="font-size:12px;color:#86efac;margin:6px 0 0"><strong>Cost:</strong> Pro subscription covers CLI usage. No metered billing on top.</p>
+      </div>
+      <div class="card violet">
+        <h3>Claude Code engine</h3>
+        <div class="meta">profile: <code style="color:var(--s)">agentx-claude-coder</code> · shell-out to local CLI</div>
+        <p><strong>Local CLI:</strong> <code style="color:var(--s)">/opt/homebrew/bin/claude</code> v2.1.183 · Anthropic first-party OAuth (account <code style="color:var(--s)">mrigeshthakur11@gmail.com</code>, Pro). Aliases per <code style="color:var(--s)">claude --help</code>: <code style="color:var(--s)">opus</code>, <code style="color:var(--s)">sonnet</code>, <code style="color:var(--s)">haiku</code>, <code style="color:var(--s)">fable</code>.</p>
+        <ul>
+          <li><code style="color:var(--s)">opus</code> (default → <code style="color:var(--s)">claude-opus-4.8</code>) — hardest reasoning, whole-TSX rewrites</li>
+          <li><code style="color:var(--s)">sonnet</code> (<code style="color:var(--s)">claude-sonnet-4.6</code>) — routine TS/Python edits</li>
+          <li><code style="color:var(--s)">haiku</code> (<code style="color:var(--s)">claude-haiku-4.5</code>) — trivial patches</li>
+          <li><code style="color:var(--s)">fable</code> (<code style="color:var(--s)">claude-fable-5</code>) — newest tier when available</li>
+        </ul>
+        <p style="font-size:12px;color:var(--a);margin:6px 0 0"><strong>⚠ Cost:</strong> Anthropic OAuth requires <strong>"Extra Usage Credits"</strong> on top of the Pro subscription to invoke the CLI for coding tasks. When credits run out → orchestrator blocks with <code style="color:var(--s)">oauth-credits-exhausted</code>; you decide: wait / explicit OpenRouter override / reassign to codex-coder.</p>
+      </div>
+    </div>
+    <div class="card" style="margin-top:14px;padding:14px 18px">
+      <h3 style="margin-top:0">Session-limit handoff (when a worker hits any cap)</h3>
+      <p style="font-size:12.5px;color:#c4cbdb;margin:6px 0">If a child card blocks with context / cost / runtime / turns / rate-limit / oauth-credits-exhausted, the orchestrator does <strong>not</strong> unblock-and-retry. It runs the 4-step handoff:</p>
+      <pre style="margin:0"><code>1. Inspect:  git log on worktree branch → list what's already committed
+2. Decide:   pick a handoff target — same engine at lower effort, or different engine (codex ↔ claude)
+3. Create:   new CHILD card inheriting the same branch, body lists DONE vs NOT DONE, references the old card id
+4. Reclaim:  reclaim the blocked worker, archive the old card, the new worker continues from last clean commit</code></pre>
+      <p style="font-size:12px;color:var(--muted);margin:8px 0 0">OAuth routing means most session-limit handoffs just lower the effort level (e.g. <code style="color:var(--s)">xhigh → high</code>) or pick a cheaper alias on the same engine — no dollar cost, just lower-quality output.</p>
+    </div>
+  </div>
+
+  <!-- NEXT 3 --><!-- NEXT 3 -->
+    <h2>What to do next <span class="pill">3 actions</span></h2>
+    <div class="grid3">
+      <div class="card green">
+        <h3>1. Open the dashboard</h3>
+        <p>Visual reference the new UI is being built to match:</p>
+        <pre><code>open https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban-tutorial</code></pre>
+        <p>Or the cached copy:</p>
+        <pre><code>open /tmp/hermes-kanban-tut.html</code></pre>
+      </div>
+      <div class="card green">
+        <h3>2. Watch the board</h3>
+        <p>The 3 ready cards will be picked up by Claude Code workers on the next dispatcher tick (~60s). Watch live:</p>
+        <pre><code>hermes dashboard
+# click "Kanban" in left nav
+# filter to "agent-x-os"</code></pre>
+        <p>Or from CLI:</p>
+        <pre><code>hermes kanban --board agent-x-os list
+hermes kanban --board agent-x-os tail t_b03110e4</code></pre>
+      </div>
+      <div class="card violet">
+        <h3>3. Drop your next big task</h3>
+        <p>Just talk to Hermes in natural language. Big task → triage card → auto-decompose → routed.</p>
+        <pre><code>"Phase 7: wire the reply-watch loop"</code></pre>
+        <p>Or any of:</p>
+        <pre><code>"add a WhatsApp adapter"
+"close gap G3 with the live reply-watch"
+"rebuild the dashboard to look like Hermes"
+"show me Agent-X status"</code></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- THIS WEEK -->
+  <div class="sec" id="thisweek">
+    <h2>This week <span class="pill">your play, ranked</span></h2>
+    <div class="grid4">
+      <div class="card green">
+        <h3>SHIP</h3>
+        <p>Dashboard revamp subtasks 1-3 (3 ready, will auto-fire). One PR per subtask. Merge after npm test + build green.</p>
+      </div>
+      <div class="card amber">
+        <h3>DE-RISK</h3>
+        <p>Watch for double-click race still lurking in the existing dashboard during the transition. Old code stays until revamp is done; if user hits a race, FIX: card to agentx-fixer.</p>
+      </div>
+      <div class="card green">
+        <h3>GROW</h3>
+        <p>Trigger 5 more live sends today to get to settle #5/#6 of ~100. Reply-watch will start firing the gym loop.</p>
+      </div>
+      <div class="card red">
+        <h3>CLOSE-GAP</h3>
+        <p>No contracts change needed. No blocker. The contracts seam is healthy, the lane fence is 3/3, the build is green. This is a feature week, not a fix week.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- HISTORY -->
+  <div class="sec" id="history">
+    <h2>Build history <span class="pill">verified from git log</span></h2>
+    <div class="card" style="padding:0">
+      <table class="board">
+        <thead>
+          <tr><th style="width:110px">commit</th><th>what</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code style="color:var(--dim)">8daa619</code></td><td>docs: cleanup</td></tr>
+          <tr><td><code style="color:var(--dim)">8b8bb68</code></td><td>fix(api): swallow MandateTypeConflict on repeat trigger_run re-registration</td></tr>
+          <tr><td><code style="color:var(--dim)">8fa525b</code></td><td>feat(studio): add LIVE/SIM run-mode toggle to dashboard</td></tr>
+          <tr><td><code style="color:var(--dim)">081584f</code></td><td>docs: SESSION_SEND_LOOP_LIVE_PROOF + roadmap §6 (send_email UNWIRED → wired, settle #1)</td></tr>
+          <tr><td><code style="color:var(--dim)">38b5aba</code></td><td>feat(mandate): wire lead-finder outreach to gated send_email (real send on approval)</td></tr>
+          <tr><td><code style="color:var(--dim)">ead2c3f</code></td><td>feat(syscall): SMTP email transport (Gmail App Password) + provider selection</td></tr>
+          <tr><td><code style="color:var(--dim)">b5742d5</code></td><td>docs: STATE_AND_ROADMAP — honest BLUEPRINT gap map (§1–§8) after Studio</td></tr>
+          <tr><td><code style="color:var(--dim)">3fce313</code></td><td>docs+studio: live proof + roadmap; honest draft-vs-send copy in the Studio</td></tr>
+          <tr><td><code style="color:var(--dim)">b13ca62</code></td><td>dashboard: Studio API glue (TDD)</td></tr>
+          <tr><td><code style="color:var(--dim)">02579d5</code></td><td>Feat/hermes backend (#7) — 6 autobuilder phases land</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer>
+    <div>
+      Generated 2026-06-21 by Hermes (MiniMax-M3) · agentx-status profile ·
+      source: STATE_AND_ROADMAP.md + git log + pytest -q + lint-imports + kanban list.
+    </div>
+    <div>
+      Companion docs:
+      <a href="AGENTX_STATUS_V2.html">v2 (2026-06-20)</a> ·
+      <a href="AGENTX_EXECUTIVE_SUMMARY.html">executive summary</a> ·
+      <a href="STATE_AND_ROADMAP.md">STATE_AND_ROADMAP</a> ·
+      <a href="HERMES_BUILD_PLAN.md">HERMES_BUILD_PLAN</a>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+  document.querySelectorAll('#archSvg .box').forEach(box => {
+    box.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const name = box.getAttribute('data-name');
+      const file = box.getAttribute('data-file');
+      const desc = box.getAttribute('data-desc');
+      showInfo(name, desc, file);
+    });
+  });
+  function showInfo(name, desc, file) {
+    const info = document.getElementById('archInfo');
+    document.getElementById('archInfoTitle').textContent = name;
+    document.getElementById('archInfoDesc').textContent = desc;
+    const fileEl = document.getElementById('archInfoFile');
+    if (file && file.startsWith('/')) {
+      fileEl.innerHTML = '📂 <a href="file://' + file + '" target="_blank">' + file + '</a>';
+    } else if (file && file.startsWith('http')) {
+      fileEl.innerHTML = '🔗 <a href="' + file + '" target="_blank">' + file + '</a>';
+    } else {
+      fileEl.textContent = file || '(no path)';
+    }
+    info.classList.add('show');
+  }
+  function hideInfo() {
+    document.getElementById('archInfo').classList.remove('show');
+  }
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#archInfo') &&
+        !e.target.closest('#archSvg .box')) hideInfo();
+  });
+</script>
+
+</body>
+</html>
