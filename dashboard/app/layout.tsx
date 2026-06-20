@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "../src/components/ui/primitives.css";
 
 export const metadata: Metadata = {
-  title: "Agent-X Operator Dashboard",
-  description: "Mission-control dashboard for Agent-X kernel operations.",
+  title: "Agent-X Control Surface",
+  description: "Mission-control surface for the Agent-X Business OS.",
 };
 
 export default function RootLayout({
