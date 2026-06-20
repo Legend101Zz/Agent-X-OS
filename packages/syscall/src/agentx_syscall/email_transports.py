@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import pathlib
 import smtplib
 import ssl
 from collections.abc import Callable, Mapping
@@ -160,8 +161,22 @@ class SmtpEmailTransport:
                 pass
 
 
+def _find_dotenv(start: pathlib.Path) -> pathlib.Path | None:
+    """Return the nearest ``.env`` walking UP from ``start`` (a file path), or ``None``.
+
+    A fixed ``parents[N]`` index is brittle: this module lives several directories deep, so the old
+    index pointed at ``packages/`` instead of the repo root and the ``.env`` fallback never fired.
+    Walking up is robust to the module's depth and to running from any working directory.
+    """
+    for parent in start.resolve().parents:
+        candidate = parent / ".env"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def _read_env_value(name: str) -> str:
-    """Read an env var, falling back to ``.env`` in the repo root.
+    """Read an env var, falling back to the nearest ``.env`` above this module.
 
     We don't widen the frozen ``agentx_contracts.config.Settings`` with per-transport fields
     (Phase 1 — read email settings directly). The ``dotenv`` module is transitively available via
@@ -171,13 +186,10 @@ def _read_env_value(name: str) -> str:
     if raw is not None and raw.strip():
         return raw.strip()
     try:
-        import pathlib
-
         import dotenv
 
-        repo_root = pathlib.Path(__file__).resolve().parents[3]
-        env_path = repo_root / ".env"
-        if env_path.is_file():
+        env_path = _find_dotenv(pathlib.Path(__file__))
+        if env_path is not None:
             values = dotenv.dotenv_values(env_path)
             candidate = values.get(name)
             if isinstance(candidate, str) and candidate.strip():

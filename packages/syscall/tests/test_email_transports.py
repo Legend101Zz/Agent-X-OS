@@ -15,6 +15,7 @@ Unit tests use a FAKE SMTP server (monkeypatched ``smtplib.SMTP``); no real netw
 
 from __future__ import annotations
 
+import pathlib
 import smtplib
 from typing import Any
 
@@ -22,6 +23,7 @@ import pytest
 from agentx_syscall.email_transports import (
     ResendEmailTransport,
     SmtpEmailTransport,
+    _find_dotenv,
     build_configured_email_transport,
 )
 
@@ -153,6 +155,25 @@ def test_build_configured_uses_resend_when_only_resend_key() -> None:
 def test_build_configured_returns_none_without_any_keys() -> None:
     env = {"RUN_LIVE_EMAIL": "1"}
     assert build_configured_email_transport(env=env) is None
+
+
+def test_find_dotenv_walks_up_to_the_repo_root_env(tmp_path: pathlib.Path) -> None:
+    # A module nested several directories deep (as email_transports.py is) must still resolve the
+    # repo-root .env — a fixed parents[N] index silently points at the wrong directory.
+    root = tmp_path / "repo"
+    deep = root / "packages" / "syscall" / "src" / "agentx_syscall"
+    deep.mkdir(parents=True)
+    env_file = root / ".env"
+    env_file.write_text("SMTP_HOST=smtp.example\n")
+
+    found = _find_dotenv(deep / "email_transports.py")
+    assert found == env_file
+
+
+def test_find_dotenv_returns_none_when_absent(tmp_path: pathlib.Path) -> None:
+    module = tmp_path / "a" / "b" / "mod.py"
+    module.parent.mkdir(parents=True)
+    assert _find_dotenv(module) is None
 
 
 def test_build_configured_returns_none_without_run_live_email_even_with_smtp_keys() -> None:
