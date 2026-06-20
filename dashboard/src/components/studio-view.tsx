@@ -104,6 +104,17 @@ export function StudioView({
   const [draftCard, setDraftCard] = useState<ApprovalCard | null>(null);
   const [sending, setSending] = useState(false);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
+  // Run mode: "live" = Hermes LLM harness + real research providers (Firecrawl/Exa).
+  //           "sim"  = deterministic OwnHarness playbook with canned data (for testing the loop
+  //                    without hitting providers or sending real emails).
+  // Persisted in localStorage so the choice survives a refresh. Defaults to "live" — the whole
+  // point of running locally is to drive real mandates, and the sim fallback is one click away
+  // when you want to test the loop in isolation.
+  const [runMode, setRunMode] = useState<"live" | "sim">(() => {
+    if (typeof window === "undefined") return "live";
+    const stored = window.localStorage.getItem("agentx.studio.runMode");
+    return stored === "sim" ? "sim" : "live";
+  });
 
   // PICK — create-new form state
   const firstMandate = data.mandateTypes[0];
@@ -211,16 +222,20 @@ export function StudioView({
     setRunId("");
     setRunState("");
     const result = await triggerRun(
-      { instance_id: instanceId, mode: "sim", actor: "dashboard/operator" },
+      { instance_id: instanceId, mode: runMode, actor: "dashboard/operator" },
       { baseUrl: apiBaseUrl, token: operatorToken },
     );
     if (!result.supported) {
       pushToast({ title: "find leads", message: result.message ?? "failed", tone: "hot" });
       return;
     }
-    pushToast({ title: "find leads", message: `run queued · ${result.workId ?? "?"}`, tone: "good" });
+    pushToast({
+      title: "find leads",
+      message: `run queued · ${result.workId ?? "?"} · mode=${runMode}`,
+      tone: "good",
+    });
     setFinding(true);
-  }, [apiBaseUrl, hasToken, instanceId, operatorToken, pushToast]);
+  }, [apiBaseUrl, hasToken, instanceId, operatorToken, pushToast, runMode]);
 
   const pollSendOutcome = useCallback(
     async (resolvedRunId: string) => {
@@ -299,8 +314,44 @@ export function StudioView({
     .slice(-14)
     .reverse();
 
+  // Persist runMode so refresh keeps the choice (the radio is the source of truth on render).
+  const handleRunModeChange = useCallback((next: "live" | "sim") => {
+    setRunMode(next);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("agentx.studio.runMode", next);
+    }
+  }, []);
+
   return (
     <div className="studio">
+      <div className="studio-modebar" role="radiogroup" aria-label="Run mode">
+        <span className="studio-modebar-label">run mode</span>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={runMode === "live"}
+          className={classNames("studio-modebar-pill", runMode === "live" && "is-active")}
+          onClick={() => handleRunModeChange("live")}
+          title="Hermes LLM harness + real Firecrawl/Exa research. Hits providers, drafts grounded emails, parks for approval."
+        >
+          <span className="studio-modebar-dot" /> LIVE
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={runMode === "sim"}
+          className={classNames("studio-modebar-pill", runMode === "sim" && "is-active")}
+          onClick={() => handleRunModeChange("sim")}
+          title="Deterministic OwnHarness playbook with canned data. Tests the run loop without hitting providers or sending real emails."
+        >
+          <span className="studio-modebar-dot" /> SIM
+        </button>
+        <span className="studio-modebar-hint">
+          {runMode === "live"
+            ? "real providers + Hermes LLM"
+            : "deterministic playbook, canned data"}
+        </span>
+      </div>
       <DriveTrack stage={stage} stageIndex={stageIndex} canGo={canGo} onGo={setStage} />
 
       {!hasToken ? (

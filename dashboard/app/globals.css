@@ -2020,3 +2020,74 @@ h3 {
     padding: 20px 14px 90px;
   }
 }
+
+/* ---------- Studio run-mode radio (LIVE / SIM) ---------- */
+.studio-modebar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  margin: 0 0 12px;
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  border-radius: 999px;
+  background: rgba(125, 211, 252, 0.04);
+  font-size: 0.78rem;
+  width: fit-content;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
+.studio-modebar-label {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.7rem;
+  color: var(--muted, #8a96ad);
+  font-weight: 600;
+  margin-right: 2px;
+}
+
+.studio-modebar-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid rgba(125, 211, 252, 0.2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted, #8a96ad);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.studio-modebar-pill:hover {
+  color: #d8e3f5;
+  border-color: rgba(125, 211, 252, 0.35);
+}
+
+.studio-modebar-pill.is-active {
+  color: #07101e;
+  background: #7dd3fc;
+  border-color: #7dd3fc;
+}
+
+.studio-modebar-pill .studio-modebar-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.6;
+}
+
+.studio-modebar-pill.is-active .studio-modebar-dot {
+  background: #07101e;
+  opacity: 1;
+}
+
+.studio-modebar-hint {
+  color: var(--muted, #8a96ad);
+  font-size: 0.72rem;
+  font-style: italic;
+}
