@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Agent-X-OS — Executive Summary (1-pager)</title>
+<style>
+  /* Print + screen friendly. One page on Letter/A4 at 11pt, screen 1280+ comfortable. */
+  :root{
+    --bg:#ffffff;
+    --fg:#0a0d14;
+    --muted:#5b6678;
+    --line:#d8dde6;
+    --line2:#e8ecf3;
+    --g:#0a7a4a;
+    --a:#a16207;
+    --r:#b91c1c;
+    --s:#0e7490;
+    --v:#6d28d9;
+    --t:#0f766e;
+    --accent:#1e40af;
+    --code-bg:#f4f6fa;
+    --code-fg:#0a0d14;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  .page{max-width:1100px;margin:0 auto;padding:18px 22px}
+  code,kbd{font-family:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;font-size:11.5px}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  /* Header */
+  header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid var(--fg);padding-bottom:8px;margin-bottom:10px}
+  header h1{margin:0;font-size:22px;font-weight:700;letter-spacing:-.02em}
+  header h1 span{color:var(--accent)}
+  header .meta{text-align:right;font-size:10.5px;color:var(--muted);line-height:1.4}
+  header .meta b{color:var(--fg)}
+
+  /* Verdict */
+  .verdict{background:#f0f9ff;border:1px solid #bae6fd;border-left:4px solid var(--accent);border-radius:4px;padding:8px 12px;margin:6px 0 10px;font-size:12.5px}
+  .verdict b{color:var(--accent)}
+
+  /* Stat strip */
+  .strip{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-bottom:10px}
+  .s{border:1px solid var(--line);border-radius:5px;padding:6px 8px;text-align:center;background:#fafbfc}
+  .s .v{font-size:18px;font-weight:700;line-height:1.1}
+  .s.g .v{color:var(--g)}
+  .s.a .v{color:var(--a)}
+  .s.r .v{color:var(--r)}
+  .s.s .v{color:var(--s)}
+  .s.v .v{color:var(--v)}
+  .s.t .v{color:var(--t)}
+  .s .l{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:600;margin-top:1px}
+
+  /* Two columns */
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:6px 0}
+  .row.three{grid-template-columns:1fr 1fr 1fr}
+  section.box{border:1px solid var(--line);border-radius:6px;padding:8px 12px;background:#fff}
+  section.box h2{margin:0 0 4px;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700}
+  section.box h3{margin:6px 0 3px;font-size:13px;font-weight:700}
+  section.box p{margin:3px 0}
+  section.box ul{margin:3px 0 3px 16px;padding:0}
+  section.box li{margin:2px 0}
+
+  /* Pills */
+  .pill{display:inline-block;font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:3px;text-transform:uppercase;letter-spacing:.04em;border:1px solid}
+  .pill.g{color:var(--g);border-color:var(--g);background:#f0fdf4}
+  .pill.a{color:var(--a);border-color:var(--a);background:#fefce8}
+  .pill.r{color:var(--r);border-color:var(--r);background:#fef2f2}
+  .pill.s{color:var(--s);border-color:var(--s);background:#ecfeff}
+  .pill.v{color:var(--v);border-color:var(--v);background:#f5f3ff}
+  .pill.dim{color:var(--muted);border-color:var(--muted);background:#f8fafc}
+
+  /* Tables */
+  table{width:100%;border-collapse:collapse;font-size:11.5px;margin:4px 0}
+  th,td{padding:4px 6px;border-bottom:1px solid var(--line2);text-align:left;vertical-align:top}
+  th{color:var(--muted);font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;font-weight:700;background:#fafbfc}
+  td code{font-size:10.5px;background:var(--code-bg);padding:0 4px;border-radius:2px;color:var(--code-fg)}
+
+  /* Flow */
+  .flow{display:flex;align-items:stretch;gap:0;margin:6px 0}
+  .flow .step{flex:1;background:#fafbfc;border:1px solid var(--line);border-radius:4px;padding:5px 7px;text-align:center;min-width:0}
+  .flow .step .t{font-size:11px;font-weight:700;line-height:1.2}
+  .flow .step .s{font-size:9.5px;color:var(--muted);line-height:1.2;margin-top:1px}
+  .flow .ar{display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px;padding:0 3px}
+
+  /* The diagram (compact) */
+  .arch{position:relative;background:#fafbfc;border:1px solid var(--line);border-radius:6px;padding:8px;margin:6px 0;height:240px;overflow:hidden}
+  .arch svg{width:100%;height:100%}
+  .arch .tag{position:absolute;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+
+  /* Bars */
+  .bar{height:6px;background:#f1f5f9;border-radius:3px;overflow:hidden;margin:1px 0}
+  .bar > i{display:block;height:100%;border-radius:2px}
+  .bar > i.g{background:var(--g)}
+  .bar > i.a{background:var(--a)}
+  .bar > i.r{background:var(--r)}
+  .gap-row{display:grid;grid-template-columns:130px 1fr 30px;gap:6px;align-items:center;font-size:10.5px;margin:1px 0}
+  .gap-row .l{color:var(--muted)}
+  .gap-row .n{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+
+  /* Footer */
+  footer{margin-top:10px;padding-top:6px;border-top:1px solid var(--line);display:flex;justify-content:space-between;font-size:9.5px;color:var(--muted)}
+  footer a{color:var(--muted)}
+
+  /* Two-up inside */
+  .twoup{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .twoup h3{font-size:12px;margin:2px 0 2px}
+
+  /* Print rules — fit on one page */
+  @media print{
+    @page{margin:.4in;size:letter}
+    body{font-size:11px;line-height:1.35}
+    header h1{font-size:18px}
+    .page{padding:0;max-width:none}
+    .strip .v{font-size:14px}
+    .arch{height:200px}
+    section.box{padding:6px 9px;break-inside:avoid}
+    .verdict{padding:6px 9px}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <h1>Agent-X-OS · <span>Executive Summary</span></h1>
+  <div class="meta">
+    <b>Repo:</b> Agent-X-OS @ main@081584f · 2026-06-20<br>
+    <b>Stage:</b> Phase-1 engine ~90% · Blueprint ~40% · 1 real send<br>
+    <b>Ask:</b> 12 weeks drinking own champagne → 100 settles → first paid pilot
+  </div>
+</header>
+
+<div class="verdict">
+  <b>One-liner.</b> Agent-X is an operating system for businesses that run themselves — mandates are the processes, the kernel is dumb and journaled, the Foundry makes them better offline. The Phase-1 engine is built and proven (1 real email sent founder→founder). The gap is <b>operating volume, not code</b>.
+</div>
+
+<div class="strip">
+  <div class="s g"><div class="v">2</div><div class="l">mandate types</div></div>
+  <div class="s s"><div class="v">7</div><div class="l">faculties</div></div>
+  <div class="s t"><div class="v">8</div><div class="l">syscall adapters</div></div>
+  <div class="s a"><div class="v">1</div><div class="l">real send (of ~100)</div></div>
+  <div class="s v"><div class="v">~90%</div><div class="l">Phase-1 engine</div></div>
+  <div class="s r"><div class="v">~40%</div><div class="l">whole blueprint</div></div>
+</div>
+
+<div class="row">
+  <section class="box">
+    <h2>The product in 60 seconds</h2>
+    <p>Each <b>Mandate</b> = an AI worker wrapped in an employment contract. <b>MandateType</b> is the class (charter · faculties · settlement · gym); <b>MandateInstance</b> is the object (one per business, the moat — its private heap grows as it works); <b>MandateRun</b> is the frame (does the work, then dies at settlement).</p>
+    <p>The <b>kernel</b> is dumb and deterministic — it routes triggers, runs gated syscalls, journals every effect. The <b>Foundry</b> is smart and gated — runs the candidate through a sandbox swarm, grades it, and (only) on real graded wins promotes a new version.</p>
+  </section>
+  <section class="box">
+    <h2>Why it's defensible</h2>
+    <ul>
+      <li><b>Heap per business</b> — private moat that compounds with every settle.</li>
+      <li><b>Gym + compiler</b> — mandates that improve themselves (rare in this category).</li>
+      <li><b>No credential in user space</b> — import-lint-enforced. Premium for any business that doesn't trust generic agents.</li>
+      <li><b>Verifiable, journaled settlement</b> — show a customer a real receipt, not a black-box log.</li>
+      <li><b>Creator mandate</b> — your cost of adding new products drops from sprints to minutes.</li>
+    </ul>
+  </section>
+</div>
+
+<div class="row">
+  <section class="box">
+    <h2>The architecture (compact)</h2>
+    <div class="arch">
+      <svg viewBox="0 0 1000 240" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+        <!-- USER SPACE (left) -->
+        <text x="10" y="18" font-size="10" font-weight="700" fill="#5b6678" text-transform="uppercase">USER SPACE</text>
+        <rect x="10" y="28" width="430" height="60" rx="4" fill="#f0f9ff" stroke="#0e7490" stroke-width="1"/>
+        <text x="20" y="46" font-size="11" font-weight="700" fill="#0a0d14">MANDATE POD (disposable)</text>
+        <text x="20" y="62" font-size="10" fill="#5b6678">7 faculties · Hermes (live) · OwnHarness (sim) · no creds</text>
+        <text x="20" y="78" font-size="10" fill="#5b6678">types: ✓ lead-finder · ⚠ creator (draft-only)</text>
+
+        <rect x="10" y="98" width="430" height="78" rx="4" fill="#f0fdf4" stroke="#0a7a4a" stroke-width="1"/>
+        <text x="20" y="116" font-size="11" font-weight="700" fill="#0a0d14">SYSCALL GATEWAY (kernel)</text>
+        <text x="20" y="130" font-size="9.5" fill="#5b6678">ring · idempotency · channel · adapter · credential inject · journal</text>
+        <g font-size="9.5" fill="#0a0d14">
+          <rect x="20" y="138" width="95" height="16" rx="2" fill="#fff" stroke="#0a7a4a"/><text x="24" y="149">lead_research</text>
+          <rect x="120" y="138" width="60" height="16" rx="2" fill="#fff" stroke="#0a7a4a"/><text x="124" y="149">read_url</text>
+          <rect x="185" y="138" width="65" height="16" rx="2" fill="#fff" stroke="#0a7a4a"/><text x="189" y="149">send_email</text>
+          <rect x="255" y="138" width="75" height="16" rx="2" fill="#fff" stroke="#0a7a4a"/><text x="259" y="149">draft_email</text>
+          <rect x="335" y="138" width="95" height="16" rx="2" fill="#fff" stroke="#0a7a4a"/><text x="339" y="149">queue_manual</text>
+          <text x="20" y="170" fill="#5b6678">+ mark_outcome · draft_candidate_type · human_task (terminal)</text>
+        </g>
+
+        <rect x="10" y="186" width="430" height="40" rx="4" fill="#f8fafc" stroke="#d8dde6" stroke-dasharray="3 2"/>
+        <text x="20" y="202" font-size="10" font-weight="700" fill="#5b6678">HARDWARE</text>
+        <text x="20" y="218" font-size="10" fill="#0a7a4a">✓ Exa · Firecrawl · Gmail SMTP</text>
+        <text x="200" y="218" font-size="10" fill="#b91c1c">✗ WhatsApp · Stripe · Calendar</text>
+
+        <!-- CONTROL PLANE (right) -->
+        <text x="460" y="18" font-size="10" font-weight="700" fill="#5b6678" text-transform="uppercase">CONTROL PLANE (ours)</text>
+
+        <rect x="460" y="28" width="260" height="98" rx="4" fill="#f0fdf4" stroke="#0a7a4a" stroke-width="1"/>
+        <text x="470" y="46" font-size="11" font-weight="700" fill="#0a0d14">ONLINE — live KERNEL</text>
+        <text x="470" y="60" font-size="9.5" fill="#5b6678">dumb · deterministic · journaled</text>
+        <g font-size="9.5" fill="#0a0d14">
+          <text x="470" y="76">scheduler · worker · heap · journal</text>
+          <text x="470" y="90">verifier (rules+human) · rings L0–L2</text>
+          <text x="470" y="104">hydration · settlement · resume</text>
+          <text x="470" y="118">WatchMaturationWorker (real→gym)</text>
+        </g>
+
+        <rect x="730" y="28" width="260" height="98" rx="4" fill="#f0fdf4" stroke="#0a7a4a" stroke-width="1"/>
+        <text x="740" y="46" font-size="11" font-weight="700" fill="#0a0d14">OFFLINE — FOUNDRY</text>
+        <text x="740" y="60" font-size="9.5" fill="#5b6678">smart · gated · never live</text>
+        <g font-size="9.5">
+          <text x="740" y="76" fill="#0a0d14">sim · 1 scenario pack · promptfoo judge</text>
+          <text x="740" y="90" fill="#0a0d14">PromotionGate (synthetic barred)</text>
+          <text x="740" y="104" fill="#0a0d14">Creator (draft only)</text>
+          <text x="740" y="118" fill="#a16207">⚠ compiler (mechanism only)</text>
+        </g>
+
+        <!-- arrows -->
+        <path d="M 440 60 L 460 60" stroke="#5b6678" stroke-width="1" fill="none" marker-end="url(#a)"/>
+        <path d="M 720 100 L 730 100" stroke="#5b6678" stroke-width="1" fill="none" marker-end="url(#a)"/>
+        <defs>
+          <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#5b6678"/></marker>
+        </defs>
+
+        <!-- Dashboard + Output -->
+        <rect x="10" y="232" width="500" height="0" fill="none"/>
+        <rect x="460" y="138" width="530" height="50" rx="4" fill="#f0f9ff" stroke="#0e7490" stroke-width="1"/>
+        <text x="470" y="156" font-size="11" font-weight="700" fill="#0a0d14">DASHBOARD (12 React components)</text>
+        <text x="470" y="170" font-size="9.5" fill="#5b6678">operator god-view · approval inbox · studio (drive→send) · swarm timeline · SSE + toasts</text>
+        <text x="470" y="182" font-size="9.5" fill="#5b6678">bearer-token auth · fail-closed</text>
+
+        <rect x="460" y="196" width="530" height="30" rx="4" fill="#f8fafc" stroke="#d8dde6" stroke-dasharray="3 2"/>
+        <text x="470" y="213" font-size="10" font-weight="700" fill="#5b6678">OUTPUT FLOWS</text>
+        <text x="560" y="213" font-size="10" fill="#0a7a4a">← REVENUE (real effects in world)</text>
+        <text x="780" y="213" font-size="10" fill="#6d28d9">→ MOAT (gym → better mandates)</text>
+      </svg>
+    </div>
+  </section>
+
+  <section class="box">
+    <h2>The end-to-end loop (1 line per step)</h2>
+    <div class="flow">
+      <div class="step"><div class="t">trigger</div><div class="s">msg / deadline / spawn</div></div>
+      <div class="ar">→</div>
+      <div class="step"><div class="t">hydrate</div><div class="s">freeze heap snapshot</div></div>
+      <div class="ar">→</div>
+      <div class="step"><div class="t">think</div><div class="s">faculties + LLM</div></div>
+      <div class="ar">→</div>
+      <div class="step"><div class="t">act</div><div class="s">gated syscall</div></div>
+      <div class="ar">→</div>
+      <div class="step"><div class="t">verify</div><div class="s">rules→judge→human→reality</div></div>
+      <div class="ar">→</div>
+      <div class="step"><div class="t">settle</div><div class="s">atomic · journaled</div></div>
+    </div>
+    <p style="font-size:11px;color:var(--muted);margin:4px 0"><b>Real-world effect:</b> send_email (Gmail SMTP, L2, parks for human) → on Approve, the run resumes and sends. <span class="pill g">1 real send landed</span></p>
+    <p style="font-size:11px;color:var(--muted);margin:0"><b>Foundry loop:</b> settled runs → gym grows → compiler proposes better mandates → PromotionGate (real graded wins only) → canary → promote.</p>
+  </section>
+</div>
+
+<div class="row three">
+  <section class="box">
+    <h2>What you have today</h2>
+    <ul>
+      <li><b>2 mandate types</b>: <code>lead-finder</code> (live, 1 real send) and <code>creator</code> (drafts new mandate types; promote = Phase 4)</li>
+      <li><b>7 faculties</b>: research, judgment, memory-craft, escalation, enrichment, conversation, scheduling</li>
+      <li><b>8 syscall adapters</b>: lead_research_batch, read_url, draft_email, send_email, queue_manual_action, mark_outcome, draft_candidate_type, human_task</li>
+      <li><b>1 scenario pack</b>: <code>indian_b2b_leads_v1</code></li>
+      <li><b>12 React components</b> in the dashboard (operator + studio)</li>
+      <li><b>21+ API routes</b> incl. <code>/commands/instantiate</code>, <code>/commands/trigger-run</code>, <code>/commands/approve</code>, <code>/commands/reject</code>, <code>/commands/run-swarm</code>, <code>/commands/promote</code>, <code>/events</code> (SSE)</li>
+      <li><b>47 pytest files + 12 dashboard test files</b>, all green</li>
+    </ul>
+  </section>
+
+  <section class="box">
+    <h2>How to use it (3 paths)</h2>
+    <h3>A · Studio GUI (browser)</h3>
+    <pre style="background:var(--code-bg);padding:4px 6px;border-radius:3px;font-size:10.5px;margin:2px 0">./scripts/start_agentx.sh
+open http://127.0.0.1:3000
+# Studio spine: ① instantiate → ② find leads →
+# ③ review → ④ approve → ⑤ send → ⑥ heap</pre>
+    <h3>B · CLI (terminal)</h3>
+    <pre style="background:var(--code-bg);padding:4px 6px;border-radius:3px;font-size:10.5px;margin:2px 0">uv run python scripts/use_mandate.py \
+  --icp "dental clinics · Pune" --count 3
+# → draft appears → press y → sends</pre>
+    <h3>C · HTTP API</h3>
+    <pre style="background:var(--code-bg);padding:4px 6px;border-radius:3px;font-size:10.5px;margin:2px 0">curl -X POST :8000/commands/instantiate ...
+curl -X POST :8000/commands/trigger-run ...
+curl -X POST :8000/commands/approve ...</pre>
+  </section>
+
+  <section class="box">
+    <h2>How to add more mandates</h2>
+    <h3>① Use the Creator (drafts, soon chat)</h3>
+    <p>Today: the Creator drafts a candidate MandateType. The conversational UI is G10 (next session).</p>
+    <h3>② Add a MandateType in code (canonical)</h3>
+    <p>Mirror <code>build_lead_finder_type()</code> as <code>build_&lt;name&gt;_type()</code> in <code>packages/mandate/src/agentx_mandate/library/</code>. ~80 lines. Register in <code>api/app.py:91</code>. Add tests, run gate.</p>
+    <h3>③ Wire a new syscall adapter</h3>
+    <p>Add an <code>Adapter</code> in <code>packages/syscall/src/agentx_syscall/adapters.py</code>. Set rung &amp; risk class. Credential via ConfigVault (pod never sees it). Money = API-only, gated.</p>
+    <h3>④ Run a swarm to iterate a candidate</h3>
+    <p><code>POST /commands/run-swarm</code> drives the candidate through the kernel in sim, promptfoo grades, PromotionGate bars synthetic-only.</p>
+  </section>
+</div>
+
+<div class="row">
+  <section class="box">
+    <h2>The gap (by BLUEPRINT section)</h2>
+    <div class="gap-row"><div class="l">§1 Mandate (7 organs)</div><div class="bar"><i class="g" style="width:85%"></i></div><div class="n" style="color:var(--g)">85%</div></div>
+    <div class="gap-row"><div class="l">§2 Run loop</div><div class="bar"><i class="g" style="width:100%"></i></div><div class="n" style="color:var(--g)">100%</div></div>
+    <div class="gap-row"><div class="l">§3 Syscall layer</div><div class="bar"><i class="g" style="width:85%"></i></div><div class="n" style="color:var(--g)">85%</div></div>
+    <div class="gap-row"><div class="l">§4 Kernel (two clocks)</div><div class="bar"><i class="g" style="width:90%"></i></div><div class="n" style="color:var(--g)">90%</div></div>
+    <div class="gap-row"><div class="l">§4.5 Harness use</div><div class="bar"><i class="g" style="width:100%"></i></div><div class="n" style="color:var(--g)">100%</div></div>
+    <div class="gap-row"><div class="l">§5 Foundry &amp; Creator</div><div class="bar"><i class="a" style="width:45%"></i></div><div class="n" style="color:var(--a)">45%</div></div>
+    <div class="gap-row"><div class="l">§6 Dashboard</div><div class="bar"><i class="g" style="width:95%"></i></div><div class="n" style="color:var(--g)">95%</div></div>
+    <div class="gap-row"><div class="l">§6.1 Operator Agent</div><div class="bar"><i class="r" style="width:5%"></i></div><div class="n" style="color:var(--r)">5%</div></div>
+    <div class="gap-row"><div class="l">§7 Build order (P1)</div><div class="bar"><i class="a" style="width:90%"></i></div><div class="n" style="color:var(--a)">90%</div></div>
+    <p style="font-size:11px;color:var(--muted);margin:6px 0 0"><b>Remaining gap is not architecture</b> — the seam held across 7 backend phases + a frontend session with zero <code>packages/contracts</code> changes. It is <b>reach</b>, <b>volume</b>, and the <b>self-improvement loop</b> (a real gym + a real GEPA search).</p>
+  </section>
+
+  <section class="box">
+    <h2>Critical 90-day math</h2>
+    <table>
+      <thead><tr><th>milestone</th><th>proves</th><th>revenue</th></tr></thead>
+      <tbody>
+        <tr><td><b>5 real settles</b> (not to self)</td><td>Loop works for someone else</td><td>Unlocks the ask</td></tr>
+        <tr><td><b>2nd MandateType</b> in production</td><td>Catalog pattern works</td><td>Doubles surface area</td></tr>
+        <tr><td><b>1 paying pilot</b> (1 biz, 1 mo)</td><td>First unit-econ data</td><td>₹20k/mo = price anchor</td></tr>
+        <tr><td><b>Hosted multi-tenant</b></td><td>You can sell at all</td><td>Becomes a SaaS</td></tr>
+        <tr><td><b>3 mandates + 5 customers</b></td><td>PMF signal</td><td>Series-seedable or ₹3–10L/mo</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:11px;color:var(--muted);margin:6px 0 0">Path: ① ship inbound-WhatsApp mandate (3–5 days) ② use lead-finder to find 3 paying pilots for it ③ charge from day 1 ④ add Stripe + multi-tenant in parallel ⑤ the journal/heap becomes your marketing asset.</p>
+  </section>
+</div>
+
+<div class="row">
+  <section class="box">
+    <h2>Strengths (monetizable)</h2>
+    <ul>
+      <li><b>Self-improving mandates</b> — rare in this category</li>
+      <li><b>No credential in user space</b> — import-lint-enforced</li>
+      <li><b>Verifiable journaled settlement</b> — receipt for every action</li>
+      <li><b>Creator mandate</b> — new products in minutes, not sprints</li>
+      <li><b>7 live-proof docs</b> — every shipped phase has a session proof with real output</li>
+    </ul>
+  </section>
+  <section class="box">
+    <h2>Risks (will block paying customers)</h2>
+    <ul>
+      <li><b>No users yet</b> — 1 real email, to yourself. First 5 customers = next milestone.</li>
+      <li><b>2 mandates in the catalog</b> — the "growing ecosystem" promise is real but only 1 is revenue-ready.</li>
+      <li><b>Localhost-only</b> — no signup, no billing, no URL. Until you have it, the customer is you.</li>
+      <li><b>"OS for business" is a category, not a product</b> — sell the lead-finder, not the OS.</li>
+      <li><b>The gym is post-PMF defensibility</b>, not the first sale.</li>
+    </ul>
+  </section>
+</div>
+
+<div class="row" style="grid-template-columns:1fr">
+  <section class="box" style="background:#fefce8;border-color:#facc15">
+    <h2 style="color:#a16207">⚠ The one risk worth naming: velocity</h2>
+    <p>The architecture was the right thing to nail first — and you did, honestly, very well. But the hardest thing in agent-platform businesses is not the kernel, it's the <b>rate of real-world feedback</b>. You have <b>1 settle</b>, you need <b>~100</b>. <b>Drinking your own champagne</b> (you as the customer, every week, for 12 weeks) is the cheapest path to settle #100, the most honest product feedback loop, and the demo that closes your first paid pilot. Build the 2nd mandate to feed the same loop.</p>
+  </section>
+</div>
+
+<footer>
+  <div>Generated 2026-06-20 · 46 source paths verified · 7 session live-proofs · 47 pytest files · 12 dashboard test files</div>
+  <div>
+    Companion: <a href="AGENTX_STATUS_V2.html">visual status (v2)</a> ·
+    <a href="AGENTX_STATUS_2026-06-20.html">text-heavy (v1)</a> ·
+    <a href="docs/BLUEPRINT.md">BLUEPRINT</a> ·
+    <a href="docs/STATE_AND_ROADMAP.md">STATE_AND_ROADMAP</a>
+  </div>
+</footer>
+
+</div>
+</body>
+</html>

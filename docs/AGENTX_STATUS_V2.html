@@ -1,0 +1,850 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Agent-X-OS — Visual Status (v2)</title>
+<style>
+  :root{
+    --bg:#07090e;
+    --panel:#0f131c;
+    --panel2:#161c2a;
+    --line:#1f2638;
+    --line2:#2c3650;
+    --text:#e8eef9;
+    --muted:#8a96ad;
+    --dim:#5b667a;
+    --g:#22c55e;
+    --a:#f59e0b;
+    --r:#ef4444;
+    --s:#38bdf8;
+    --v:#a78bfa;
+    --t:#2dd4bf;
+    --p:#f472b6;
+    --o:#fb923c;
+    --good:#0c1d18;
+    --good-b:#1f4d3f;
+    --warn:#1d1606;
+    --warn-b:#5c4515;
+    --bad:#1d0a0a;
+    --bad-b:#5a2222;
+    --info:#091d24;
+    --info-b:#1d4a5c;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:radial-gradient(ellipse at top,#0d121d 0%,#07090e 60%);color:var(--text);font:14px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,system-ui,Segoe UI,sans-serif;-webkit-font-smoothing:antialiased}
+  code,pre,kbd{font-family:"JetBrains Mono","SF Mono",Menlo,Consolas,ui-monospace,monospace}
+  a{color:var(--s);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:1400px;margin:0 auto;padding:18px 24px 80px}
+
+  /* Top bar */
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:10px 18px;background:rgba(15,19,28,.7);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:10px;margin-bottom:14px;position:sticky;top:8px;z-index:50}
+  .topbar .brand{font-weight:600;letter-spacing:-.01em}
+  .topbar .brand b{color:var(--s)}
+  .topbar .nav{display:flex;gap:4px;flex-wrap:wrap}
+  .topbar .nav a{font-size:12.5px;color:var(--muted);padding:5px 10px;border-radius:6px;border:1px solid transparent}
+  .topbar .nav a:hover{color:var(--text);border-color:var(--line2);background:#0d121d;text-decoration:none}
+  .topbar .right{font-size:11.5px;color:var(--dim);font-family:"JetBrains Mono",monospace}
+
+  /* Hero stat strip */
+  .strip{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px}
+  @media (max-width:1100px){.strip{grid-template-columns:repeat(3,1fr)}}
+  @media (max-width:600px){.strip{grid-template-columns:repeat(2,1fr)}}
+  .s{background:linear-gradient(180deg,#0f131c,#0a0d14);border:1px solid var(--line);border-radius:10px;padding:14px 14px 12px;position:relative;overflow:hidden}
+  .s::before{content:"";position:absolute;top:0;left:0;right:0;height:2px;background:var(--g)}
+  .s.a::before{background:var(--a)}
+  .s.r::before{background:var(--r)}
+  .s.s::before{background:var(--s)}
+  .s.v::before{background:var(--v)}
+  .s.t::before{background:var(--t)}
+  .s .v{font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1}
+  .s.g .v{color:var(--g)}
+  .s.a .v{color:var(--a)}
+  .s.r .v{color:var(--r)}
+  .s.s .v{color:var(--s)}
+  .s.v .v{color:var(--v)}
+  .s.t .v{color:var(--t)}
+  .s .l{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.35}
+  .s .d{font-size:10.5px;color:var(--dim);margin-top:2px}
+
+  /* Cards */
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:14px;position:relative;overflow:hidden}
+  .card h2{font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 14px;display:flex;align-items:center;gap:8px;font-weight:600}
+  .card h2 .icon{width:22px;height:22px;border-radius:6px;background:#1a2236;display:inline-flex;align-items:center;justify-content:center;font-size:12px}
+  .card h3{font-size:15px;margin:14px 0 6px;color:var(--text);font-weight:600}
+  .card p{margin:4px 0;color:#cfd6e3}
+  .card ul,.card ol{margin:6px 0 6px 18px;color:#cfd6e3}
+  .card li{margin:3px 0}
+
+  /* Status pill */
+  .pill{display:inline-block;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid;letter-spacing:.04em;text-transform:uppercase}
+  .pill.g{color:var(--g);border-color:var(--good-b);background:var(--good)}
+  .pill.a{color:var(--a);border-color:var(--warn-b);background:var(--warn)}
+  .pill.r{color:var(--r);border-color:var(--bad-b);background:var(--bad)}
+  .pill.s{color:var(--s);border-color:var(--info-b);background:var(--info)}
+  .pill.v{color:var(--v);border-color:#3a2c5c;background:#150f24}
+  .pill.dim{color:var(--dim);border-color:var(--line2);background:#0d121d}
+
+  /* Two-column compare */
+  .cmp{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  @media (max-width:900px){.cmp{grid-template-columns:1fr}}
+  .cmp .col{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:#0c1018}
+  .cmp .col.plan{border-color:#1d4a5c;background:linear-gradient(180deg,#091d24,#0c1018)}
+  .cmp .col.built{border-color:#1f4d3f;background:linear-gradient(180deg,#0c1d18,#0c1018)}
+  .cmp .col h4{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);display:flex;align-items:center;gap:6px}
+  .cmp .col h4 .dot{width:8px;height:8px;border-radius:50%}
+  .cmp .col.plan h4 .dot{background:var(--s)}
+  .cmp .col.built h4 .dot{background:var(--g)}
+  .cmp ul{margin:0;padding-left:16px}
+  .cmp li{margin:3px 0;font-size:13px}
+
+  /* Mandate cards */
+  .mcards{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media (max-width:900px){.mcards{grid-template-columns:1fr}}
+  .mc{background:#0c1018;border:1px solid var(--line);border-radius:12px;padding:16px;position:relative;overflow:hidden}
+  .mc::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;background:var(--g)}
+  .mc.draft::before{background:var(--a)}
+  .mc h3{margin:0 0 6px;font-size:15px;display:flex;align-items:center;gap:8px}
+  .mc h3 .icon{font-size:18px}
+  .mc .charter{font-size:12.5px;color:var(--muted);font-style:italic;margin:6px 0 12px;padding:8px 10px;background:#0a0d14;border-radius:6px;border-left:3px solid var(--line2)}
+  .mc .grid2{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:12px;margin:8px 0}
+  .mc .grid2 .k{color:var(--muted);font-weight:500}
+  .mc .tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+
+  /* Tables */
+  table{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
+  th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;background:#0a0d14}
+  td code{font-size:11.5px;color:var(--s);background:#0a0d14;padding:1px 5px;border-radius:3px}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:#0d1219}
+
+  /* Code blocks */
+  details{border:1px solid var(--line);border-radius:8px;background:#0a0d14;padding:8px 12px;margin:6px 0}
+  details summary{cursor:pointer;color:var(--text);font-size:13px;font-weight:500;list-style:none;display:flex;align-items:center;gap:6px}
+  details summary::before{content:"▸";color:var(--muted);font-size:10px;transition:transform .2s}
+  details[open] summary::before{transform:rotate(90deg)}
+  details[open] summary{margin-bottom:6px}
+  pre{background:#07090e;border:1px solid var(--line);border-radius:6px;padding:10px 12px;overflow:auto;color:#cfd6e3;font-size:11.5px;line-height:1.55;margin:4px 0}
+
+  /* Path cards (How to use) */
+  .paths{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  @media (max-width:1000px){.paths{grid-template-columns:1fr}}
+  .path{background:#0c1018;border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column}
+  .path .ph{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .path .ph .num{width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,var(--s),var(--v));color:#000;font-weight:700;font-size:12px;display:inline-flex;align-items:center;justify-content:center}
+  .path h4{margin:0;font-size:13px}
+  .path .desc{font-size:12px;color:var(--muted);margin-bottom:8px}
+  .path pre{flex:1;margin:0;font-size:10.5px}
+
+  /* Flow diagrams */
+  .flow{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin:10px 0}
+  .flow .step{flex:1;min-width:120px;background:#0c1018;border:1px solid var(--line);border-radius:8px;padding:10px 12px;position:relative;text-align:center}
+  .flow .step .n{font-size:10px;color:var(--dim);font-family:"JetBrains Mono",monospace}
+  .flow .step .t{font-size:13px;font-weight:600;margin:2px 0}
+  .flow .step .s{font-size:11px;color:var(--muted)}
+  .flow .arrow{display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:18px;padding:0 4px;min-width:20px}
+  .flow.vertical{flex-direction:column}
+  .flow.vertical .step{text-align:left}
+  .flow.vertical .arrow{transform:rotate(90deg)}
+
+  /* Gap progress bars */
+  .gap-row{display:grid;grid-template-columns:160px 1fr 50px;gap:10px;align-items:center;margin:6px 0}
+  .gap-row .l{font-size:12px;color:var(--muted)}
+  .gap-row .bar{height:10px;background:#0a0d14;border:1px solid var(--line2);border-radius:6px;overflow:hidden;position:relative}
+  .gap-row .bar > i{display:block;height:100%;border-radius:5px}
+  .gap-row .bar > i.g{background:linear-gradient(90deg,#10b981,#34d399)}
+  .gap-row .bar > i.a{background:linear-gradient(90deg,#d97706,#fbbf24)}
+  .gap-row .bar > i.r{background:linear-gradient(90deg,#dc2626,#f87171)}
+  .gap-row .n{text-align:right;font-size:12px;font-variant-numeric:tabular-nums;font-weight:600}
+
+  /* SVG diagram */
+  .archwrap{position:relative;background:#0a0d14;border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:6px 0 10px}
+  .archwrap svg{display:block;width:100%;height:auto;cursor:default}
+  .archwrap .legend{position:absolute;top:10px;right:12px;display:flex;gap:10px;font-size:10.5px;color:var(--muted);background:rgba(7,9,14,.7);padding:6px 10px;border-radius:6px;border:1px solid var(--line);z-index:2}
+  .archwrap .legend .item{display:flex;align-items:center;gap:4px}
+  .archwrap .legend .sw{width:8px;height:8px;border-radius:2px}
+  .archwrap .info{position:absolute;bottom:10px;left:12px;right:12px;background:rgba(7,9,14,.95);border:1px solid var(--s);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text);display:none;z-index:3;backdrop-filter:blur(6px)}
+  .archwrap .info.show{display:block}
+  .archwrap .info .title{font-weight:600;color:var(--s);font-size:13px;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .archwrap .info .close{cursor:pointer;color:var(--dim);font-size:18px;line-height:1;background:transparent;border:none;padding:0 4px}
+  .archwrap .info .close:hover{color:var(--r)}
+  .archwrap .info .file{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--v);background:#0a0d14;padding:1px 6px;border-radius:3px;display:inline-block;margin-top:4px}
+  .archwrap .info .file a{color:inherit;text-decoration:none}
+  .archwrap .info .file a:hover{text-decoration:underline}
+  .archwrap .info p{margin:3px 0;color:#cfd6e3}
+
+  /* SVG box styles (matched by class) */
+  .box{transition:opacity .15s, stroke-width .15s, filter .15s}
+  .box:hover{filter:brightness(1.2)}
+  .box.built{cursor:pointer}
+  .box.built:hover rect, .box.built:hover polygon, .box.built:hover path{stroke-width:2.5}
+  .label{font-family:-apple-system,system-ui,sans-serif;font-size:10.5px;fill:#cfd6e3;pointer-events:none}
+  .label.tiny{font-size:9px;fill:#8a96ad}
+  .label.bold{font-weight:600;fill:#e8eef9}
+  .conn{stroke:var(--line2);stroke-width:1;fill:none}
+  .conn.built{stroke:var(--good-b);stroke-width:1.5}
+  .legend-title{font-size:10px;fill:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+
+  /* Callout */
+  .callout{background:linear-gradient(135deg,#0c1d18,#0a0d14);border:1px solid var(--good-b);border-radius:10px;padding:14px 16px;margin:8px 0;display:flex;gap:12px;align-items:flex-start}
+  .callout.warn{background:linear-gradient(135deg,#1d1606,#0a0d14);border-color:var(--warn-b)}
+  .callout.bad{background:linear-gradient(135deg,#1d0a0a,#0a0d14);border-color:var(--bad-b)}
+  .callout .ic{font-size:20px;line-height:1}
+  .callout .bd{flex:1}
+  .callout .bd h4{margin:0 0 4px;font-size:13px}
+  .callout .bd p{margin:0;font-size:12.5px;color:#cfd6e3}
+
+  /* Verdict */
+  .verdict{background:linear-gradient(180deg,#0d131d,#0a0d14);border:1px solid var(--line2);border-radius:12px;padding:18px 20px;margin:8px 0}
+  .verdict h3{margin:0 0 8px;font-size:16px}
+  .verdict p{margin:6px 0;color:#cfd6e3}
+
+  /* Timeline */
+  .tl{position:relative;padding:6px 0 6px 22px}
+  .tl::before{content:"";position:absolute;left:8px;top:0;bottom:0;width:2px;background:var(--line2)}
+  .tl-item{position:relative;padding:4px 0 10px}
+  .tl-item::before{content:"";position:absolute;left:-18px;top:9px;width:10px;height:10px;border-radius:50%;background:var(--s);border:2px solid var(--bg)}
+  .tl-item.done::before{background:var(--g)}
+  .tl-item .when{font-size:10.5px;color:var(--dim);font-family:"JetBrains Mono",monospace}
+  .tl-item .what{font-size:13px;font-weight:600;color:var(--text)}
+  .tl-item .why{font-size:11.5px;color:var(--muted);margin-top:1px}
+
+  /* Two-up text */
+  .two-up{display:grid;grid-template-columns:1.2fr 1fr;gap:14px;margin:8px 0}
+  @media (max-width:900px){.two-up{grid-template-columns:1fr}}
+
+  /* Helpers */
+  .small{font-size:11.5px;color:var(--muted)}
+  .dim{color:var(--dim)}
+  .mono{font-family:"JetBrains Mono",monospace;font-size:11.5px}
+  .ok{color:var(--g)}
+  .warn-c{color:var(--a)}
+  .bad-c{color:var(--r)}
+  .row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .iconbtn{width:28px;height:28px;border-radius:6px;border:1px solid var(--line2);background:#0c1018;color:var(--muted);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px}
+  .iconbtn:hover{border-color:var(--s);color:var(--s)}
+
+  /* Week grid */
+  .week{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:8px 0}
+  @media (max-width:900px){.week{grid-template-columns:1fr 1fr}}
+  .wkday{background:#0c1018;border:1px solid var(--line);border-radius:10px;padding:12px}
+  .wkday .dn{font-size:10.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+  .wkday h4{margin:4px 0;font-size:13px}
+  .wkday ul{margin:4px 0 0 16px;padding:0;font-size:12px}
+
+  .foot{margin-top:24px;color:var(--dim);font-size:11.5px;text-align:center;padding:14px}
+  .foot a{color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="brand">Agent-X-OS · <b>visual status</b></div>
+  <nav class="nav">
+    <a href="#strip">at a glance</a>
+    <a href="#arch">interactive diagram</a>
+    <a href="#mandates">mandates</a>
+    <a href="#howto">how to use</a>
+    <a href="#add">add more</a>
+    <a href="#gap">gap</a>
+    <a href="#revenue">revenue</a>
+    <a href="#week">this week</a>
+    <a href="AGENTX_EXECUTIVE_SUMMARY.html" target="_blank">1-pager ↗</a>
+  </nav>
+  <div class="right">main · 081584f · 2026-06-20</div>
+</div>
+
+<!-- STAT STRIP -->
+<div class="strip" id="strip">
+  <div class="s g"><div class="v">2</div><div class="l">mandate TYPES in library</div><div class="d">lead-finder · creator</div></div>
+  <div class="s s"><div class="v">7</div><div class="l">faculties (reusable)</div><div class="d">research, judgment, memory-craft, escalation, enrichment, conversation, scheduling</div></div>
+  <div class="s t"><div class="v">8</div><div class="l">syscall adapters</div><div class="d">incl. send_email (Gmail SMTP)</div></div>
+  <div class="s a"><div class="v">1</div><div class="l">real outbound send</div><div class="d">settle #1 of ~100</div></div>
+  <div class="s v"><div class="v">~90%</div><div class="l">Phase-1 engine built</div><div class="d">plumbing + contracts + evidence</div></div>
+  <div class="s r"><div class="v">~40%</div><div class="l">whole blueprint built</div><div class="d">5 phases + Foundry + Operator Agent</div></div>
+</div>
+
+<!-- VERDICT -->
+<div class="verdict">
+  <h3>One-line verdict</h3>
+  <p>You have a <b style="color:var(--g)">real, running, blueprint-honoring Phase-1 engine</b> that one operator can drive from a local dashboard to send a real email — <b>settle #1 of ~100</b>. The architecture is sound (dumb live kernel + smart offline Foundry, both proven). The biggest gap is <b style="color:var(--a)">volume of real-world settles</b> — that's an operating milestone, not a coding one.</p>
+</div>
+
+<!-- INTERACTIVE SVG ARCHITECTURE -->
+<div class="card" id="arch">
+  <h2><span class="icon">◇</span> Interactive architecture — click any green box to open its source file</h2>
+  <p class="small">Left = the BLUEPRINT plan. Right = what's actually wired in code on <code>main</code>. Green = live, amber = mechanism only, red = not built. Click a green box for details + the file path.</p>
+
+  <div class="archwrap">
+    <div class="legend">
+      <div class="item"><span class="sw" style="background:var(--g)"></span>built (live)</div>
+      <div class="item"><span class="sw" style="background:var(--a)"></span>partial</div>
+      <div class="item"><span class="sw" style="background:var(--r)"></span>not built</div>
+      <div class="item"><span class="sw" style="background:var(--s)"></span>planned</div>
+    </div>
+
+    <svg viewBox="0 0 1300 900" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" id="archSvg">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#2c3650"/>
+        </marker>
+        <marker id="arrB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#1f4d3f"/>
+        </marker>
+      </defs>
+
+      <!-- Background lane labels -->
+      <text class="legend-title" x="20" y="20">USER SPACE (rented, disposable)</text>
+      <text class="legend-title" x="660" y="20">CONTROL PLANE (ours)</text>
+      <line x1="650" y1="30" x2="650" y2="880" stroke="#1f2638" stroke-dasharray="3 4" stroke-width="1"/>
+
+      <!-- ================== LEFT: USER SPACE ================== -->
+      <!-- Mandate pod -->
+      <g class="box built" data-name="mandate-pod" data-file="packages/mandate/src/agentx_mandate/" data-desc="The disposable agent pod. Holds NO credentials (lint-enforced). Uses Hermes as the LLM harness; OwnHarness for sim. 7 faculties, 2 mandate types in library. Hermes runner drives the run via tool-calling.">
+        <rect x="30" y="50" width="580" height="170" rx="8" fill="#0c1018" stroke="#22c55e" stroke-width="1.5"/>
+        <text class="label bold" x="45" y="72">MANDATE POD (disposable)</text>
+        <text class="label tiny" x="45" y="88">per-instance, no creds, terminated at settlement</text>
+
+        <!-- faculties row -->
+        <rect x="45" y="100" width="555" height="38" rx="4" fill="#0a0d14" stroke="#2c3650"/>
+        <text class="label tiny" x="55" y="116">FACULTIES (reusable SDK bricks)</text>
+        <text class="label" x="55" y="130">research · judgment · memory-craft · escalation · enrichment · conversation · scheduling</text>
+
+        <!-- harness seam -->
+        <rect x="45" y="146" width="555" height="32" rx="4" fill="#0a0d14" stroke="#2c3650"/>
+        <text class="label tiny" x="55" y="162">HARNESS SEAM (LLM-driven via tool-calling)</text>
+        <text class="label" x="55" y="174">Hermes (live) · OwnHarness (sim) · OpenClaw · CheetahClaws — typed, not yet bound</text>
+
+        <!-- mandate types -->
+        <rect x="45" y="186" width="270" height="26" rx="4" fill="#0a1d18" stroke="#1f4d3f"/>
+        <text class="label" x="55" y="203">✓ lead-finder <tspan class="tiny" fill="#8a96ad">@0.1.0</tspan></text>
+        <rect x="325" y="186" width="275" height="26" rx="4" fill="#1d1606" stroke="#5c4515"/>
+        <text class="label" x="335" y="203">⚠ creator <tspan class="tiny" fill="#8a96ad">@0.1.0 (draft-only)</tspan></text>
+      </g>
+
+      <!-- intent arrow -->
+      <path d="M 320 230 L 320 270" class="conn" marker-end="url(#arr)"/>
+      <text class="label tiny" x="332" y="252">intent</text>
+
+      <!-- Syscall gateway -->
+      <g class="box built" data-name="syscall-gateway" data-file="packages/syscall/src/agentx_syscall/registry.py" data-desc="The gateway. Ring check → idempotency → channel rule → adapter resolve → credential inject (from vault, never from pod) → execute → journal. L0–L2 wired. Bottom rung always = human_task. No creds in user space (lint-enforced).">
+        <rect x="30" y="280" width="580" height="200" rx="8" fill="#0c1018" stroke="#22c55e" stroke-width="1.5"/>
+        <text class="label bold" x="45" y="302">SYSCALL GATEWAY (kernel)</text>
+        <text class="label tiny" x="45" y="318">ring check · idempotency · channel rule · adapter resolve · credential inject · journal</text>
+
+        <!-- adapters grid -->
+        <g font-size="10.5">
+          <rect x="45" y="332" width="115" height="28" rx="3" fill="#0a1d18" stroke="#1f4d3f"/><text x="50" y="350" fill="#cfd6e3">lead_research_batch</text>
+          <rect x="165" y="332" width="80" height="28" rx="3" fill="#0a1d18" stroke="#1f4d3f"/><text x="170" y="350" fill="#cfd6e3">read_url</text>
+          <rect x="250" y="332" width="85" height="28" rx="3" fill="#0a1d18" stroke="#1f4d3f"/><text x="255" y="350" fill="#cfd6e3">draft_email</text>
+          <rect x="340" y="332" width="95" height="28" rx="3" fill="#0a1d18" stroke="#1f4d3f"/><text x="345" y="350" fill="#cfd6e3">send_email</text>
+          <rect x="440" y="332" width="160" height="28" rx="3" fill="#0a1d18" stroke="#1f4d3f"/><text x="445" y="350" fill="#cfd6e3">queue_manual_action</text>
+
+          <rect x="45" y="364" width="85" height="28" rx="3" fill="#0a1d18" stroke="#1f4d3f"/><text x="50" y="382" fill="#cfd6e3">mark_outcome</text>
+          <rect x="135" y="364" width="160" height="28" rx="3" fill="#1d1606" stroke="#5c4515"/><text x="140" y="382" fill="#cfd6e3">draft_candidate_type</text>
+          <rect x="300" y="364" width="105" height="28" rx="3" fill="#0a1d18" stroke="#1f4d3f"/><text x="305" y="382" fill="#cfd6e3">human_task ⤓</text>
+          <rect x="410" y="364" width="190" height="28" rx="3" fill="#1d0a0a" stroke="#5a2222"/><text x="415" y="382" fill="#f87171">✗ calendar/CRM/voice/…</text>
+        </g>
+
+        <text class="label tiny" x="45" y="412">L0=read · L1=reversible · L2=external msg · money=L4+gated</text>
+        <text class="label tiny" x="45" y="428">human_task is always the terminal fallback (no "unimplemented")</text>
+        <text class="label tiny" x="45" y="444">Vault injects creds at execute; pod never sees the secret</text>
+        <rect x="45" y="450" width="555" height="22" rx="3" fill="#091d24" stroke="#1d4a5c"/>
+        <text class="label tiny" x="55" y="465">PLANNED: WhatsApp · Stripe · Google Calendar · HubSpot · phone · browser</text>
+      </g>
+
+      <!-- hardware -->
+      <path d="M 320 490 L 320 530" class="conn" marker-end="url(#arr)"/>
+      <g>
+        <rect x="30" y="540" width="580" height="60" rx="8" fill="#0a0d14" stroke="#2c3650" stroke-dasharray="4 3"/>
+        <text class="label tiny" x="45" y="558">HARDWARE (reality)</text>
+        <text x="45" y="578" fill="#22c55e" font-size="11">✓ Exa · Firecrawl · Gmail SMTP</text>
+        <text x="225" y="578" fill="#f87171" font-size="11">✗ WhatsApp · Stripe · Calendar · Phone · Playwright</text>
+        <text class="label tiny" x="45" y="592">invariants: money=API only · never LLM-executed · never browser</text>
+      </g>
+
+      <!-- ================== RIGHT: CONTROL PLANE ================== -->
+      <!-- Online kernel -->
+      <g class="box built" data-name="online-kernel" data-file="packages/kernel/src/agentx_kernel/run_loop.py" data-desc="Online live kernel. Deterministic, journaled, no LLM in loop. Modules: scheduler · heap+journal · verifier (rules+human) · gateway · rings L0–L2 · hydration · settlement · WatchMaturationWorker. Hydrate → think → act → verify → settle → deferred-settle. First-class resume for parked runs.">
+        <rect x="680" y="50" width="290" height="320" rx="8" fill="#0c1018" stroke="#22c55e" stroke-width="1.5"/>
+        <text class="label bold" x="695" y="72">ONLINE — live KERNEL</text>
+        <text class="label tiny" x="695" y="88">dumb · deterministic · journaled</text>
+
+        <g font-size="10.5">
+          <rect x="695" y="100" width="260" height="24" rx="3" fill="#0a1d18" stroke="#1f4d3f"/><text x="703" y="116" fill="#cfd6e3">scheduler · worker loop</text>
+          <rect x="695" y="128" width="260" height="24" rx="3" fill="#0a1d18" stroke="#1f4d3f"/><text x="703" y="144" fill="#cfd6e3">heap + journal (event-sourced)</text>
+          <rect x="695" y="156" width="260" height="24" rx="3" fill="#0a1d18" stroke="#1f4d3f"/><text x="703" y="172" fill="#cfd6e3">verifier (rules + human park)</text>
+          <rect x="695" y="184" width="260" height="24" rx="3" fill="#0a1d18" stroke="#1f4d3f"/><text x="703" y="200" fill="#cfd6e3">gateway (already shown left)</text>
+          <rect x="695" y="212" width="260" height="24" rx="3" fill="#0a1d18" stroke="#1f4d3f"/><text x="703" y="228" fill="#cfd6e3">rings L0–L2 wired · L3/L4 typed</text>
+          <rect x="695" y="240" width="260" height="24" rx="3" fill="#0a1d18" stroke="#1f4d3f"/><text x="703" y="256" fill="#cfd6e3">hydration (freeze snapshot)</text>
+          <rect x="695" y="268" width="260" height="24" rx="3" fill="#0a1d18" stroke="#1f4d3f"/><text x="703" y="284" fill="#cfd6e3">settlement (atomic) + resume</text>
+          <rect x="695" y="296" width="260" height="24" rx="3" fill="#0a1d18" stroke="#1f4d3f"/><text x="703" y="312" fill="#cfd6e3">WatchMaturationWorker (real→gym)</text>
+        </g>
+
+        <text class="label tiny" x="695" y="340">Key file: run_loop.py (Phase1RunInvoker)</text>
+        <text class="label tiny" x="695" y="355">Persisted in Mongo (in-memory for sim)</text>
+      </g>
+
+      <!-- arrows pod↔kernel -->
+      <path d="M 610 250 L 680 220" class="conn built" marker-end="url(#arrB)"/>
+      <path d="M 610 380 L 680 290" class="conn built" marker-end="url(#arrB)"/>
+      <text class="label tiny" x="618" y="232" fill="#34d399">calls</text>
+      <text class="label tiny" x="618" y="320" fill="#34d399">effects</text>
+
+      <!-- Offline Foundry -->
+      <g class="box built" data-name="offline-foundry" data-file="packages/swarm/src/agentx_swarm/" data-desc="Offline Foundry (smart, gated). Touches nothing live. 3 engines: Swarm (sim) · Judge (promptfoo, with offline fallback) · PromotionGate (bars synthetic-only). Creator mandate lives here. Compiler mechanism built (GEPA search needs real gym).">
+        <rect x="990" y="50" width="290" height="320" rx="8" fill="#0c1018" stroke="#22c55e" stroke-width="1.5"/>
+        <text class="label bold" x="1005" y="72">OFFLINE — FOUNDRY</text>
+        <text class="label tiny" x="1005" y="88">smart · gated · never touches live</text>
+
+        <g font-size="10.5">
+          <rect x="1005" y="100" width="260" height="24" rx="3" fill="#0a1d18" stroke="#1f4d3f"/><text x="1013" y="116" fill="#cfd6e3">sim · scenarios (1 pack)</text>
+          <rect x="1005" y="128" width="260" height="24" rx="3" fill="#0a1d18" stroke="#1f4d3f"/><text x="1013" y="144" fill="#cfd6e3">promptfoo judge + offline fallback</text>
+          <rect x="1005" y="156" width="260" height="24" rx="3" fill="#0a1d18" stroke="#1f4d3f"/><text x="1013" y="172" fill="#cfd6e3">PromotionGate (synthetic barred)</text>
+          <rect x="1005" y="184" width="260" height="24" rx="3" fill="#0a1d18" stroke="#1f4d3f"/><text x="1013" y="200" fill="#cfd6e3">Creator (draft only, canary rung)</text>
+          <rect x="1005" y="212" width="260" height="24" rx="3" fill="#1d1606" stroke="#5c4515"/><text x="1013" y="228" fill="#fbbf24">⚠ compiler (mechanism only)</text>
+          <rect x="1005" y="240" width="260" height="24" rx="3" fill="#1d0a0a" stroke="#5a2222"/><text x="1013" y="256" fill="#f87171">✗ GEPA search (needs gym volume)</text>
+          <rect x="1005" y="268" width="260" height="24" rx="3" fill="#1d0a0a" stroke="#5a2222"/><text x="1013" y="284" fill="#f87171">✗ MiroFish / OASIS adapters</text>
+          <rect x="1005" y="296" width="260" height="24" rx="3" fill="#1d0a0a" stroke="#5a2222"/><text x="1013" y="312" fill="#f87171">✗ Operator Agent (§6.1)</text>
+        </g>
+      </g>
+
+      <!-- arrow kernel → foundry -->
+      <path d="M 970 220 L 990 220" class="conn built" marker-end="url(#arrB)"/>
+      <text class="label tiny" x="945" y="212" fill="#34d399">promote</text>
+
+      <!-- ================== BOTTOM ROW: Dashboard + output ================== -->
+      <g class="box built" data-name="dashboard" data-file="dashboard/src/components/" data-desc="Manager Dashboard (Next.js, 12 React components). Operator god-view (approval inbox, manual queue, instance file, floor, foundry, swarm timeline, ledger, capability registry) + guided Studio (drive→send). Real-time SSE journal stream + command toasts. Live-proven end-to-end. Bearer-token auth + fail-closed.">
+        <rect x="30" y="640" width="920" height="120" rx="8" fill="#0c1018" stroke="#22c55e" stroke-width="1.5"/>
+        <text class="label bold" x="45" y="662">MANAGER DASHBOARD (12 React components · Next.js)</text>
+        <text class="label tiny" x="45" y="678">operator god-view · approval inbox · manual queue · instance file · floor · foundry · swarm timeline · studio</text>
+        <text class="label tiny" x="45" y="694">real-time SSE journal · command toasts · bearer token auth · fail-closed</text>
+
+        <g font-size="10.5">
+          <rect x="45" y="708" width="135" height="38" rx="4" fill="#0a1d18" stroke="#1f4d3f"/>
+          <text x="55" y="725" fill="#cfd6e3">operator-dashboard</text>
+          <text class="tiny" x="55" y="740">god-view, 8 panels</text>
+
+          <rect x="185" y="708" width="125" height="38" rx="4" fill="#0a1d18" stroke="#1f4d3f"/>
+          <text x="195" y="725" fill="#cfd6e3">approval-inbox</text>
+          <text class="tiny" x="195" y="740">L0/L1 cards</text>
+
+          <rect x="315" y="708" width="105" height="38" rx="4" fill="#0a1d18" stroke="#1f4d3f"/>
+          <text x="325" y="725" fill="#cfd6e3">studio-view</text>
+          <text class="tiny" x="325" y="740">drive→send</text>
+
+          <rect x="425" y="708" width="115" height="38" rx="4" fill="#0a1d18" stroke="#1f4d3f"/>
+          <text x="435" y="725" fill="#cfd6e3">foundry-view</text>
+          <text class="tiny" x="435" y="740">gym + swarm</text>
+
+          <rect x="545" y="708" width="135" height="38" rx="4" fill="#0a1d18" stroke="#1f4d3f"/>
+          <text x="555" y="725" fill="#cfd6e3">swarm-timeline</text>
+          <text class="tiny" x="555" y="740">§5 timeline</text>
+
+          <rect x="685" y="708" width="115" height="38" rx="4" fill="#0a1d18" stroke="#1f4d3f"/>
+          <text x="695" y="725" fill="#cfd6e3">run-detail</text>
+          <text class="tiny" x="695" y="740">drill-in</text>
+
+          <rect x="805" y="708" width="130" height="38" rx="4" fill="#1d1606" stroke="#5c4515"/>
+          <text x="815" y="725" fill="#fbbf24">⚠ Kernel Inspector</text>
+          <text class="tiny" x="815" y="740">design-only</text>
+        </g>
+      </g>
+
+      <g>
+        <rect x="970" y="640" width="310" height="120" rx="8" fill="#0a0d14" stroke="#2c3650" stroke-dasharray="4 3"/>
+        <text class="label bold" x="985" y="662">OUTPUT FLOWS</text>
+        <text x="985" y="685" fill="#22c55e" font-size="11.5">← REVENUE</text>
+        <text x="985" y="700" fill="#8a96ad" font-size="10.5">real effects in world (sends, replies, watches)</text>
+        <text x="985" y="724" fill="#a78bfa" font-size="11.5">→ MOAT</text>
+        <text x="985" y="739" fill="#8a96ad" font-size="10.5">verified outcomes → gym → better mandates</text>
+      </g>
+
+      <!-- arrows from kernel down to dashboard -->
+      <path d="M 825 370 L 490 640" class="conn built" marker-end="url(#arrB)"/>
+      <text class="label tiny" x="595" y="510" fill="#34d399">projections (journal reads)</text>
+
+      <path d="M 1135 370 L 920 700" class="conn built" marker-end="url(#arrB)"/>
+      <text class="label tiny" x="1030" y="510" fill="#34d399">/commands/*</text>
+    </svg>
+
+    <div class="info" id="archInfo">
+      <div class="title">
+        <span id="archInfoTitle">Component</span>
+        <button class="close" onclick="hideInfo()">×</button>
+      </div>
+      <p id="archInfoDesc">Description</p>
+      <div class="file" id="archInfoFile">file path</div>
+    </div>
+  </div>
+
+  <p class="small">The diagram honors the blueprint's "two clocks" rule: a <b>dumb, deterministic online kernel</b> touches money and customers; a <b>smart, gated offline Foundry</b> produces candidates but never mutates live state. The 8 invariants (no fact without commit, no creds in user space, no raw fact across customers, no brain in live kernel, etc.) are import-lint-enforced.</p>
+</div>
+
+<!-- MANDATES -->
+<div class="card" id="mandates">
+  <h2><span class="icon">▣</span> The 2 mandate types in your library</h2>
+
+  <div class="mcards">
+    <div class="mc">
+      <h3><span class="icon">🎯</span> lead-finder <span class="pill g">live</span></h3>
+      <div class="charter">"Find and score qualified leads for an ICP, with evidence for each."</div>
+      <div class="grid2">
+        <div class="k">file</div><div class="v"><code>library/lead_finder.py</code></div>
+        <div class="k">default ICP</div><div class="v">dental · Pune · 1</div>
+        <div class="k">faculties</div><div class="v">research · enrichment · judgment · memory-craft · escalation</div>
+        <div class="k">terminal</div><div class="v"><code>send_email</code> L2 (parks → approve → real send)</div>
+        <div class="k">watch</div><div class="v">72h → real EvalCase</div>
+      </div>
+      <div class="tags">
+        <span class="pill g">1 real send</span>
+        <span class="pill g">2/2 ICPs actionable</span>
+        <span class="pill dim">Settle #1 of ~100</span>
+      </div>
+    </div>
+
+    <div class="mc draft">
+      <h3><span class="icon">🛠</span> creator <span class="pill a">draft-only</span></h3>
+      <div class="charter">"Interview operator, draft a candidate MandateType, stage for review. Promote is Phase 4."</div>
+      <div class="grid2">
+        <div class="k">file</div><div class="v"><code>library/creator.py</code></div>
+        <div class="k">faculties</div><div class="v">conversation · scheduling · memory-craft · escalation</div>
+        <div class="k">output</div><div class="v"><code>draft_candidate_type</code> (L0, reversible)</div>
+        <div class="k">rubric</div><div class="v">creator_quality (threshold 0.7)</div>
+        <div class="k">invariant</div><div class="v">catalog UNCHANGED (#7)</div>
+      </div>
+      <div class="tags">
+        <span class="pill a">21 tests</span>
+        <span class="pill a">no live write</span>
+        <span class="pill dim">await: conversational UI</span>
+      </div>
+    </div>
+  </div>
+
+  <h3>The 7 reusable faculties (SDK bricks)</h3>
+  <table>
+    <thead><tr><th>faculty</th><th>what it does</th><th>used in</th></tr></thead>
+    <tbody>
+      <tr><td><code>research</code></td><td>Read-only research (lead_research_batch, read_url) — no fabrication</td><td>lead-finder</td></tr>
+      <tr><td><code>enrichment</code></td><td>Augments research with structured enrichment</td><td>lead-finder</td></tr>
+      <tr><td><code>judgment</code></td><td>Scores, qualifies, decides</td><td>lead-finder</td></tr>
+      <tr><td><code>memory-craft</code></td><td>Provenance-stamped fact claims → heap</td><td>both</td></tr>
+      <tr><td><code>escalation</code></td><td>Fails safely, hands to a human</td><td>both</td></tr>
+      <tr><td><code>conversation</code></td><td>Multi-turn interview with operator</td><td>creator</td></tr>
+      <tr><td><code>scheduling</code></td><td>Cadence + emits draft_candidate_type</td><td>creator</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- HOW TO USE -->
+<div class="card" id="howto">
+  <h2><span class="icon">▶</span> How to use them — 3 paths, pick by context</h2>
+
+  <div class="paths">
+    <div class="path">
+      <div class="ph"><span class="num">A</span><h4>Studio GUI (browser)</h4></div>
+      <div class="desc">Best when: you want to see the loop visually, approve from the inbox, watch the SSE journal.</div>
+<pre><code>cd /Volumes/Mrigesh\ SSD/Startup/Agent-X-OS
+./scripts/start_agentx.sh
+open http://127.0.0.1:3000
+# Flip to STUDIO ◀▶ OPERATOR
+# ① pick lead-finder → Instantiate
+# ② Find leads → SSE trace
+# ③ Scored leads + evidence
+# ④ Review draft approval
+# ⑤ Approve & send (or human_task)</code></pre>
+    </div>
+
+    <div class="path">
+      <div class="ph"><span class="num">B</span><h4>CLI script (terminal)</h4></div>
+      <div class="desc">Best when: you want to point at one lead, approve in the terminal, demo to a stakeholder.</div>
+<pre><code># Point at a known lead
+uv run python scripts/use_mandate.py \
+  --lead-company "Acme Dental" \
+  --lead-url "https://acmedental.example/about" \
+  --task "Verify the decision-maker and growth signal, then draft truthful outreach."
+
+# Or let it find leads
+uv run python scripts/use_mandate.py \
+  --icp "independent dental clinics investing in patient growth" \
+  --location "Pune, India" --count 3
+
+# Add --yes only after reading the draft.</code></pre>
+    </div>
+
+    <div class="path">
+      <div class="ph"><span class="num">C</span><h4>HTTP API (scripts / CRM)</h4></div>
+      <div class="desc">Best when: integrating with a CRM, scripting approvals, or building your own surface.</div>
+<pre><code>TOKEN=$AGENTX_OPERATOR_TOKEN
+
+# 1. Instantiate
+curl -X POST :8000/commands/instantiate \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"type_ref":"lead-finder@0.1.0","customer_id":"acme","ring":"L1"}'
+
+# 2. Trigger (HTTP 202 + work_id)
+curl -X POST :8000/commands/trigger-run ...
+
+# 3. Inspect / approve / watch
+curl :8000/approvals
+curl -X POST :8000/commands/approve ...
+curl :8000/scheduler-work/{work_id}
+
+# See: /events (SSE), /runs/{id}, /journal</code></pre>
+    </div>
+  </div>
+
+  <h3>What you observe (end-to-end loop)</h3>
+  <div class="flow">
+    <div class="step"><div class="n">1</div><div class="t">trigger</div><div class="s">message / deadline / spawn</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="n">2</div><div class="t">hydrate</div><div class="s">freeze heap snapshot</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="n">3</div><div class="t">think</div><div class="s">faculties + LLM (Hermes)</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="n">4</div><div class="t">act</div><div class="s">gated syscall</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="n">5</div><div class="t">verify</div><div class="s">rules → judge → human → reality</div></div>
+    <div class="arrow">→</div>
+    <div class="step"><div class="n">6</div><div class="t">settle</div><div class="s">atomic · journaled</div></div>
+  </div>
+  <div class="flow" style="margin-top:8px">
+    <div class="step" style="flex:2;background:#0a1d18;border-color:#1f4d3f"><div class="n">7</div><div class="t" style="color:#22c55e">real-world effect (send, watch, reply)</div><div class="s">the gym fills → mandates get smarter</div></div>
+  </div>
+</div>
+
+<!-- HOW TO ADD MORE -->
+<div class="card" id="add">
+  <h2><span class="icon">+</span> How to add more mandates</h2>
+  <p>4 ways, ordered by effort. The blueprint's promise: a "growing ecosystem" of mandates that find each other's customers. <b>You have 2 today</b>; each new one is the same pattern at a different vertical.</p>
+
+  <div class="cmp">
+    <div class="col plan">
+      <h4>① Use the Creator (today: drafts)</h4>
+      <ul>
+        <li>Conversational Creator UI is "Phase J / G10" — not yet on screen</li>
+        <li>Today: drafts a candidate MandateType from a brief; you register it via code</li>
+        <li>Best for: rapidly sketching a new vertical in conversation</li>
+      </ul>
+    </div>
+    <div class="col built">
+      <h4>② Add a MandateType in code (canonical)</h4>
+      <ul>
+        <li>Mirror <code>build_lead_finder_type()</code> in <code>library/&lt;name&gt;.py</code></li>
+        <li>~80 lines · pick faculties · write charter · set rings</li>
+        <li>Register in <code>api/app.py:91</code> on startup</li>
+        <li>Add tests · run gate · restart API</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="cmp" style="margin-top:8px">
+    <div class="col plan">
+      <h4>③ Wire a new syscall adapter</h4>
+      <ul>
+        <li>When the new mandate needs a real effect no adapter covers (calendar, CRM, browser, voice, WhatsApp, payments)</li>
+        <li>Follow the <code>Adapter</code> base class · set rung & risk class</li>
+        <li>Credential via ConfigVault — pod never sees it</li>
+        <li>Money: API-only, idempotent, never LLM, never browser</li>
+      </ul>
+    </div>
+    <div class="col built">
+      <h4>④ Run a swarm to iterate a candidate</h4>
+      <ul>
+        <li><code>POST /commands/run-swarm</code> — drives a candidate through the real kernel in sim</li>
+        <li>promptfoo Judge grades · PromotionGate bars synthetic-only</li>
+        <li>One synthetic EvalCase persisted · §5 timeline in the dashboard</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- THE GAP -->
+<div class="card" id="gap">
+  <h2><span class="icon">△</span> The gap, precisely</h2>
+  <p class="small">Two numbers because they measure different things. <b style="color:var(--g)">Phase-1 engine ~90%</b> (plumbing, contracts, evidence, real send). <b style="color:var(--a)">Whole blueprint ~40%</b> (5 phases + Foundry + Operator Agent). The remaining gap is not architecture — the seam held across 7 backend phases + a frontend session with zero <code>packages/contracts</code> changes.</p>
+
+  <div class="gap-row"><div class="l">§1 Mandate (7 organs)</div><div class="bar"><i class="g" style="width:85%"></i></div><div class="n ok">~85%</div></div>
+  <div class="gap-row"><div class="l">§2 Run loop</div><div class="bar"><i class="g" style="width:100%"></i></div><div class="n ok">100%</div></div>
+  <div class="gap-row"><div class="l">§3 Syscall layer</div><div class="bar"><i class="g" style="width:85%"></i></div><div class="n ok">~85%</div></div>
+  <div class="gap-row"><div class="l">§4 Kernel (two clocks)</div><div class="bar"><i class="g" style="width:90%"></i></div><div class="n ok">~90%</div></div>
+  <div class="gap-row"><div class="l">§4.5 Harness use</div><div class="bar"><i class="g" style="width:100%"></i></div><div class="n ok">100%</div></div>
+  <div class="gap-row"><div class="l">§5 Foundry & Creator</div><div class="bar"><i class="a" style="width:45%"></i></div><div class="n warn-c">~45%</div></div>
+  <div class="gap-row"><div class="l">§6 Dashboard</div><div class="bar"><i class="g" style="width:95%"></i></div><div class="n ok">~95%</div></div>
+  <div class="gap-row"><div class="l">§6.1 Operator Agent</div><div class="bar"><i class="r" style="width:5%"></i></div><div class="n bad-c">~5%</div></div>
+  <div class="gap-row"><div class="l">§7 Build order (P1)</div><div class="bar"><i class="a" style="width:90%"></i></div><div class="n warn-c">~90%</div></div>
+  <div class="gap-row"><div class="l">§8 Kill conditions</div><div class="bar"><i class="a" style="width:10%"></i></div><div class="n warn-c">⏳ untested</div></div>
+
+  <h3>4-item roadmap to "the system is real"</h3>
+  <div class="flow vertical">
+    <div class="step" style="background:#0a1d18;border-color:#1f4d3f"><div class="n">done 2026-06-20</div><div class="t" style="color:#22c55e">① Close the send loop ✓</div><div class="s">lead-finder emits send_email; approve sends via Gmail SMTP. 1 real send landed.</div></div>
+    <div class="step"><div class="n">this week</div><div class="t">② Capture outcomes → Step-D at volume</div><div class="s">real replies/bounces via mark_outcome/watches → real EvalCase(origin="real")</div></div>
+    <div class="step"><div class="n">~90 days</div><div class="t">③ Accumulate ~100 real settles</div><div class="s">the Phase-1 WIN. Operating milestone, not coding.</div></div>
+    <div class="step"><div class="n">after</div><div class="t">④ Then: G6 trust-ladder · G12 compiler · G10/G11 Creator+Operator · Phases 3-5 channels</div><div class="s">each is a focused session, written in the roadmap</div></div>
+  </div>
+</div>
+
+<!-- REVENUE -->
+<div class="card" id="revenue">
+  <h2><span class="icon">$</span> Will it get you business and revenue? — critical read</h2>
+
+  <div class="verdict" style="background:linear-gradient(180deg,#0c1d18,#0a0d14);border-color:var(--good-b)">
+    <h3 style="color:#22c55e">Yes — but not because of the architecture</h3>
+    <p>The engine is built. The <b>business</b> is not. The fastest path is: use your own lead-finder to find 3 paying pilots for a 2nd mandate, charge from day 1, add Stripe + multi-tenant in parallel. The architecture IS the long-term moat (heap per business + gym + compiler is rare in this category) — but customers buy "did this find me customers" today.</p>
+  </div>
+
+  <div class="two-up">
+    <div>
+      <h3 style="color:var(--g)">Strengths (monetizable)</h3>
+      <ul>
+        <li><b>"Mandates that improve themselves"</b> — rare. Heap (private) + gym (shared) + compiler = compounding moat.</li>
+        <li><b>"No credential in user space"</b> — import-lint-enforced. Premium for any business that doesn't trust generic agent platforms.</li>
+        <li><b>Verifiable, journaled settlement</b> — show a customer a real receipt, not a black-box log. Closes deals.</li>
+        <li><b>Creator mandate</b> — your cost-of-adding-new-products collapses from sprints to minutes.</li>
+      </ul>
+    </div>
+    <div>
+      <h3 style="color:var(--r)">Risks (will block paid customers)</h3>
+      <ul>
+        <li><b>No users yet.</b> 1 real email, to yourself. First 5 paying customers is the next milestone.</li>
+        <li><b>2 mandates in the catalog.</b> The product promise is "a growing ecosystem" — you have 1 revenue-ready + 1 architect.</li>
+        <li><b>Localhost-only deployment.</b> No signup, no billing. Until you have it, the customer is you.</li>
+        <li><b>"OS for business" is a category, not a product.</b> Customers buy "the lead-finder that found me 3 clinics this morning."</li>
+        <li><b>The gym is post-PMF defensibility</b>, not the first sale.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Critical 90-day math</h3>
+  <table>
+    <thead><tr><th>milestone</th><th>what it proves</th><th>cost to reach</th><th>revenue implication</th></tr></thead>
+    <tbody>
+      <tr><td><b>5 real settles</b> (not to yourself)</td><td>Loop works for someone else</td><td>2 weeks of disciplined use</td><td>None — but unlocks the ask</td></tr>
+      <tr><td><b>2nd MandateType in production</b></td><td>Catalog pattern works</td><td>3–5 days</td><td>Doubles surface area you can sell</td></tr>
+      <tr><td><b>1 paying pilot</b> (1 business, 1 month)</td><td>First unit-econ data point</td><td>Free-build or 50% off; 2 weeks</td><td>Sets the price anchor. Even ₹20k/mo = signal.</td></tr>
+      <tr><td><b>Hosted multi-tenant</b> (URL, signup, billing)</td><td>You can sell at all</td><td>Auth + Stripe + vault — 2–3 weeks</td><td>Product becomes a SaaS</td></tr>
+      <tr><td><b>3 mandates + 5 customers</b></td><td>PMF signal</td><td>~90 days</td><td>Series-seedable or ₹3L–₹10L/mo self-sustaining</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- THIS WEEK -->
+<div class="card" id="week">
+  <h2><span class="icon">⏵</span> What to do this week — by role</h2>
+  <p>You play many roles; pick one. The cheapest move is drinking your own champagne — the lead-finder is real, use it.</p>
+
+  <div class="week">
+    <div class="wkday">
+      <div class="dn">de-risk product</div>
+      <h4>3 real settles</h4>
+      <ul>
+        <li>Run lead-finder vs 3 dental clinics in Studio</li>
+        <li>Approve all 3 · let them sit in heap</li>
+        <li>Reply from a 2nd Gmail to fire a watch</li>
+        <li>Then <code>/commands/run-swarm</code> on same 3</li>
+      </ul>
+    </div>
+    <div class="wkday">
+      <div class="dn">ship 2nd mandate</div>
+      <h4>Inbound WhatsApp (dental)</h4>
+      <ul>
+        <li>Re-uses conversation + memory-craft + escalation</li>
+        <li>Mirror <code>build_lead_finder_type</code> as <code>build_inbound_whatsapp_type</code></li>
+        <li>Add WhatsApp adapter (1 session)</li>
+        <li>Total: ~3–5 days, mirrors Phase-1 lead-finder</li>
+      </ul>
+    </div>
+    <div class="wkday">
+      <div class="dn">ship the business</div>
+      <h4>Stripe + multi-tenant</h4>
+      <ul>
+        <li>Add Stripe billing (already tenant-isolated)</li>
+        <li>Per-tenant vault is built; wire auth</li>
+        <li>Price: ₹5k–₹25k/mo per instance</li>
+        <li>Use lead-finder to find your first 3 paying customers</li>
+      </ul>
+    </div>
+    <div class="wkday">
+      <div class="dn">close blueprint gap</div>
+      <h4>Next 4 sessions</h4>
+      <ul>
+        <li><b>G6</b> trust-ladder auto-promote (1 session)</li>
+        <li><b>G12</b> GEPA compiler search (1 session, needs gym)</li>
+        <li><b>G10/G11</b> Creator UI + Operator Agent (1–2 sessions)</li>
+        <li><b>Phase 2</b> calendar/CRM adapters (2–3 sessions each)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout warn">
+    <div class="ic">⚠</div>
+    <div class="bd">
+      <h4>The one risk worth naming: velocity</h4>
+      <p>The architecture was the right thing to nail first — and you did, honestly very well. But the hardest thing in agent-platform businesses is not the kernel, it's the <b>rate of real-world feedback</b>. You have 1 settle, you need ~100. <b>Drinking your own champagne</b> (you as the customer, every week, for 12 weeks) is the cheapest path to settle #100, the most honest product feedback loop, and the demo that closes your first paid pilot. Build the 2nd mandate to feed the same loop.</p>
+    </div>
+  </div>
+</div>
+
+<!-- HISTORY TIMELINE -->
+<div class="card">
+  <h2><span class="icon">▤</span> How we got here — 7 live-proof sessions</h2>
+  <div class="tl">
+    <div class="tl-item done"><div class="when">2026-06-18</div><div class="what">Session E — P0/P1 fixes + persistence</div><div class="why">mandate persistence, real promptfoo judge, actionability</div></div>
+    <div class="tl-item done"><div class="when">2026-06-18</div><div class="what">Session F — LLM drives the loop</div><div class="why">MiniMax tool-calling; 2/2 ICPs actionable; G1 done</div></div>
+    <div class="tl-item done"><div class="when">2026-06-18</div><div class="what">Session G — repeatable runner + resume</div><div class="why">first-class resume + scheduler; same-key replay = 0 rows; G2 done</div></div>
+    <div class="tl-item done"><div class="when">2026-06-19</div><div class="what">Session H — Manager Dashboard operability</div><div class="why">lifespan-owned runtime; /commands/* real; 15 tests; G9 done</div></div>
+    <div class="tl-item done"><div class="when">2026-06-19</div><div class="what">Session I — Swarm from dashboard</div><div class="why">/commands/run-swarm; promptfoo judge; synthetic-barred gate; G8 /run done</div></div>
+    <div class="tl-item done"><div class="when">2026-06-19</div><div class="what">Session L — realtime SSE + toasts</div><div class="why">/events stream; ToastStack feedback ledger</div></div>
+    <div class="tl-item done"><div class="when">2026-06-20</div><div class="what">Studio + Send loop — first real send</div><div class="why">Gmail SMTP transport; lead-finder → send_email; settle #1 of ~100</div></div>
+  </div>
+  <p class="small" style="margin-top:8px">Each session has a live-proof doc in <code>docs/SESSION_*_LIVE_PROOF.md</code> with real test output, gate status, and a verdict.</p>
+</div>
+
+<div class="foot">
+  Generated 2026-06-20 against <code>main@081584f</code> · 46 source paths verified · 7 session live-proofs · 47 pytest files · 12 dashboard test files<br>
+  Two companion docs on disk: <a href="AGENTX_EXECUTIVE_SUMMARY.html">one-page executive summary</a> · <a href="AGENTX_STATUS_2026-06-20.html">v1 (text-heavy)</a>
+</div>
+
+</div>
+
+<script>
+  // Wire up the SVG click handlers
+  document.querySelectorAll('#archSvg .box.built').forEach(box => {
+    box.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const name = box.getAttribute('data-name');
+      const file = box.getAttribute('data-file');
+      const desc = box.getAttribute('data-desc');
+      const title = box.querySelector('.label.bold')?.textContent || name;
+      showInfo(title, desc, file);
+    });
+    box.style.cursor = 'pointer';
+  });
+
+  function showInfo(title, desc, file) {
+    const info = document.getElementById('archInfo');
+    document.getElementById('archInfoTitle').textContent = title;
+    document.getElementById('archInfoDesc').textContent = desc;
+    const fileEl = document.getElementById('archInfoFile');
+    // file:// links work in desktop browsers but not in many preview panes
+    fileEl.innerHTML = '📂 <a href="file:///Volumes/Mrigesh%20SSD/Startup/Agent-X-OS/' + file + '" target="_blank">' + file + '</a>';
+    info.classList.add('show');
+    info.scrollIntoView({behavior:'smooth', block:'nearest'});
+  }
+  function hideInfo() {
+    document.getElementById('archInfo').classList.remove('show');
+  }
+
+  // Click outside to dismiss info
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#archInfo') && !e.target.closest('#archSvg .box')) {
+      hideInfo();
+    }
+  });
+</script>
+</body>
+</html>

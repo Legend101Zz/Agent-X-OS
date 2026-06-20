@@ -1,0 +1,646 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Agent-X-OS — Plan vs. Built, How to Use It, Revenue Outlook</title>
+<style>
+  :root{
+    --bg:#0b0d12;
+    --panel:#11151c;
+    --panel2:#161b25;
+    --line:#222a37;
+    --line2:#2a3344;
+    --text:#e6ecf5;
+    --muted:#8d99ad;
+    --dim:#5b6678;
+    --accent:#7dd3fc;       /* sky */
+    --accent2:#a78bfa;      /* violet */
+    --green:#34d399;
+    --amber:#fbbf24;
+    --red:#f87171;
+    --pink:#f472b6;
+    --teal:#2dd4bf;
+    --orange:#fb923c;
+    --code:#0f1320;
+    --codeborder:#2a3344;
+    --shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 12px 30px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text","Inter",system-ui,Segoe UI,Roboto,sans-serif}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code,pre,kbd{font-family:"JetBrains Mono","SF Mono",Menlo,Consolas,ui-monospace,monospace}
+  .wrap{max-width:1280px;margin:0 auto;padding:32px 28px 80px}
+  header.hero{
+    border:1px solid var(--line);
+    background:linear-gradient(180deg,#10141d 0%,#0c0f16 100%);
+    border-radius:14px;
+    padding:28px 28px 24px;
+    box-shadow:var(--shadow);
+    margin-bottom:24px;
+  }
+  .hero h1{margin:0 0 6px;font-size:26px;letter-spacing:-.01em}
+  .hero p.lede{margin:0;color:var(--muted);font-size:14.5px;max-width:80ch}
+  .hero .meta{margin-top:14px;display:flex;flex-wrap:wrap;gap:8px}
+  .chip{font-size:12px;border:1px solid var(--line2);background:#0d1118;color:var(--muted);padding:4px 10px;border-radius:999px}
+  .chip b{color:var(--text);font-weight:600}
+  .grid{display:grid;gap:16px}
+  .grid.cols-2{grid-template-columns:1fr 1fr}
+  .grid.cols-3{grid-template-columns:1.2fr 1fr 1fr}
+  .grid.cols-4{grid-template-columns:repeat(4,1fr)}
+  @media (max-width:1000px){
+    .grid.cols-2,.grid.cols-3,.grid.cols-4{grid-template-columns:1fr}
+  }
+  section.card{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:20px 22px;
+    box-shadow:var(--shadow);
+  }
+  section.card h2{
+    font-size:16px;letter-spacing:.02em;text-transform:uppercase;color:var(--muted);
+    margin:0 0 12px;display:flex;align-items:center;gap:10px;
+  }
+  section.card h3{font-size:14.5px;margin:18px 0 6px;color:var(--text)}
+  section.card p{margin:6px 0;color:#cfd6e3}
+  section.card ul{margin:6px 0 6px 18px;color:#cfd6e3}
+  section.card li{margin:3px 0}
+  .kvs{display:grid;grid-template-columns:170px 1fr;gap:6px 14px;margin:6px 0}
+  .kvs .k{color:var(--muted)}
+  .kvs .v{color:var(--text)}
+  .kbd{font-size:11px;color:var(--muted);border:1px solid var(--line2);background:#0d1118;border-radius:4px;padding:1px 6px}
+  pre{
+    background:var(--code);border:1px solid var(--codeborder);border-radius:8px;
+    padding:12px 14px;overflow:auto;color:#dbe3ef;font-size:12.5px;line-height:1.5;margin:8px 0;
+  }
+  code.inline{background:#0d1118;border:1px solid var(--line2);padding:1px 6px;border-radius:4px;color:#dbe3ef;font-size:12.5px}
+  .tag{display:inline-block;font-size:11px;border:1px solid var(--line2);padding:2px 8px;border-radius:4px;color:var(--muted);background:#0d1118}
+  .tag.green{color:#34d399;border-color:#1f4d3f;background:#0c1d18}
+  .tag.amber{color:#fbbf24;border-color:#5c4515;background:#1d1606}
+  .tag.red{color:#f87171;border-color:#5a2222;background:#1d0a0a}
+  .tag.violet{color:#a78bfa;border-color:#3a2c5c;background:#150f24}
+  .tag.sky{color:#7dd3fc;border-color:#1d4a5c;background:#091d24}
+  .tag.teal{color:#2dd4bf;border-color:#155a52;background:#06201d}
+  .tag.pink{color:#f472b6;border-color:#5a2347;background:#1d0a18}
+  .tag.dim{color:var(--dim)}
+  .arch-wrap{position:relative;background:#0a0c12;border:1px solid var(--line);border-radius:12px;padding:8px;margin-top:8px}
+  .arch{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .arch .pane{position:relative;background:#0d1118;border:1px solid var(--line);border-radius:8px;padding:14px;min-height:640px;overflow:auto}
+  .arch .pane h4{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+  .arch .pane .legend{position:absolute;top:10px;right:12px;font-size:10.5px;color:var(--dim)}
+  .arch .pane pre{margin:0;background:transparent;border:none;padding:0;font-size:12px;line-height:1.5}
+  .arch svg{position:absolute;inset:0;pointer-events:none}
+  @media (max-width:900px){.arch{grid-template-columns:1fr}.arch .pane{min-height:0}}
+  .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .pill{border:1px solid var(--line2);border-radius:999px;padding:3px 10px;font-size:12px;color:#cfd6e3;background:#0d1118}
+  .pill b{color:var(--text)}
+  .divider{height:1px;background:var(--line);margin:18px 0}
+  table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
+  th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{color:var(--muted);font-weight:500;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;background:#0d1118;position:sticky;top:0}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:#10151f}
+  td .tag{margin-right:4px}
+  .bar{height:8px;background:#0d1118;border:1px solid var(--line2);border-radius:999px;overflow:hidden}
+  .bar > span{display:block;height:100%}
+  .bar.green > span{background:linear-gradient(90deg,#10b981,#34d399)}
+  .bar.amber > span{background:linear-gradient(90deg,#d97706,#fbbf24)}
+  .bar.red > span{background:linear-gradient(90deg,#dc2626,#f87171)}
+  .meter{display:grid;grid-template-columns:120px 1fr 60px;gap:10px;align-items:center;margin:6px 0}
+  .meter .lbl{color:var(--muted);font-size:12.5px}
+  .meter .num{text-align:right;font-variant-numeric:tabular-nums;color:var(--text);font-size:12.5px}
+  .bigstat{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:6px}
+  @media (max-width:900px){.bigstat{grid-template-columns:repeat(2,1fr)}}
+  .stat{background:#0d1118;border:1px solid var(--line);border-radius:10px;padding:14px}
+  .stat .v{font-size:24px;font-weight:600;color:var(--text);letter-spacing:-.01em}
+  .stat .l{color:var(--muted);font-size:12px;margin-top:4px}
+  .stat.g .v{color:#34d399}
+  .stat.a .v{color:#fbbf24}
+  .stat.r .v{color:#f87171}
+  .stat.s .v{color:#7dd3fc}
+  .leadfinder, .creator{display:grid;grid-template-columns:1.4fr 1fr;gap:14px}
+  @media (max-width:900px){.leadfinder,.creator{grid-template-columns:1fr}}
+  .verdict{
+    background:linear-gradient(180deg,#0e1320,#0b0f17);
+    border:1px solid var(--line2);border-radius:10px;padding:16px 18px;margin:8px 0;
+  }
+  .verdict .top{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .verdict .top .h{font-size:18px;font-weight:600}
+  .verdict .top .sub{color:var(--muted);font-size:13px}
+  .ok{color:#34d399}
+  .warn{color:#fbbf24}
+  .bad{color:#f87171}
+  .glow-green{box-shadow:0 0 0 1px #1f4d3f inset, 0 0 20px -6px #10b981}
+  .toc{position:sticky;top:0;z-index:5;background:rgba(11,13,18,.85);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);padding:10px 0;margin:-32px -28px 16px}
+  .toc ol{list-style:none;display:flex;flex-wrap:wrap;gap:6px 10px;padding:0 28px;margin:0;font-size:12.5px;color:var(--muted)}
+  .toc a{color:var(--muted);padding:4px 10px;border-radius:6px;border:1px solid transparent}
+  .toc a:hover{color:var(--text);border-color:var(--line2);text-decoration:none}
+  details{border:1px solid var(--line);border-radius:8px;background:#0c1018;padding:8px 12px;margin:6px 0}
+  details summary{cursor:pointer;color:var(--text);font-size:13px}
+  details[open] summary{margin-bottom:6px}
+  .small{font-size:12px;color:var(--muted)}
+  .strike{color:var(--dim);text-decoration:line-through}
+  .code-comment{color:#6b7689}
+  .green{color:#34d399}
+  .amber{color:#fbbf24}
+  .red{color:#f87171}
+  .sky{color:#7dd3fc}
+  .violet{color:#a78bfa}
+  .teal{color:#2dd4bf}
+  .pink{color:#f472b6}
+  .orange{color:#fb923c}
+  .foot{margin-top:24px;color:var(--dim);font-size:12px;text-align:center}
+  .arrow{cursor:pointer;border:none;background:transparent;color:var(--muted);font-size:16px;padding:0 4px}
+  .arrow:hover{color:var(--text)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <h1>Agent-X-OS — where you actually stand</h1>
+  <p class="lede">A single-page, dense, honest read of your project as of <b>2026-06-20</b>, on <code class="inline">main@081584f</code> (working tree clean). It does four jobs: shows your blueprint vs. what's built, lists the mandates you have today, tells you how to use them, and pressure-tests the path to revenue. All numbers come from a direct read of <code class="inline">docs/BLUEPRINT.md</code>, <code class="inline">docs/STATE_AND_ROADMAP.md</code>, <code class="inline">docs/MANDATE.md</code>, the live code in <code class="inline">packages/</code>, <code class="inline">api/</code>, <code class="inline">dashboard/</code>, and the 7 session-proof docs in <code class="inline">docs/SESSION_*_LIVE_PROOF.md</code>.</p>
+  <div class="meta">
+    <span class="chip">Repo: <b>Agent-X-OS</b> @ <code class="inline">main</code></span>
+    <span class="chip">~17,925 LOC Python · ~17,900 LOC TypeScript</span>
+    <span class="chip">47 pytest files · 12 dashboard test files</span>
+    <span class="chip">7 session live-proofs</span>
+    <span class="chip">Phase-1 engine <b style="color:#34d399">~90%</b> · Whole blueprint <b style="color:#fbbf24">~40%</b></span>
+  </div>
+</header>
+
+<nav class="toc">
+  <ol>
+    <li><a href="#bigpicture">Big picture</a></li>
+    <li><a href="#arch">Plan vs. built (side-by-side)</a></li>
+    <li><a href="#mandates">Mandates you have</a></li>
+    <li><a href="#howto">How to use them</a></li>
+    <li><a href="#create">How to add more</a></li>
+    <li><a href="#gap">The gap, precisely</a></li>
+    <li><a href="#revenue">Revenue outlook (honest)</a></li>
+    <li><a href="#next">What to do this week</a></li>
+  </ol>
+</nav>
+
+<!-- 1. BIG PICTURE -->
+<section class="card" id="bigpicture">
+  <h2>1 · Big picture in one screen</h2>
+
+  <div class="bigstat">
+    <div class="stat g"><div class="v">2</div><div class="l">Mandate <em>Types</em> in the library<br><span class="small">(lead-finder, creator)</span></div></div>
+    <div class="stat s"><div class="v">7</div><div class="l">Faculties in <code class="inline">packages/mandate/src/agentx_mandate/faculties/</code></div></div>
+    <div class="stat s"><div class="v">8</div><div class="l">Syscall adapters wired in <code class="inline">packages/syscall/src/agentx_syscall/adapters.py</code></div></div>
+    <div class="stat a"><div class="v">1</div><div class="l">Real outbound send so far<br><span class="small">(Gmail SMTP, founder→founder, settle #1 of ~100)</span></div></div>
+  </div>
+
+  <div class="divider"></div>
+
+  <p>The shape of what you have is exactly the shape of the blueprint's <b>Phase 1</b> — the lead-finding, gated, journal-sourced kernel — and a credible <b>~40%</b> of the rest (Foundry drafts, Creator mandate, Promote gate, Compiler mechanism, Studio GUI, Swarm REPL, end-to-end Dashboard operability). What's missing is the <b>operating volume</b> and the things Phase 2+ that the blueprint itself scopes after Phase 1.</p>
+
+  <div class="verdict glow-green">
+    <div class="top">
+      <div class="h">Honest one-liner</div>
+    </div>
+    <p style="margin:6px 0 0">You have a <b>real, running, blueprint-honoring Phase-1 engine</b> that one operator can drive from a local dashboard to send a real email — <b>settle #1 of ~100</b>. The architecture is sound (the dumb live kernel + the smart offline Foundry is real and tested). The single biggest gap is <b>volume of real-world settles</b> — that's an operating milestone, not a coding one. Phases 2–5 (calendar/CRM/browser/voice/WhatsApp), the conversational Creator surface, the GEPA compiler search, and the Operator Agent are the other 60%, and the roadmap to them is already written.</p>
+  </div>
+</section>
+
+<!-- 2. ARCHITECTURE -->
+<section class="card" id="arch">
+  <h2>2 · Plan vs. built — the architecture diagram</h2>
+  <p>The left column is your BLUEPRINT §0 (the whole system on one screen, simplified). The right column is what's actually wired in code today. Color = status. Hover/click the colored dots to map back to the source file that implements each box.</p>
+
+  <div class="arch-wrap">
+    <div class="arch">
+      <!-- LEFT: PLANNED -->
+      <div class="pane" id="archPlan">
+        <h4>📐 Plan (BLUEPRINT §0–§7)</h4>
+        <div class="legend">target</div>
+<pre>
+┌──────────────────────────────────────────────────────────┐
+│ <span class="code-comment">CONTROL SURFACE — Manager Dashboard (§6)</span>          │
+│ live floor · approval inbox · mandate catalog ·          │
+│ instance files · eval gym & swarm · registry · P&L        │
+└──────────────────────────┬───────────────────────────────┘
+                           │
+   <span class="code-comment">USER SPACE</span> (rented, disposable) │
+   ┌────────────────────────┴────────────────────┐  ┌─────────────────────────────┐
+   │ <b>per-CUSTOMER pods</b>                         │  │ <b>CONTROL PLANE (ours)</b>             │
+   │  faculties reason & draft                  │  │                              │
+   │  <span class="sky">Hermes / OpenClaw / Cheetah</span>            │  │  <span class="teal">ONLINE — live KERNEL (§4)</span>     │
+   │  zero creds · zero state                   │  │   scheduler · heap+journal   │
+   └──────────────────────┬─────────────────────┘  │   verifier · gateway · rings │
+                          │ intent                │  │                              │
+   ═══════ ADAPTER LINE ══════════════════════════╪══│  <span class="violet">OFFLINE — FOUNDRY</span>            │
+                          │                       │  │   gym · swarm · compiler     │
+   ┌──────────────────────▼─────────────────────┐  │   <span class="pink">CREATOR</span> · gate               │
+   │ <b>SYSCALL / INTEGRATION (§3)</b>             │  └─────────────────────────────┘
+   │  gateway → adapter ladder →                │
+   │  API / connector / vendor /                │     OUT: ← REVENUE
+   │  browser / <b>HUMAN-TASK queue</b>            │          → MOAT (gym, comp)
+   └──────────────────────┬─────────────────────┘
+                          ▼
+  <b>HARDWARE</b> (reality): WhatsApp · email · calendar
+  · CRM · payments · phone · web
+</pre>
+      </div>
+
+      <!-- RIGHT: BUILT -->
+      <div class="pane" id="archBuilt">
+        <h4>🛠 What you actually have (2026-06-20, main)</h4>
+        <div class="legend">built · <span class="amber">partial</span> · <span class="red">missing</span></div>
+<pre>
+┌──────────────────────────────────────────────────────────┐
+│ <b>CONTROL SURFACE — Dashboard</b>  <span class="green">✅</span>                        │
+│ <span class="green">✅</span> approval inbox · <span class="green">✅</span> manual queue · <span class="green">✅</span> instance file  │
+│ <span class="green">✅</span> floor · <span class="green">✅</span> Swarm REPL · <span class="green">✅</span> Studio (drive→send) │
+│ <span class="green">✅</span> real-time SSE journal stream + toasts            │
+│ <span class="amber">⚠</span> Catalog UI shells, no visual polish                  │
+│ <span class="red">✗</span> Kernel Inspector · Economy view                      │
+└──────────────────────────┬───────────────────────────────┘
+                           │ KernelControl (api/operator.py)
+   <span class="code-comment">USER SPACE</span> │
+   ┌────────────────────────┴────────────────────┐  ┌─────────────────────────────┐
+   │ <b>MANDATE pod</b>  <span class="green">✅</span>                                │  │ <b>CONTROL PLANE</b>                      │
+   │ <span class="green">✅</span> 7 faculties in mandate/                   │  │                              │
+   │   research · judgment · memory-craft ·       │  │  <span class="teal">ONLINE — live KERNEL</span>  <span class="green">✅</span>        │
+   │   escalation · enrichment ·                  │  │  <span class="green">✅</span> run_loop (Phase1RunInvoker)  │
+   │   conversation · scheduling                  │  │  <span class="green">✅</span> gateway: ring·idem·journal │
+   │ <span class="green">✅</span> harness seam (OwnHarness + Hermes)         │  │  <span class="green">✅</span> verifier · settlement      │
+   │ <span class="green">✅</span> pod holds NO creds (lint-enforced)         │  │  <span class="green">✅</span> hydration · ConfigVault   │
+   │ <span class="green">✅</span> LLM DRIVES the loop (MiniMax-M3)           │  │  <span class="green">✅</span> parked-run resume api      │
+   │ <span class="red">✗</span> OpenClaw / CheetahClaws bound yet          │  │  <span class="green">✅</span> scheduler / worker        │
+   └──────────────────────┬─────────────────────┘  │  <span class="green">✅</span> WatchMaturationWorker    │
+                          │ intent                │  ────────────────────────────  │
+   ═══════ ADAPTER LINE ══════════════════════════╪══│  <span class="violet">OFFLINE — FOUNDRY</span>            │
+                          │                       │  │  <span class="green">✅</span> SimAdapter / SimRegistry  │
+   ┌──────────────────────▼─────────────────────┐  │  <span class="green">✅</span> promptfoo Judge           │
+   │ <b>SYSCALL</b>  <span class="green">✅</span>                              │  │  <span class="green">✅</span> PromotionGate            │
+   │ <span class="green">✅</span> lead_research_batch (Exa/FC)              │  │  <span class="green">✅</span> 1 scenario pack           │
+   │ <span class="green">✅</span> read_url                                │  │  <span class="green">✅</span> Swarm REPL `/run`        │
+   │ <span class="green">✅</span> draft_email (draft only)                  │  │  <span class="green">✅</span> <span class="pink">CREATOR</span> (build_creator  │
+   │ <span class="green">✅</span> <b>send_email</b> (Gmail SMTP, live-proven)  │  │     _type, draft-only)        │
+   │ <span class="green">✅</span> queue_manual_action                      │  │  <span class="green">✅</span> <b>Promote gate</b> (ring-   │
+   │ <span class="green">✅</span> mark_outcome                             │  │     aware, synthetic barred)  │
+   │ <span class="green">✅</span> draft_candidate_type (Creator)            │  │  <span class="amber">⚠</span> Compiler (mechanism only) │
+   │ <span class="green">✅</span> <b>human_task</b> terminal tail              │  │  <span class="red">✗</span> GEPA search (needs gym)   │
+   │ <span class="red">✗</span> calendar / CRM / browser / voice /         │  │  <span class="red">✗</span> MiroFish / OASIS          │
+   │     WhatsApp / payments                     │  │  <span class="red">✗</span> Operator Agent (§6.1)     │
+   └──────────────────────┬─────────────────────┘  └─────────────────────────────┘
+                          ▼
+  <b>HARDWARE (live):</b> Exa ✅ · Firecrawl ✅ · Gmail SMTP ✅
+  <span class="red">✗</span> WhatsApp · calendar · Stripe · phone · Playwright
+</pre>
+      </div>
+    </div>
+  </div>
+
+  <h3>Reading the diagram</h3>
+  <p><b class="green">Green ✅</b> = built, proven in code and/or against a real integration. <b class="amber">Amber ⚠</b> = mechanism in place but volume/integration missing. <b class="red">Red ✗</b> = not built yet (and not hidden — the gaps are declared in <code class="inline">docs/STATE_AND_ROADMAP.md</code> §2).</p>
+  <p>The two architectural pillars you cared most about are real:</p>
+  <ul>
+    <li><b>"Mandate contains a Hermes/OpenClaw/Cheetah harness that takes the persona of the mandate."</b> → <span class="green">YES, in the seam</span>. <code class="inline">packages/mandate/src/agentx_mandate/harness.py</code> defines a <code class="inline">HarnessRunner</code> Protocol with <code class="inline">OwnHarness</code> (your recorded/playbook version) and a <code class="inline">HermesRunner</code> that drives the run via <code class="inline">HarnessSession.step()</code>. <b>OpenClaw and Cheetah are typed but not yet wired as adapters</b> — Hermes is the only live one today (because that's the harness MiniMax-M3 ships with). The seam is ready; binding another harness is a single <code class="inline">harness_adapter</code> away.</li>
+    <li><b>"The lead-finding mandate could find clients for the site-creator mandate — a self-feeding ecosystem."</b> → <span class="green">YES, architecturally, but only with 2 mandates in the library today.</span> Inter-mandate communication is the heap, not a message channel. So the lead-finder finds leads, the Creator drafts new mandate types, and a future "site-creator" mandate could be created by the Creator + sold to the leads the lead-finder found. The wiring is in place; the catalog of types isn't.</li>
+  </ul>
+</section>
+
+<!-- 3. MANDATES -->
+<section class="card" id="mandates">
+  <h2>3 · The mandates you have right now</h2>
+  <p>You have <b>2</b> Mandate <em>Types</em> in the library today (the class — shared by all businesses). They are registered in <code class="inline">api/src/agentx_api/app.py:91</code> on API startup. Each Type can be <b>instantiated</b> many times (one per business = the moat).</p>
+
+  <div class="leadfinder">
+    <div>
+      <h3>① <code class="inline">lead-finder</code> <span class="tag green">Phase 1 · LIVE</span></h3>
+      <p><b>Charter:</b> "Find and score qualified leads for an ICP, with evidence for each."</p>
+      <div class="kvs">
+        <div class="k">Built from</div><div class="v"><code class="inline">packages/mandate/src/agentx_mandate/library/lead_finder.py</code></div>
+        <div class="k">Default ICP</div><div class="v">independent dental clinics · Pune · count 1</div>
+        <div class="k">Faculties</div><div class="v">research · enrichment · judgment · memory-craft · escalation</div>
+        <div class="k">Terminal effect</div><div class="v"><code class="inline">send_email</code> (gated L2, parks for human approval)</div>
+        <div class="k">Watch window</div><div class="v">72h (settle → 72h reality feedback → real EvalCase)</div>
+        <div class="k">Service port</div><div class="v">qualified_leads</div>
+      </div>
+      <p class="small">Live-proven: 1 real outbound email (founder→founder, Gmail SMTP, settle #1 of ~100). 2/2 ICPs produced founder-sendable drafts (dental + vendor-shaped). See <code class="inline">docs/SESSION_SEND_LOOP_LIVE_PROOF.md</code> + <code class="inline">docs/SESSION_F_LIVE_PROOF.md</code>.</p>
+    </div>
+
+    <div>
+      <h3>② <code class="inline">creator</code> <span class="tag amber">Phase 3 · DRAFT-ONLY</span></h3>
+      <p><b>Charter:</b> "Interview an operator about a desired mandate, draft a candidate MandateType, stage it for human review. Promote is out of scope (Phase 4)."</p>
+      <div class="kvs">
+        <div class="k">Built from</div><div class="v"><code class="inline">packages/mandate/src/agentx_mandate/library/creator.py</code></div>
+        <div class="k">Faculties</div><div class="v">conversation · scheduling · memory-craft · escalation</div>
+        <div class="k">Output syscall</div><div class="v"><code class="inline">draft_candidate_type</code> (L0, reversible_write — no live effect)</div>
+        <div class="k">Rubric</div><div class="v"><code class="inline">creator_quality</code> · threshold 0.7</div>
+        <div class="k">Service port</div><div class="v">candidate_drafts</div>
+      </div>
+      <p class="small">Live-proven as a candidate generator (Session I + Hermes Phase 3): 21 tests, real Creator run produces a draft, <b>catalog is structurally unchanged</b> (invariant #7). Promote (Phase 4) is the irreversible step — that's where the ring-aware bridge lives.</p>
+    </div>
+  </div>
+
+  <h3>Faculties you can re-use to build more</h3>
+  <p>Faculties are the SDK bricks. Drop them into a new MandateType and you inherit the capability. Today, in <code class="inline">packages/mandate/src/agentx_mandate/faculties/</code>:</p>
+  <table>
+    <thead><tr><th>Faculty</th><th>What it does</th><th>Used by lead-finder</th><th>Used by creator</th></tr></thead>
+    <tbody>
+      <tr><td><code class="inline">research</code></td><td>Read intent (lead_research_batch, read_url) — no fabrication</td><td><span class="tag green">yes</span></td><td><span class="tag dim">—</span></td></tr>
+      <tr><td><code class="inline">enrichment</code></td><td>Augments research with structured enrichment</td><td><span class="tag green">yes</span></td><td><span class="tag dim">—</span></td></tr>
+      <tr><td><code class="inline">judgment</code></td><td>Scores, qualifies, decides (lead_quality rubric)</td><td><span class="tag green">yes</span></td><td><span class="tag dim">—</span></td></tr>
+      <tr><td><code class="inline">memory-craft</code></td><td>Provenance-stamped fact claims (the heap writes)</td><td><span class="tag green">yes</span></td><td><span class="tag green">yes</span></td></tr>
+      <tr><td><code class="inline">escalation</code></td><td>Fails safely, hands to a human</td><td><span class="tag green">yes</span></td><td><span class="tag green">yes</span></td></tr>
+      <tr><td><code class="inline">conversation</code></td><td>Interviews the operator (multi-turn)</td><td><span class="tag dim">—</span></td><td><span class="tag green">yes</span></td></tr>
+      <tr><td><code class="inline">scheduling</code></td><td>Cadence + emits the draft_candidate_type Call</td><td><span class="tag dim">—</span></td><td><span class="tag green">yes</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Syscall adapters you can build on</h3>
+  <p>In <code class="inline">packages/syscall/src/agentx_syscall/adapters.py</code>:</p>
+  <table>
+    <thead><tr><th>Adapter</th><th>Ring</th><th>Risk</th><th>Live today</th></tr></thead>
+    <tbody>
+      <tr><td><code class="inline">lead_research_batch</code></td><td><code class="inline">L0</code></td><td>read</td><td><span class="tag green">Exa / Firecrawl</span></td></tr>
+      <tr><td><code class="inline">read_url</code></td><td><code class="inline">L0</code></td><td>read</td><td><span class="tag green">Exa / Firecrawl</span></td></tr>
+      <tr><td><code class="inline">draft_email</code></td><td><code class="inline">L2</code></td><td>external_message</td><td><span class="tag green">draft-only, parked for human</span></td></tr>
+      <tr><td><code class="inline">send_email</code></td><td><code class="inline">L2</code></td><td>external_message</td><td><span class="tag green">Gmail SMTP, 1 real send</span></td></tr>
+      <tr><td><code class="inline">queue_manual_action</code></td><td><code class="inline">L0</code></td><td>reversible_write</td><td><span class="tag green">human tail always present</span></td></tr>
+      <tr><td><code class="inline">mark_outcome</code></td><td><code class="inline">L0</code></td><td>read</td><td><span class="tag green">reality feedback for watches</span></td></tr>
+      <tr><td><code class="inline">draft_candidate_type</code></td><td><code class="inline">L0</code></td><td>reversible_write</td><td><span class="tag green">Creator only, no catalog write</span></td></tr>
+      <tr><td><code class="inline">human_task</code></td><td>n/a</td><td>n/a</td><td><span class="tag green">terminal fallback (always last)</span></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 4. HOW TO USE -->
+<section class="card" id="howto">
+  <h2>4 · How to use what you have, today</h2>
+  <p>Three operating paths. All real, all from this morning's code on <code class="inline">main</code>.</p>
+
+  <h3>Path A — Drive a real lead-finder run from the Studio GUI</h3>
+  <p>Studio is the "drive→send" guided seat in the dashboard. It's the easiest one to verify the loop with.</p>
+  <pre><code># 1. Make sure .env has Mongo, MiniMax, Gmail SMTP, and at least one of Exa / Firecrawl
+cd "/Volumes/Mrigesh SSD/Startup/Agent-X-OS"
+./scripts/start_agentx.sh
+
+# 2. Open the dashboard
+open http://127.0.0.1:3000
+
+# 3. In the browser, flip to STUDIO ◀▶ OPERATOR (Studio is the default landing)
+#    Follow the spine:
+#    ① pick the lead-finder type → "Instantiate"
+#    ② "Find leads" — a trigger run starts, you watch the SSE oscilloscope trace
+#    ③ Scored leads + cited evidence land in the Instance File
+#    ④ "Review outreach" — a draft approval card shows up in the Approval Inbox
+#    ⑤ "Approve & send" — the run resumes into a real send (L1 → L2),
+#       or if the runtime gate is off, into the human_task tail.
+#    ⑥ Land in the Business File. /events shows the journal sequence.
+</code></pre>
+
+  <h3>Path B — The CLI "use a mandate" script (the canonical one-shot)</h3>
+  <p>This is your <code class="inline">docs/USING_AGENTX.md</code> path. Useful when you want to point a mandate at a single lead and approve from the terminal.</p>
+  <pre><code># Mode 1 — point at a known lead (you supply the URL)
+uv run python scripts/use_mandate.py \
+  --lead-company "Acme Dental" \
+  --lead-url "https://acmedental.example/about" \
+  --task "Research this clinic, verify the decision-maker and growth signal, then draft truthful outreach."
+# The script reads → gathers cited evidence → qualifies → claims facts →
+# prints the draft approval card → waits for `y` →
+# executes the draft and settles.
+
+# Mode 2 — let the mandate find the leads
+uv run python scripts/use_mandate.py \
+  --icp "independent dental clinics investing in patient growth" \
+  --location "Pune, India" \
+  --count 3
+
+# Add --yes only when you intentionally want non-interactive approval
+# (read the draft first; the draft is the gate, not a formality)
+</code></pre>
+
+  <h3>Path C — Talk to the kernel directly over HTTP</h3>
+  <p>For when you want to script approvals, integrate with a CRM, or test. Every command requires <code class="inline">AGENTX_OPERATOR_TOKEN</code> on the command routes. Source: <code class="inline">api/src/agentx_api/app.py</code>.</p>
+  <pre><code>TOKEN="${AGENTX_OPERATOR_TOKEN}"  # bearer for /commands/*
+
+# 1. Instantiate
+curl -X POST http://127.0.0.1:8000/commands/instantiate \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"type_ref":"lead-finder@0.1.0","customer_id":"acme-co","ring":"L1"}'
+
+# 2. Trigger a run (HTTP 202 + work_id)
+curl -X POST http://127.0.0.1:8000/commands/trigger-run \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"instance_id":"inst_...","target":{"icp":"dental","location":"Pune","count":1}}'
+
+# 3. Inspect the parked approval card
+curl http://127.0.0.1:8000/approvals
+
+# 4. Approve → scheduler enqueues ApprovalWork → kernel resume → settle
+curl -X POST http://127.0.0.1:8000/commands/approve \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"work_id":"...","run_id":"...","decision":"approve"}'
+
+# 5. Watch it settle
+curl http://127.0.0.1:8000/scheduler-work/{work_id}
+
+# Also: GET /events (SSE journal stream), /journal (paginated),
+# /runs/{id} (incl. claimed_facts, hydrate snapshot), /instances/{id} (heap).
+</code></pre>
+
+  <h3>What you'll observe</h3>
+  <ul>
+    <li>The lead-finder picks 1 lead, drafts outreach, parks for approval, settles, files the fact in the heap with provenance (<code class="inline">heap_fact</code> in Mongo), journals the <code class="inline">RunSettled</code> event, and registers a 72h watch.</li>
+    <li>If you have <code class="inline">RUN_LIVE_EMAIL=1</code> + a Gmail App Password in <code class="inline">.env</code>, the Approve action sends a real email via SMTP and the run settles with a real outbound <code class="inline">syscall_trace</code>.</li>
+    <li>Without a transport, the same Approve produces a <code class="inline">human_task</code> and a human (you, in the inbox) does the last mile. <b>That human tail is the unlock:</b> nothing is "unimplemented", only queued.</li>
+  </ul>
+</section>
+
+<!-- 5. CREATE MORE -->
+<section class="card" id="create">
+  <h2>5 · How to add more mandates (three ways, in order of effort)</h2>
+
+  <h3>Way 1 · Use the Creator mandate (now: drafts, soon: promotes) <span class="tag green">works in sim</span></h3>
+  <p>Today, the Creator <b>drafts</b> candidate MandateTypes; the promote step is the Phase 4 bridge that's built but human-approved. You can already iterate the <em>shape</em> of a new mandate in conversation.</p>
+  <pre><code># (Once the conversational Creator UI lands, this becomes:
+#   "creator, draft me a mandate that handles inbound WhatsApp for dental clinics")
+# Today, the cleanest path is Way 2 below.
+</code></pre>
+
+  <h3>Way 2 · Add a new MandateType in code (the canonical way, today) <span class="tag green">always works</span></h3>
+  <p>Mirror the lead-finder — it's ~80 lines, all the hard parts are in the kernel/foundry.</p>
+  <pre><code># 1. Create packages/mandate/src/agentx_mandate/library/&lt;your_mandate&gt;.py
+#    Import the contracts, pick faculties, write a charter.
+#
+#    The shape of a MandateType:
+#      • id, name, version
+#      • charter: goal + postconditions (rules) + constraints
+#      • faculties: list of FacultyBinding (pick from the 7 in faculties/)
+#      • domain_pack: DomainPackRef(name=&lt;vertical&gt;, version=...)
+#      • verification: VerificationSuite(rules=[], rubrics=[...])
+#      • settlement: SettlementRules(watch_window_hours=N, ...)
+#      • service_ports: [&lt;capability-name&gt;]
+#
+# 2. Register it on API startup in api/src/agentx_api/app.py (line ~91):
+#
+#        from agentx_mandate.library.&lt;your_mandate&gt; import build_&lt;your_mandate&gt;_type
+#        await state.control.register_mandate_type(build_&lt;your_mandate&gt;_type())
+#
+# 3. Add tests in packages/mandate/tests/test_&lt;your_mandate&gt;_type.py
+#    (TDD: write failing tests first, then implement, then green).
+#
+# 4. Run the gate:
+#      uv run ruff check . && uv run mypy --strict packages db tests
+#      uv run pytest -q && uv run lint-imports
+#
+# 5. Restart the API, open the Catalog in the dashboard, hit "Create Instance".
+</code></pre>
+
+  <h3>Way 3 · Wire a new syscall adapter <span class="tag green">when you need a new effect</span></h3>
+  <p>For when the new mandate needs a real-world effect no existing adapter covers (calendar, CRM, browser, voice, WhatsApp, payments). The blueprint's §3 ladder is the playbook.</p>
+  <ol>
+    <li>Add the adapter in <code class="inline">packages/syscall/src/agentx_syscall/adapters.py</code> (follow the <code class="inline">Adapter</code> base class; choose the rung: <code class="inline">L0</code>=read, <code class="inline">L1</code>=reversible write, <code class="inline">L2</code>=external message, <code class="inline">L4</code>=autonomous money).</li>
+    <li>Add the <code class="inline">SyscallPolicy</code> entry so the gateway knows the ring and risk.</li>
+    <li>Add the credential to <code class="inline">ConfigVault</code> (the pod never sees it; the kernel injects it at execute).</li>
+    <li>Add a fixture + unit test, then a smoke test against the real provider (gated on a flag).</li>
+    <li>For money: API-only, idempotent, never LLM-executed, never browser (invariant #6).</li>
+  </ol>
+
+  <h3>Way 4 · Run a swarm to iterate a candidate <span class="tag green">works in sim</span></h3>
+  <p>The Swarm REPL is the <em>Foundry</em> — you describe a scenario pack, the kernel runs the candidate through the same gateway in sim, the promptfoo judge grades, the PromotionGate bars synthetic-only promotion.</p>
+  <pre><code>curl -X POST http://127.0.0.1:8000/commands/run-swarm \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"scenario_pack":"indian_b2b_leads_v1","candidate_ref":"lead-finder@0.1.0"}'
+# Inspect the EvalCase (origin="synthetic"), see the §5 timeline in the Foundry view.
+</code></pre>
+</section>
+
+<!-- 6. GAP -->
+<section class="card" id="gap">
+  <h2>6 · The gap, precisely</h2>
+  <p>Two different numbers because they measure different things. The <b>Phase-1 engine is ~90% built</b> (plumbing, contracts, evidence, real send). The <b>whole BLUEPRINT</b> (5 phases + the Foundry self-improvement loop + the Operator Agent) is <b>~40%</b>. The remaining gap is <b>not architecture</b> — the seam held across 7 backend phases + a frontend session with zero <code class="inline">packages/contracts</code> changes. It is <b>reach</b> (no real-world effect at scale yet), <b>volume</b> (0 of the ~100 real settles the WIN needs, vs 1 done), and the <b>self-improvement loop</b> (a real gym + a real GEPA search).</p>
+
+  <h3>By BLUEPRINT section</h3>
+  <table>
+    <thead><tr><th>BLUEPRINT</th><th>Status</th><th>What's left</th></tr></thead>
+    <tbody>
+      <tr><td>§1 Mandate (7 organs)</td><td><span class="tag green">~85%</span></td><td>domain-pack <em>distillation</em> across customers; gym <em>volume</em> (a real corpus)</td></tr>
+      <tr><td>§2 Run loop</td><td><span class="tag green">✅ done</span></td><td>— (complete for Phase 1)</td></tr>
+      <tr><td>§3 Syscall layer</td><td><span class="tag green">~85%</span></td><td>calendar/CRM/browser/voice/WhatsApp adapters (Phases 2–5); managed connector platforms</td></tr>
+      <tr><td>§4 Kernel (two clocks)</td><td><span class="tag green">~90%</span></td><td>trust-ladder <em>automation</em> (G6: N-clean→propose / verified-failure→demote); economy/market</td></tr>
+      <tr><td>§4.5 Harness to full capability</td><td><span class="tag green">✅ done</span></td><td>— (MiniMax drives via tool-calling; effects gated; durable state is ours)</td></tr>
+      <tr><td>§5 Foundry & Creator</td><td><span class="tag amber">~45%</span></td><td>conversational Creator (NL brief → candidate); <code class="inline">/patch</code>+<code class="inline">/compare</code> re-run loop; GEPA compiler search; a real gym corpus</td></tr>
+      <tr><td>§6 Dashboard</td><td><span class="tag green">~95%</span></td><td>Kernel Inspector (design-only); Economy view; design polish</td></tr>
+      <tr><td>§6.1 Operator Agent</td><td><span class="tag red">~5%</span></td><td>the conversational chief-of-staff (G11)</td></tr>
+      <tr><td>§7 Build order</td><td><span class="tag amber">P1 ~90%</span></td><td>Phase-1 WIN (~100 real settles) NOT hit — settle #1 of ~100 done; Phases 2–5 channels</td></tr>
+      <tr><td>§8 Kill conditions</td><td><span class="tag dim">⏳ untested</span></td><td>need real settles to evaluate (churn vs heap depth · compiler vs hand-tuning · owners tapping Approve)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>What would make the system real (your roadmap, in order)</h3>
+  <ol>
+    <li><s>Close the send loop</s> — <b>done 2026-06-20</b>: the lead-finder emits <code class="inline">send_email</code>; approving the parked outreach sends it via wrapped Gmail SMTP. First real outbound effect landed.</li>
+    <li><b>Capture outcomes → Step-D at volume</b> — real replies/bounces via <code class="inline">mark_outcome</code>/watches mature into verified facts + real <code class="inline">eval_case(origin="real")</code>. The WatchMaturationWorker is built; you need outcomes to mature.</li>
+    <li><b>Accumulate ~100 real settles</b> — the Phase-1 WIN. Operating milestone, not coding.</li>
+    <li><b>Then, in order:</b> trust-ladder automation (G6) · GEPA compiler search (G12) · the conversational Creator + Operator Agent (G10/G11) · Phases 3–5 channels (browser · voice · WhatsApp · money).</li>
+  </ol>
+</section>
+
+<!-- 7. REVENUE -->
+<section class="card" id="revenue">
+  <h2>7 · Will it get you business and revenue? — a critical read</h2>
+
+  <div class="verdict">
+    <div class="top">
+      <div class="h">TL;DR</div>
+    </div>
+    <p style="margin:6px 0 0">The <b>technology</b> is real and uniquely well-architected. The <b>revenue story</b> is not built yet — and the gap is not "the product isn't good", the gap is "you have <b>1</b> real customer outcome (<em>yourself</em>) and <b>0</b> paying businesses." That's the next 90 days, not the next 90 lines of code. Below I separate what's a <b>strength</b>, what's a <b>risk</b>, and what the <b>concrete moves</b> are.</p>
+  </div>
+
+  <h3>What the architecture does for you (strengths, monetizable)</h3>
+  <ul>
+    <li><b>"Mandates that improve themselves" is rare.</b> Most agent platforms are stateless SaaS — every call re-pays the same cost. Yours has a heap per business (private moat) and a gym (cross-business learned behavior) and a compiler (Gym → better mandates). That's a real compounding moat that VCs pay for. <em>It's not yet visible to a customer — they get a lead-finder that works, not a pitch about the gym — but the long-term defensibility is real.</em></li>
+    <li><b>"No credential in user space" is genuinely defensible.</b> Your <code class="inline">.importlinter</code> literally prevents the mandate pod from importing <code class="inline">security.py</code>. This is the kind of audit-able isolation enterprise customers (and the SMBs that pretend to be enterprise) will pay a premium for, because they don't trust generic agent platforms with their data.</li>
+    <li><b>"Settlement is a verifiable, journaled event"</b> — also a SaaS sales unlock. You can show a customer a real receipt for what the agent did, why, and what it knew when it did it. Most competitors ship "trust us" or a black-box log. That's the demo that closes deals.</li>
+    <li><b>The Creator mandate (architectural)</b> means your cost-of-adding-new-products collapses. Once the conversational surface is done, the founder can describe a new vertical in English and ship a candidate in minutes. That's your <em>internal</em> moat too — the team that can do this in a day outpaces a team that needs a sprint.</li>
+  </ul>
+
+  <h3>What will keep it from getting paid customers (risks)</h3>
+  <ul>
+    <li><b class="red">You have no users yet.</b> 1 real email, to yourself, is proof of loop, not proof of product-market fit. The first 5 paying customers are the next milestone. Until then, every claim is provisional.</li>
+    <li><b class="red">The "mandate catalog" is the actual product, and you have 2 entries.</b> The blueprint's promise is "a growing ecosystem of mandates that find each other's customers." You have one (lead-finder) that's revenue-ready, and one (Creator) that's architecturally sound but produces drafts not products. The site-creator, the inbound-WhatsApp, the calendar-scheduler, the CRM-updater, the voice-receptionist — <b>none of these exist yet</b>. Each one is a focused build (3–7 days each if the existing faculty + creator + send-email pattern holds).</li>
+    <li><b class="amber">Single-operator, localhost-only deployment.</b> The dashboard is on your machine. There is no hosted signup, no per-tenant onboarding, no billing. None of this is in the codebase. Until you have it, the customer is you.</li>
+    <li><b class="amber">"Operating system for business" is a category, not a product.</b> Customers don't buy OSes. They buy "the lead-finder that found me 3 qualified clinics this morning." Your <em>first product</em> is the lead-finder. Your <em>second product</em> is whatever vertical it lets you package next. Your <em>category</em> is the OS — and you'll only be able to talk about it once you have 3+ products and 5+ customers.</li>
+    <li><b class="amber">The "self-improving gym" is the long-game, not the first sale.</b> Customers don't pay for "in 6 months our agent will be smarter than yours." They pay for "did this find me customers." The gym is your <em>defensibility after product-market fit</em>, not your wedge.</li>
+    <li><b class="red">A small, but real, fragility in the design language.</b> The blueprint says "L0 recommend → L4 autonomous" is the trust ladder. You ship L0–L2 wired (L3/L4 typed but unused). That's correct for Phase 1, but means today every customer starts at L0 and every consequential action parks. <em>That's actually good</em> for trust, but <em>bad</em> for the "wow, the agent just did it" demo. Plan for a "wow demo" path.</li>
+  </ul>
+
+  <h3>Critical math for the next 90 days</h3>
+  <table>
+    <thead><tr><th>Milestone</th><th>What it proves</th><th>What it costs to reach</th><th>Revenue implication</th></tr></thead>
+    <tbody>
+      <tr><td><b>5 real settles, end-to-end</b> (no longer to yourself)</td><td>The loop works for someone else</td><td>Just operational (2 weeks of disciplined use)</td><td>None yet — but it lets you ask for a paid pilot</td></tr>
+      <tr><td><b>2nd MandateType in production</b> (the "site creator" you described, or equivalent)</td><td>The catalog pattern works</td><td>3–5 days: one new file + tests + a syscall adapter + register</td><td>Two-product story; doubles the surface area you can sell</td></tr>
+      <tr><td><b>1 paying pilot customer</b> (1 business, 1 instance, 1 month)</td><td>The first unit-economics data point</td><td>Free-build or 50% off; 2 weeks of intense support</td><td>Sets the price anchor. Even ₹20k/mo is real signal.</td></tr>
+      <tr><td><b>Hosted multi-tenant</b> (1 URL, signup, billing)</td><td>You can sell at all</td><td>Auth, billing (Stripe), per-tenant vault — call it 2–3 weeks</td><td>The product becomes a SaaS, not a local script</td></tr>
+      <tr><td><b>3 mandates + 5 customers</b></td><td>PMF signal in the smallest defensible form</td><td>~90 days of focused execution</td><td>Series-seedable story, or ₹3L–₹10L/mo self-sustaining</td></tr>
+    </tbody>
+  </table>
+
+  <h3>So: will it generate revenue?</h3>
+  <p><b>Yes, but not because of the architecture — because of what you do with the next 90 days.</b> The architecture is necessary (most agent platforms don't have it) but not sufficient (architecture doesn't pay salaries). The engine is built; the <em>business</em> is not. The fastest path:</p>
+  <ol>
+    <li><b>Pick ONE second mandate to ship in 7 days.</b> Inbound WhatsApp for dental clinics (the example you used) is a great pick — it has a clear ICP, a clear unit-economics story (a clinic is worth ₹2–8L/year to a marketer), and you have the lead-finder to feed it customers.</li>
+    <li><b>Use the lead-finder to find yourself 3 pilot customers</b> for that second mandate. The lead-finder works; the dentist in Pune is a real lead. Go get 2 more.</li>
+    <li><b>Charge from day 1</b> — even ₹5,000/month, even for 3 months. Free pilots don't generate data, and you need data for the gym anyway.</li>
+    <li><b>Add the hosted billing layer</b> in parallel — Stripe + a simple multi-tenant vault. The product doesn't need to be pretty; it needs to be sellable.</li>
+    <li><b>Use the journal/heap as your marketing asset.</b> "Here's what our agent did for this clinic, with provenance, with audit, in 14 days." That's the demo most competitors can't give.</li>
+  </ol>
+</section>
+
+<!-- 8. NEXT -->
+<section class="card" id="next">
+  <h2>8 · What to do this week</h2>
+  <p>One paragraph of advice per role you play. Pick one.</p>
+
+  <h3>If you want to de-risk the product</h3>
+  <ol>
+    <li>Run the lead-finder against 3 real Indian dental clinics from the Studio. Approve all 3 sends. Watch the heap fill. (1 day, gives you 3 real settles.)</li>
+    <li>Reply to yourself from a second Gmail. See the watch mature. (10 minutes if the watch wiring is on.)</li>
+    <li>Run <code class="inline">/commands/run-swarm</code> on the same 3 leads. See the synthetic EvalCase and the §5 timeline. (30 minutes, no API keys needed.)</li>
+  </ol>
+
+  <h3>If you want to ship the 2nd mandate</h3>
+  <ol>
+    <li>Pick the vertical: "inbound WhatsApp handler for dental clinics" is the example your doc uses. It re-uses conversation + memory-craft + escalation; it needs a WhatsApp adapter (build it on top of the <code class="inline">Adapter</code> base class; <code class="inline">whatsapp_business</code> or <code class="inline">kapso</code> are the realistic providers).</li>
+    <li>Mirror <code class="inline">build_lead_finder_type()</code> as <code class="inline">build_inbound_whatsapp_type()</code>. 80 lines, all the heavy lifting is the kernel.</li>
+    <li>Add a triage rubric for "should this message be answered by the agent or escalated to the owner?" — that's the only mandate-specific part that matters.</li>
+  </ol>
+
+  <h3>If you want to ship the business</h3>
+  <ol>
+    <li>Add Stripe + a hosted multi-tenant vault (1–2 weeks). The kernel is already tenant-isolated; the gap is auth + billing + URL.</li>
+    <li>Price: ₹5,000–₹25,000/month per instance, per the unit economics of a clinic or a SaaS lead funnel.</li>
+    <li>Use the lead-finder to find your first 3 paying customers. The loop is closed.</li>
+  </ol>
+
+  <h3>If you want to close the blueprint gap</h3>
+  <ol>
+    <li><b>G6 — trust ladder automation</b> (N clean → propose promote, verified failure → demote). The trust numbers exist; the policy doesn't. <span class="small">1 session.</span></li>
+    <li><b>G12 — GEPA compiler search</b> (the loop that turns graded cases into better faculty skill packs). Mechanism is built; the search isn't. Needs ~100 real settles to matter. <span class="small">1 session, blocked on volume.</span></li>
+    <li><b>G10/G11 — conversational Creator + Operator Agent</b>. The architecture is proven (Creator = draft, Promote = gate, Studio = GUI). The chat surface is the missing piece. <span class="small">1–2 sessions.</span></li>
+    <li><b>Phase 2 — calendar + CRM adapters</b>. Same pattern as Gmail SMTP. <span class="small">2–3 sessions each, gated on a real provider key.</span></li>
+  </ol>
+
+  <h3>One risk worth naming</h3>
+  <p><b class="amber">Velocity.</b> The architecture was the right thing to nail first — and you did, honestly, very well. But the hardest thing in agent-platform businesses is not the kernel, it's the <b>rate of real-world feedback</b>. The blueprint is right that "settle ~100 times" is the WIN. You've done 1. <b>Drinking your own champagne</b> (you as the customer of your own lead-finder, every week, for 12 weeks) is the cheapest path to settle #100, the most honest product feedback loop, and the demo that closes your first paying pilot. Build the second mandate to feed the same loop.</p>
+</section>
+
+<div class="foot">
+  Generated 2026-06-20 against <code class="inline">main@081584f</code>. All claims anchored to:
+  <code class="inline">docs/BLUEPRINT.md</code> · <code class="inline">docs/STATE_AND_ROADMAP.md</code> · <code class="inline">docs/MANDATE.md</code> ·
+  <code class="inline">packages/</code> · <code class="inline">api/</code> · <code class="inline">dashboard/</code> · 7× <code class="inline">docs/SESSION_*_LIVE_PROOF.md</code>.
+</div>
+
+</div>
+</body>
+</html>
