@@ -269,3 +269,47 @@ rise with heap depth, context-gravity is fiction. Watch these as real data arriv
 3. ~~Step A (G1), Step B (G2), and Step C (G4)~~ ✅ **DONE and live-proven through Session G.** Next =
    **Step D maturation** (watch/`mark_outcome` → probation→verified, trust/résumé, graded
    `eval_case origin="real"`), plus P2 polish; then accumulate settles toward ~100.
+
+---
+
+## 6. Where we stand vs. the BLUEPRINT — honest gap map (2026-06-20)
+
+*Two very different numbers, because they measure different things: the **Phase-1 engine is ~90% built**;
+the **whole BLUEPRINT** (5 phases + the Foundry self-improvement loop + the Operator Agent) is **~40%**.
+The remaining gap is NOT architecture — the seam held across 7 backend phases + a frontend session with
+zero `packages/contracts` changes. It is **reach** (no real-world effect yet), **volume** (0 of the ~100
+real settles the WIN needs), and the **self-improvement loop** (a real gym + a real compiler). Verified
+gate-green on `main` (ruff · mypy 115+13 · pytest 188+38, packages 76 · lint-imports 3/3 · dashboard 22 + build).*
+
+### By BLUEPRINT section
+
+| BLUEPRINT | Status | Built | What's LEFT |
+|---|---|---|---|
+| **§1 Mandate (7 organs)** | 🟢 ~85% | charter · faculties (research/judgment/memory-craft/escalation + conversation/scheduling) · domain-pack ref · verification (rules+human+judge) · settlement · execution (Hermes→MiniMax) | domain-pack *distillation* across customers; eval-gym *volume* (a real corpus) |
+| **§2 Run loop** | ✅ | LLM drives hydrate→think→act→verify→settle→deferred-settle; durable resume | — (complete for Phase 1) |
+| **§3 Syscall layer** | 🟢 | gateway · rings L0–L2 · idempotency · credential-inject · journal · human-task tail; adapters: lead_research_batch, read_url, draft_email, queue_manual_action, mark_outcome, **send_email (built, UNWIRED)**, draft_candidate_type | **no mandate emits `send_email`** (the one blocker to a real effect); calendar/CRM/browser/voice/WhatsApp adapters (Phases 2–5); managed connector platforms |
+| **§4 Kernel (two clocks)** | 🟢 | online dumb kernel ✅; offline Foundry: swarm ✅, promote gate ✅, compiler 🟡, creator 🟡; all 8 invariants enforced | trust-ladder *automation* (G6: N-clean→propose / verified-failure→demote); economy/market |
+| **§4.5 Harness to full capability** | ✅ | MiniMax drives via tool-calling; effects gated; durable state is ours | — |
+| **§5 Foundry & Creator** | 🟡 ~45% | Swarm REPL `/run`+score+gate+§5 timeline (Session I); Creator *draft* path (`build_creator_type` + `draft_candidate_type`); compiler *mechanism* (G12) | `/patch`+`/compare` re-run loop; a *conversational* Creator (NL brief → candidate); GEPA compiler *search*; a *real* gym corpus |
+| **§6 Dashboard** | ✅ | operator god-view (operable · SSE · toasts) + guided **Studio** (drive→send seat) | Kernel Inspector (design-only); Economy view |
+| **§6.1 Operator Agent** | ❌ | — (the Studio is its GUI precursor) | the conversational chief-of-staff (G11) |
+| **§7 Build order** | Phase 1 ~90% | P1 engine done; the P2 `send_email` adapter exists | **Phase-1 WIN (~100 real settles) NOT hit (0 so far)**; Phase 2 (email *send wired* + calendar + CRM); Phases 3–5 (browser · voice · WhatsApp · money) |
+| **§8 Kill conditions** | ⏳ untested | — | need real settles to evaluate (churn vs heap depth · compiler vs hand-tuning · owners tapping Approve) |
+
+### The one critical gap
+**Nothing the system runs produces a real-world effect yet.** Research *reads* are real (Firecrawl/Exa),
+but every *write* path stops at a draft: the lead-finder emits `draft_email` (draft-only) and parks. The
+`send_email` adapter is built + unit-tested but **no mandate emits it**, and the wired transport is
+**Resend** (the `SMTP_*`/`EMAIL_*` Gmail keys are recognized but not wrapped). So the BLUEPRINT §7 WIN —
+"one instance settles vs reality ~100 times" — currently has **0** real-effect settles. This is the line
+between a polished, demoable system and a business.
+
+### What would make it real (ordered)
+1. **Close the send loop** — a mandate emits `send_email` after human approval (extend the lead-finder so
+   approving the parked draft *sends* it), and wrap SMTP (or set `RESEND_API_KEY`). → the first real outbound effect.
+2. **Capture outcomes → Step-D at volume** — real replies/bounces via `mark_outcome`/watches mature into
+   verified facts + real `eval_case(origin="real")`. → the gym fills with reality.
+3. **Accumulate ~100 real settles** (an *operating* milestone, not a coding one) → the Phase-1 WIN; the
+   trust ladder and compiler finally have real data to act on.
+4. **Then, in order:** trust-ladder automation (G6) · GEPA compiler search (G12) · the conversational
+   Creator + Operator Agent (G10/G11) · Phases 3–5 channels (browser · voice · WhatsApp · money).
