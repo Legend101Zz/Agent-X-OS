@@ -33,8 +33,8 @@ the swarm runnable from the dashboard** (G8's `/run` half). Items below marked �
 > MiniMax-M3 builder (guardrails in [`MINIMAX-TASK.md`](../MINIMAX-TASK.md) +
 > [`docs/HERMES_BUILD_PLAN.md`](./HERMES_BUILD_PLAN.md), Claude-reviewed at checkpoints) landed, all
 > in-memory + gate-green: **(G13-start) gated real email SEND** — `send_email` adapter (Gmail SMTP via App
-> Password, idempotent, per-instance sender; **unit-tested with a fake transport, real send gated on
-> `RUN_LIVE_EMAIL=1` — not yet exercised against Gmail**). **(G3) Step-D reality feedback** — a
+> Password, idempotent, per-instance sender; **unit-tested with a fake transport; real send now WIRED into
+> the lead-finder and live-proven against Gmail on 2026-06-20 — see the Send loop note below**). **(G3) Step-D reality feedback** — a
 > deferred-settle worker matures a watch → promotes probation facts to verified, updates trust, and emits
 > one `EvalCase(origin="real")` graded on the real `lead_quality` rubric (proven to open the promotion gate
 > via the production offline-fallback judge). **(G10) Creator draft path** — `build_creator_type()` (4 §5
@@ -56,13 +56,26 @@ the swarm runnable from the dashboard** (G8's `/run` half). Items below marked �
 > `.studio-*` CSS only). **Live-proven over HTTP**: instantiate → run parks at L1 → approve → settle → 2 leads
 > committed with provenance; send **fail-closed** (no transport) to the human tail; bearer 401/403 verified.
 > See [SESSION_STUDIO_LIVE_PROOF.md](./SESSION_STUDIO_LIVE_PROOF.md) + [OPERATOR_STUDIO_DESIGN.md](./OPERATOR_STUDIO_DESIGN.md).
-> **Accuracy note:** the wired live-email transport is **Resend** (`RUN_LIVE_EMAIL=1` + `RESEND_API_KEY`),
-> not Gmail SMTP — the `SMTP_*` keys are recognized but not yet wrapped (`email_transports.py`). The Phase-1
-> lead-finder's terminal effect is `draft_email` (draft-only); the real gated `send_email` is a separate
-> capability (`api/tests/test_send_email_integration.py`). **Next (design-only):** Creator track, Foundry
+> **Accuracy note (superseded 2026-06-20 — see the Send loop note below):** at Studio time the wired
+> transport was Resend and the lead-finder's terminal effect was `draft_email`. Both have since changed:
+> Gmail SMTP is wrapped and the lead-finder now emits the gated `send_email`. **Next (design-only):** Creator track, Foundry
 > deepening, Kernel Inspector — phases 2–4 of [OPERATOR_STUDIO_DESIGN.md](./OPERATOR_STUDIO_DESIGN.md).
 > **Honest caps:** real email send + the ~100-settle operating milestone are NOT yet hit; the GUI to drive
 > all this is the next (frontend) session.
+
+> **Send loop CLOSED — first REAL outbound settle (2026-06-20, on `main`):** the lead-finder's terminal
+> outreach effect is now the gated `send_email` (was `draft_email`); at ring L1 it PARKS for human approval
+> exactly as before, and **only Approve resumes the run into a real send** via the configured transport (no
+> transport → `human_task` tail, invariant #5). Wrapped the **Gmail SMTP** transport (stdlib `smtplib`,
+> STARTTLS, App Password); `build_configured_email_transport` now prefers SMTP > Resend > None under the
+> `RUN_LIVE_EMAIL` master gate. Also fixed a latent bug where the `.env` fallback resolved the wrong
+> directory (`parents[3]` → `packages/`), so env-driven SMTP/Resend config silently never built a transport.
+> The run-loop stamps the `From` from `ChannelBinding.sender_identity` (#8) and defaults an unset recipient
+> to that sender (send-to-self review-in-your-own-inbox dogfood). **LIVE-PROVEN against Gmail:** one real
+> email sent founder→founder, `message_id <178194666095.61930.3102482248798944072@gmail.com>`, accepted,
+> run settled — **settle #1 of the ~100** the BLUEPRINT §7 WIN needs. See
+> [SESSION_SEND_LOOP_LIVE_PROOF.md](./SESSION_SEND_LOOP_LIVE_PROOF.md). Stretch (reply-watch → real
+> `eval_case`) deferred — the Step-D maturation machinery (G3) already exists for it.
 
 ---
 
@@ -179,7 +192,7 @@ gap is deferred maturation: reality must promote probation facts and emit real g
 | G11 | **Operator Agent** (founder's chief-of-staff over the control surface) | ❌ | Later; needs the dashboard command/query API as its tool surface | §6.1 |
 | G11-p4 | **Promote gate + canary** (candidate→live bridge) | ✅ | **Hermes Phase 4 (this session):** ``POST /commands/promote`` (auth required via ``_require_command_auth``) is the ring-aware candidate→live bridge. Canary path (L0/L1) accepts synthetic-OR-real evidence + human; L2+ requires real evidence via the existing ``PromotionGate`` (DO NOT modify — Session I's synthetic-bar test stays valid). Server gathers ``eval_cases`` by the candidate's ``type_ref`` (NEVER accepts client-supplied ``eval_case_ids`` — that would let an operator cherry-pick favorable evidence; tested explicitly). Idempotent on the type-ref pair (returns the existing ``MandateType`` if same-version + equal). One ``ManagerAction(promote)`` audit row per allow, stamped with ``candidate_id`` + ``ring`` + ``human_approved`` + ``gate_origin``. ``command.promote`` retired from ``gaps.py`` ``CORE_GAPS`` → ``KNOWN_CLOSED``. 11 new tests cover the 6 Done-when bullets (L0 synthetic+human, L0 no-evidence, L2 synthetic-only, L2 real+human, L2 mixed, 401, retire-gap) + 4 bonus (L2 no-human barred, candidate-not-found 404, invalid-ring 422, client-supplied eval_case_ids IGNORED). | §5 |
 | G12 | **Compiler (GEPA growth loop)** | 🟡 mechanism only | **Hermes Phase 5 (this session):** ``agentx_swarm.compiler.compile_candidate(gym, config)`` produces a ``CompiledCandidate`` (proposed_skill_pack + gate_decision + counts) — NEVER registers a MandateType. Delegates evidence sufficiency to the existing ``PromotionGate`` (DO NOT modify). The compiler is the foundry-side mechanism: reads persisted scorecards, splits real/synthetic, aggregates real-case metrics, bumps the skill_pack version (deterministic minor bump), and surfaces the gate verdict. **Honest limit:** mechanism tested on seeded cases; real improvement needs ~100 real settles. **Invariant #7 proof:** ``test_synthetic_only_corpus_can_never_produce_a_promotable_candidate`` proves that 20 perfect-score synthetic cases (real_case_count=0) ALWAYS yield promotable=False — synthetic is structurally barred from the gate's evidence. The compiled output is a CANDIDATE only; promotion (registration) goes through Phase-4 /commands/promote. 10 new tests cover all 3 Done-when bullets (compile returns, gate accepts on real, gate rejects on real) + 7 honest scaffolding assertions (synthetic-only barred, mixed-no-real barred, mixed-with-real allowed, no-catalog-write, determinism, version bump, empty-gym barred). | §5 |
-| G13 | **Phases 2–5 channels** (send email, calendar, CRM, browser, voice, WhatsApp, money) | 🟢 email send scaffolded (P1) | **Hermes Phase 1 (this session):** ``SendEmailAdapter`` + ``EmailTransport`` Protocol + ``SentEmailReceipt`` + Resend transport (gated on ``RUN_LIVE_EMAIL=1`` + ``RESEND_API_KEY``); per-instance sender resolver looks up ``ChannelBinding.sender_identity``; kernel run-loop stamps ``req.args["sender_identity"]`` from the instance binding (belt + suspenders for invariant #8); adapter refuses mismatches. Idempotency at both gateway (journal/receipt) AND adapter level (defense in depth). 13 new tests (9 adapter + 4 api integration). **Live send path is gated; unconfigured deployments fall back to ``human_task`` (invariant #5).** Post-approval wiring (faculty emits ``send_email`` Call after ``draft_email`` parks) is a thin mandate/faculty step that's out of Phase 1 scope. Other channels (calendar/CRM/browser/voice/WhatsApp/money) are still deliberately deferred — not Phase 1 | §7 |
+| G13 | **Phases 2–5 channels** (send email, calendar, CRM, browser, voice, WhatsApp, money) | 🟢 email send **WIRED + live-proven** (P1) | **Hermes Phase 1 + Send-loop session (2026-06-20):** ``SendEmailAdapter`` + ``EmailTransport`` Protocol + ``SentEmailReceipt`` + **Gmail SMTP** transport (`build_configured_email_transport` prefers SMTP > Resend > None, all under ``RUN_LIVE_EMAIL=1``); per-instance sender resolver looks up ``ChannelBinding.sender_identity``; kernel run-loop stamps ``req.args["sender_identity"]`` (#8) and defaults an unset recipient to that sender (send-to-self dogfood). Idempotency at both gateway and adapter level. **The lead-finder now emits ``send_email``** (was ``draft_email``): at L1 it parks for approval, and Approve resumes into a real send; no transport → ``human_task`` tail (#5). **Live-proven against Gmail** (1 real email, settle #1 of ~100). Other channels (calendar/CRM/browser/voice/WhatsApp/money) still deferred — not Phase 1 | §7 |
 
 ---
 
@@ -287,26 +300,25 @@ gate-green on `main` (ruff · mypy 115+13 · pytest 188+38, packages 76 · lint-
 |---|---|---|---|
 | **§1 Mandate (7 organs)** | 🟢 ~85% | charter · faculties (research/judgment/memory-craft/escalation + conversation/scheduling) · domain-pack ref · verification (rules+human+judge) · settlement · execution (Hermes→MiniMax) | domain-pack *distillation* across customers; eval-gym *volume* (a real corpus) |
 | **§2 Run loop** | ✅ | LLM drives hydrate→think→act→verify→settle→deferred-settle; durable resume | — (complete for Phase 1) |
-| **§3 Syscall layer** | 🟢 | gateway · rings L0–L2 · idempotency · credential-inject · journal · human-task tail; adapters: lead_research_batch, read_url, draft_email, queue_manual_action, mark_outcome, **send_email (built, UNWIRED)**, draft_candidate_type | **no mandate emits `send_email`** (the one blocker to a real effect); calendar/CRM/browser/voice/WhatsApp adapters (Phases 2–5); managed connector platforms |
+| **§3 Syscall layer** | 🟢 | gateway · rings L0–L2 · idempotency · credential-inject · journal · human-task tail; adapters: lead_research_batch, read_url, draft_email, queue_manual_action, mark_outcome, **send_email (WIRED + live-proven via Gmail SMTP)**, draft_candidate_type | calendar/CRM/browser/voice/WhatsApp adapters (Phases 2–5); managed connector platforms |
 | **§4 Kernel (two clocks)** | 🟢 | online dumb kernel ✅; offline Foundry: swarm ✅, promote gate ✅, compiler 🟡, creator 🟡; all 8 invariants enforced | trust-ladder *automation* (G6: N-clean→propose / verified-failure→demote); economy/market |
 | **§4.5 Harness to full capability** | ✅ | MiniMax drives via tool-calling; effects gated; durable state is ours | — |
 | **§5 Foundry & Creator** | 🟡 ~45% | Swarm REPL `/run`+score+gate+§5 timeline (Session I); Creator *draft* path (`build_creator_type` + `draft_candidate_type`); compiler *mechanism* (G12) | `/patch`+`/compare` re-run loop; a *conversational* Creator (NL brief → candidate); GEPA compiler *search*; a *real* gym corpus |
 | **§6 Dashboard** | ✅ | operator god-view (operable · SSE · toasts) + guided **Studio** (drive→send seat) | Kernel Inspector (design-only); Economy view |
 | **§6.1 Operator Agent** | ❌ | — (the Studio is its GUI precursor) | the conversational chief-of-staff (G11) |
-| **§7 Build order** | Phase 1 ~90% | P1 engine done; the P2 `send_email` adapter exists | **Phase-1 WIN (~100 real settles) NOT hit (0 so far)**; Phase 2 (email *send wired* + calendar + CRM); Phases 3–5 (browser · voice · WhatsApp · money) |
+| **§7 Build order** | Phase 1 ~90% | P1 engine done; `send_email` **wired + live-proven** (1 real settle) | **Phase-1 WIN (~100 real settles) NOT hit — settle #1 of ~100 done**; Phase 2 (calendar + CRM); Phases 3–5 (browser · voice · WhatsApp · money) |
 | **§8 Kill conditions** | ⏳ untested | — | need real settles to evaluate (churn vs heap depth · compiler vs hand-tuning · owners tapping Approve) |
 
-### The one critical gap
-**Nothing the system runs produces a real-world effect yet.** Research *reads* are real (Firecrawl/Exa),
-but every *write* path stops at a draft: the lead-finder emits `draft_email` (draft-only) and parks. The
-`send_email` adapter is built + unit-tested but **no mandate emits it**, and the wired transport is
-**Resend** (the `SMTP_*`/`EMAIL_*` Gmail keys are recognized but not wrapped). So the BLUEPRINT §7 WIN —
-"one instance settles vs reality ~100 times" — currently has **0** real-effect settles. This is the line
-between a polished, demoable system and a business.
+### The one critical gap — CLOSED (2026-06-20)
+**The system now produces a real-world effect.** The lead-finder emits the gated `send_email`; approving the
+parked outreach performs a real send via the founder's Gmail (SMTP App Password). Proven by one real email
+(founder→founder, `message_id <178194666095.61930.3102482248798944072@gmail.com>`, run settled). The
+BLUEPRINT §7 WIN — "one instance settles vs reality ~100 times" — now has **1** real-effect settle (was 0).
+The remaining distance to the WIN is an **operating** milestone (accumulate ~100), not a coding one.
 
 ### What would make it real (ordered)
-1. **Close the send loop** — a mandate emits `send_email` after human approval (extend the lead-finder so
-   approving the parked draft *sends* it), and wrap SMTP (or set `RESEND_API_KEY`). → the first real outbound effect.
+1. ~~**Close the send loop**~~ ✅ **DONE (2026-06-20)** — the lead-finder emits `send_email`; approving the
+   parked outreach *sends* it via wrapped Gmail SMTP. First real outbound effect landed.
 2. **Capture outcomes → Step-D at volume** — real replies/bounces via `mark_outcome`/watches mature into
    verified facts + real `eval_case(origin="real")`. → the gym fills with reality.
 3. **Accumulate ~100 real settles** (an *operating* milestone, not a coding one) → the Phase-1 WIN; the
