@@ -1972,3 +1972,93 @@
   border-top: 1px solid var(--border-subtle);
   padding-top: var(--space-4);
 }
+.ax-wizard__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* ---------- CreateMandateWizard ---------- */
+.create-wizard__choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.create-wizard__choice {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  padding: var(--space-3);
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease), background var(--duration-fast) var(--ease);
+}
+.create-wizard__choice:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+.create-wizard__choice:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.create-wizard__choice.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft, var(--surface-2));
+}
+.create-wizard__choice-title {
+  font-weight: 600;
+  color: var(--foreground);
+}
+.create-wizard__labelled {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.create-wizard__label {
+  font-size: var(--text-sm);
+  color: var(--foreground-muted);
+}
+.create-wizard__rings {
+  display: flex;
+  gap: var(--space-2);
+}
+.create-wizard__ring {
+  flex: 1;
+  padding: var(--space-2);
+  font-family: var(--font-mono);
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--foreground-muted);
+  cursor: pointer;
+}
+.create-wizard__ring.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft, var(--surface-2));
+  color: var(--foreground);
+}
+.create-wizard__review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+}
+.create-wizard__review-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--text-sm);
+}
+.create-wizard__review-row dt {
+  margin: 0;
+}
+.create-wizard__review-row dd {
+  margin: 0;
+  color: var(--foreground);
+  text-align: right;
+  word-break: break-all;
+}

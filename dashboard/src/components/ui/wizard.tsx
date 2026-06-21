@@ -12,7 +12,7 @@
  * instantiate call) and may be async; the wizard shows the pending state.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import { Modal } from "./drawer";
@@ -58,6 +58,11 @@ export function Wizard({
   const total = steps.length;
   const [index, setIndex] = useState(0);
   const [finishing, setFinishing] = useState(false);
+
+  // Restart at the first step each time the wizard is opened.
+  useEffect(() => {
+    if (open) setIndex(0);
+  }, [open]);
 
   const pos = { index: Math.min(index, Math.max(total - 1, 0)), total };
   const step = steps[pos.index];

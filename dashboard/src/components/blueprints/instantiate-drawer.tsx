@@ -29,6 +29,7 @@ import {
 import { useOperator } from "../../providers/operator-provider";
 import { useToast } from "../../providers/toast-provider";
 import { fetchInstance, fetchMandateType, instantiate } from "../../lib/api";
+import { buildInstantiatePayload, parseTargetOverride } from "../../lib/instantiate";
 import { formatCurrency, formatRelative, shortId } from "../../lib/format";
 import type { MandateType } from "../../lib/types";
 
@@ -72,39 +73,28 @@ export function InstantiateDrawer({ mandate, onClose, onCreated }: InstantiateDr
     setIcpJson(JSON.stringify(mandate.charter.target ?? {}, null, 2));
   }, [mandate]);
 
-  const targetOverride = useMemo(() => {
-    if (!icpJson.trim()) return undefined;
-    try {
-      const parsed = JSON.parse(icpJson);
-      return parsed && typeof parsed === "object" ? parsed : undefined;
-    } catch {
-      return undefined;
-    }
-  }, [icpJson]);
+  const targetOverride = useMemo(() => parseTargetOverride(icpJson), [icpJson]);
 
   const icpValid = !icpJson.trim() || Boolean(targetOverride);
 
   const submit = useCallback(async () => {
     if (!mandate) return;
-    if (!businessName.trim() || !customerId.trim()) {
-      setSubmitError("Business name and customer id are required.");
+    const built = buildInstantiatePayload({
+      typeRef: mandate.type_ref,
+      businessName,
+      customerId,
+      senderIdentity,
+      ring,
+      icpJson,
+    });
+    if (!built.payload) {
+      setSubmitError(built.errors.join(" "));
       return;
     }
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const result = await instantiate(
-        {
-          type_ref: mandate.type_ref,
-          customer_id: customerId.trim(),
-          business_name: businessName.trim(),
-          ring,
-          target_override: targetOverride,
-          sender_identity: senderIdentity.trim() || undefined,
-          actor: "manager:dashboard",
-        },
-        { baseUrl, token },
-      );
+      const result = await instantiate(built.payload, { baseUrl, token });
       if (!result.supported) {
         const message = result.message ?? "Backend rejected the request.";
         setSubmitError(message);
@@ -124,10 +114,9 @@ export function InstantiateDrawer({ mandate, onClose, onCreated }: InstantiateDr
     businessName,
     customerId,
     ring,
-    targetOverride,
+    icpJson,
     senderIdentity,
     baseUrl,
-    isLive,
     token,
     toast,
     onCreated,

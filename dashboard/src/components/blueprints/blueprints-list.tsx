@@ -35,6 +35,8 @@ import {
   CardHeader,
   EmptyState,
   ErrorState,
+  HelpPanel,
+  InfoTip,
   StatusPill,
   Table,
   TableSkeleton,
@@ -48,6 +50,7 @@ import {
 import type { MandateType } from "../../lib/types";
 
 import { InstantiateDrawer } from "./instantiate-drawer";
+import { CreateMandateWizard } from "./create-mandate-wizard";
 
 interface BlueprintsListProps {
   initialMandateTypes?: MandateType[];
@@ -61,6 +64,7 @@ export function BlueprintsList({ initialMandateTypes }: BlueprintsListProps = {}
   const [loading, setLoading] = useState<boolean>(!initialMandateTypes);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [drawerFor, setDrawerFor] = useState<MandateType | null>(null);
+  const [wizardOpen, setWizardOpen] = useState<boolean>(false);
 
   const load = useCallback(
     async (mode: "initial" | "refresh" = "initial") => {
@@ -114,21 +118,46 @@ export function BlueprintsList({ initialMandateTypes }: BlueprintsListProps = {}
       refreshing={refreshing}
     >
       <div className="blueprints-page">
+        <HelpPanel id="blueprints">
+          <p>
+            A <strong>blueprint</strong> <InfoTip term="blueprint" /> is a reusable mandate type —
+            the recipe an agent follows. You <strong>instantiate</strong> a blueprint to get a
+            running <strong>instance</strong> <InfoTip term="instance" /> bound to one customer.
+          </p>
+          <p>
+            Click any row to inspect a blueprint&apos;s seven organs, or hit{" "}
+            <strong>New mandate (guided)</strong> to be walked through creating one. Each instance
+            starts at a <strong>ring</strong> <InfoTip term="ring" /> that sets how much it can do on
+            its own.
+          </p>
+        </HelpPanel>
         <Card>
           <CardHeader
             eyebrow="Mandate types"
             title="Every blueprint in the catalog"
-            subtitle="Click a blueprint to inspect its seven organs (charter, faculties, domain pack, verification, settlement, eval gym, execution). Use the Instantiate action to spin up a new instance for your business."
+            subtitle="Click a blueprint to inspect its seven organs (charter, faculties, domain pack, verification, settlement, eval gym, execution). New here? Use the guided wizard to create your first mandate step by step."
             action={
-              <AsyncButton
-                variant="secondary"
-                size="sm"
-                icon={<CircleSlash2 size={14} />}
-                onClick={() => void load("refresh")}
-                loading={refreshing}
-              >
-                Refresh
-              </AsyncButton>
+              <span style={{ display: "inline-flex", gap: "var(--space-2)" }}>
+                <AsyncButton
+                  variant="primary"
+                  size="sm"
+                  icon={<Sparkles size={14} />}
+                  onClick={() => setWizardOpen(true)}
+                  disabled={!types || types.length === 0}
+                  disabledReason={!types || types.length === 0 ? "No blueprints to instantiate yet." : undefined}
+                >
+                  New mandate (guided)
+                </AsyncButton>
+                <AsyncButton
+                  variant="secondary"
+                  size="sm"
+                  icon={<CircleSlash2 size={14} />}
+                  onClick={() => void load("refresh")}
+                  loading={refreshing}
+                >
+                  Refresh
+                </AsyncButton>
+              </span>
             }
           />
           <CardBody>
@@ -298,6 +327,21 @@ export function BlueprintsList({ initialMandateTypes }: BlueprintsListProps = {}
         onClose={() => setDrawerFor(null)}
         onCreated={(instanceId) => {
           setDrawerFor(null);
+          toast.push({
+            title: "Instance created",
+            message: instanceId ?? "Mandate instantiated.",
+            tone: "good",
+          });
+          router.push(`/instances/${encodeURIComponent(instanceId ?? "")}`);
+        }}
+      />
+
+      <CreateMandateWizard
+        open={wizardOpen}
+        mandates={types ?? []}
+        onClose={() => setWizardOpen(false)}
+        onCreated={(instanceId) => {
+          setWizardOpen(false);
           toast.push({
             title: "Instance created",
             message: instanceId ?? "Mandate instantiated.",
