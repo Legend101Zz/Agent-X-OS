@@ -451,6 +451,43 @@ export interface RejectPayload extends ApprovePayload {
   edited?: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// C7 — Edit-with-diff payload + response shapes.
+//
+// `/commands/edit` rewrites the parked syscall's args then approves + enqueues
+// the resume. The response carries the diff (added/removed/changed keys) so
+// the inbox can render an old→new review before the operator commits.
+// ---------------------------------------------------------------------------
+
+export interface EditPayload extends ApprovePayload {
+  edited_args: Record<string, unknown>;
+}
+
+export type EditDiffOp = "added" | "removed" | "changed";
+
+export interface EditDiffKey {
+  key: string;
+  op: EditDiffOp;
+  before: unknown;
+  after: unknown;
+}
+
+export interface EditDiff {
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  diff_keys: EditDiffKey[];
+}
+
+export interface EditResult extends CommandOutcome {
+  status?: string;
+  edited?: boolean;
+  decision?: string;
+  syscall?: string;
+  edit?: EditDiff;
+  workId?: string;
+  workEnqueued?: boolean;
+}
+
 export interface InstantiatePayload {
   type_ref: string;
   customer_id: string;
