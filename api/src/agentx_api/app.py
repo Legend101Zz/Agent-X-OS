@@ -428,6 +428,13 @@ def _install_routes(app: FastAPI) -> None:
             "fixtures_allowed": _env_flag("AGENTX_API_ALLOW_FIXTURES"),
             "command_auth_configured": bool(_operator_token()),
             "backend": state.backend,
+            "feature_flags": {
+                "heap_read": "wip",
+                "eval_case_detail": "wip",
+                "capability_health": "wip",
+                "scheduler_work_list": "wip",
+                "economy_pnl": "live",
+            },
         }
 
     @app.get("/system/overview")
