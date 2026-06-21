@@ -3,41 +3,38 @@
 /**
  * InstanceInspector — the host for /instances/{id}.
  *
- * Composes the header, the tab strip, and the five tab content components:
- * Overview · Live Activity · Runs · Approvals · Trust.
+ * Composes the header, the tab strip, and the seven tab content components:
+ * Overview · Live Activity · Runs · Approvals · Trust & Ring · Memory · Actions.
  *
- * Memory + Actions tabs are deferred to C4 (need the C3 heap read API + the
- * journal-by-instance view). The tab strip shows them as disabled chips
- * with a "coming with C3/C4" tooltip — graceful disable.
+ * Memory + Actions landed in C4 — they consume the C3 heap read API
+ * (/instances/{id}/memory) and the per-instance journal slice
+ * (/journal?instance_id=) respectively, both filtered through the
+ * ``inspector-c4`` pure helpers and rendered via the C1 JsonViewer + Timeline
+ * primitives.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   Boxes,
   CheckCircle2,
-  CircleSlash2,
-  History,
+  Database,
   Radio,
   ShieldAlert,
   ShieldCheck,
   Workflow,
+  Zap,
 } from "lucide-react";
 
 import { AppShell } from "../shell/app-shell";
 import {
   AsyncButton,
   Badge,
-  Card,
-  CardBody,
-  EmptyState,
   ErrorState,
   Skeleton,
   Stack,
   Tabs,
   type TabItem,
 } from "../ui";
-import { useFeature } from "../../providers/feature-provider";
 import { useOperator } from "../../providers/operator-provider";
 import { useToast } from "../../providers/toast-provider";
 import { fetchApprovals, fetchInstance, fetchRuns } from "../../lib/api";
@@ -51,6 +48,8 @@ import { ActivityTab } from "./tabs/activity-tab";
 import { RunsTab } from "./tabs/runs-tab";
 import { ApprovalsTab } from "./tabs/approvals-tab";
 import { TrustTab } from "./tabs/trust-tab";
+import { MemoryTab } from "./tabs/memory-tab";
+import { ActionsTab } from "./tabs/actions-tab";
 
 export type InspectorTabKey =
   | "overview"
@@ -81,16 +80,12 @@ const TAB_DEFS: Array<{
   { key: "runs", label: "Runs", icon: <Workflow size={13} /> },
   { key: "approvals", label: "Approvals", icon: <ShieldAlert size={13} /> },
   { key: "trust", label: "Trust & Ring", icon: <ShieldCheck size={13} /> },
+  { key: "memory", label: "Memory", icon: <Database size={13} /> },
+  { key: "actions", label: "Actions", icon: <Zap size={13} /> },
 ];
 
-const DEFERRED_TAB_DEFS: Array<{
-  key: InspectorTabKey;
-  label: string;
-  reason: string;
-}> = [
-  { key: "memory", label: "Memory", reason: "Memory / Heap arrives in C4 (needs C3 heap read API)." },
-  { key: "actions", label: "Actions", reason: "Syscall journal tab arrives in C4." },
-];
+// Older doc comments referenced the now-removed placeholder list. Memory +
+// Actions are now first-class tabs (C4 — see BLUEPRINT §6 tabs 3 + 4).
 
 export function InstanceInspector({
   instanceId,
@@ -100,7 +95,6 @@ export function InstanceInspector({
   initialEvents,
   initialTab = "overview",
 }: InstanceInspectorProps) {
-  const router = useRouter();
   const { baseUrl } = useOperator();
   const toast = useToast();
   const [instance, setInstance] = useState<InstanceSummary | null>(initialInstance ?? null);
@@ -111,7 +105,6 @@ export function InstanceInspector({
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<InspectorTabKey>(initialTab);
   const [livePulseKey, setLivePulseKey] = useState<string>("");
-  const heap = useFeature("heap_read");
   const { latestEvent } = useJournalStream({ baseUrl: baseUrl || undefined });
 
   // Pulse the header when an SSE event lands for this instance.
@@ -191,21 +184,6 @@ export function InstanceInspector({
     };
   });
 
-  for (const deferred of DEFERRED_TAB_DEFS) {
-    tabItems.push({
-      key: deferred.key,
-      label: (
-        <span className="ax-row" style={{ gap: 6 }}>
-          <CircleSlash2 size={13} />
-          <span>{deferred.label}</span>
-          <Badge tone="muted">C4</Badge>
-        </span>
-      ),
-      disabled: true,
-      disabledReason: deferred.reason,
-    });
-  }
-
   return (
     <AppShell
       title={instance?.name ?? `Instance ${shortId(instanceId)}`}
@@ -270,27 +248,11 @@ export function InstanceInspector({
               />
             ) : null}
             {activeTab === "trust" ? <TrustTab instance={instance} /> : null}
-            {activeTab === "memory" || activeTab === "actions" ? (
-              <Card>
-                <CardBody>
-                  <EmptyState
-                    icon={<History size={20} />}
-                    title={`${activeTab === "memory" ? "Memory" : "Actions"} tab lands in C4`}
-                    detail={
-                      activeTab === "memory"
-                        ? heap.status === "wip"
-                          ? "Memory / Heap reads arrive with the C3 backend card (heap_browse by instance)."
-                          : "Coming soon — wire Memory to /instances/{id}/memory once that endpoint is live."
-                        : "The Actions tab surfaces journaled syscalls for this instance. Ships with C4."
-                    }
-                    action={
-                      <AsyncButton variant="secondary" onClick={() => router.push("/instances")}>
-                        Back to instances
-                      </AsyncButton>
-                    }
-                  />
-                </CardBody>
-              </Card>
+            {activeTab === "memory" ? (
+              <MemoryTab instanceId={instanceId} />
+            ) : null}
+            {activeTab === "actions" ? (
+              <ActionsTab instanceId={instanceId} runs={runs ?? []} />
             ) : null}
           </Stack>
         )}
