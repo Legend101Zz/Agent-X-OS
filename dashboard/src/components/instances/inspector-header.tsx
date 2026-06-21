@@ -18,6 +18,7 @@ import {
   AsyncButton,
   Card,
   CardBody,
+  InfoTip,
   RingPill,
   Row,
   Stack,
@@ -135,9 +136,11 @@ export function InspectorHeader({
             <Stack gap={2} className="inspector-header__pills">
               <Row gap={2} wrap>
                 <RingPill ring={instance.ring} />
+                <InfoTip term="ring" />
                 <StatusPill tone="info" dot title="Trust score">
                   <ShieldCheck size={11} /> trust {instance.trust_score.toFixed(2)}
                 </StatusPill>
+                <InfoTip term="trust" />
                 {featuredRun ? (
                   <StatusPill
                     tone={runStateTone(featuredRun.state)}

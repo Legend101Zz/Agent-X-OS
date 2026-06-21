@@ -11,6 +11,7 @@
 
 import { AppShell } from "../../src/components/shell/app-shell";
 import { ApprovalsInbox } from "../../src/components/approvals-inbox";
+import { HelpPanel, InfoTip } from "../../src/components/ui";
 import { useOperator } from "../../src/providers/operator-provider";
 
 export default function ApprovalsPage() {
@@ -18,6 +19,17 @@ export default function ApprovalsPage() {
 
   return (
     <AppShell title="Approvals" crumbs={[{ label: "Approvals" }]}>
+      <HelpPanel id="approvals">
+        <p>
+          This is the approval gate <InfoTip term="approval" />. When an instance wants to take a
+          risky action, it parks the run here and waits for you.
+        </p>
+        <p>
+          <strong>Approve</strong> lets it proceed, <strong>Reject</strong> stops it, and{" "}
+          <strong>Edit</strong> lets you change the action (you&apos;ll see a diff) before it runs.
+          Low-trust instances (rings <InfoTip term="ring" />) park more often.
+        </p>
+      </HelpPanel>
       <ApprovalsInbox apiBaseUrl={baseUrl} operatorToken={token} />
     </AppShell>
   );

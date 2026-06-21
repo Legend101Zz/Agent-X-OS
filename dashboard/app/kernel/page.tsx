@@ -18,6 +18,8 @@ import {
   CardHeader,
   EmptyState,
   ErrorState,
+  HelpPanel,
+  InfoTip,
   Section,
   Stack,
   StatTile,
@@ -169,6 +171,13 @@ function KernelContent() {
 
   return (
     <Stack gap={5}>
+      <HelpPanel id="kernel">
+        <p>
+          The engine room. The journal <InfoTip term="journal" /> is the append-only record of
+          everything that happened; the scheduler <InfoTip term="scheduler_work" /> holds queued
+          work; core gaps <InfoTip term="core_gap" /> are known missing pieces the kernel flagged.
+        </p>
+      </HelpPanel>
       {unavailable ? (
         <ErrorState
           title="Kernel API unavailable"

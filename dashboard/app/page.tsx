@@ -21,6 +21,8 @@ import {
   CardHeader,
   EmptyState,
   ErrorState,
+  HelpPanel,
+  InfoTip,
   Section,
   Skeleton,
   Stack,
@@ -118,6 +120,17 @@ export default function HomePage() {
       refreshing={refreshing}
     >
       <div className="mc-page">
+        <HelpPanel id="home">
+          <p>
+            Your control room. The tiles show what needs you now — active runs, pending approvals{" "}
+            <InfoTip term="approval" />, today&apos;s P&amp;L, and system health. The event ribbon
+            streams what agents are doing live.
+          </p>
+          <p>
+            Start at <strong>Blueprints</strong> <InfoTip term="blueprint" /> to create a mandate, then
+            watch its <strong>instance</strong> <InfoTip term="instance" /> here and in the Inspector.
+          </p>
+        </HelpPanel>
         {error ? (
           <ErrorState
             title="Couldn't load dashboard"

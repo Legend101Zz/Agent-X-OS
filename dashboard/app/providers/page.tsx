@@ -12,10 +12,18 @@
 
 import { AppShell } from "../../src/components/shell/app-shell";
 import { ProvidersView } from "../../src/components/providers/providers-view";
+import { HelpPanel, InfoTip } from "../../src/components/ui";
 
 export default function ProvidersPage() {
   return (
     <AppShell title="Providers" crumbs={[{ label: "Providers" }]}>
+      <HelpPanel id="providers">
+        <p>
+          The capabilities <InfoTip term="capability" /> the platform can use right now — data
+          providers, email transport, and model routing — with live health and credential status.
+          Anything not configured shows as unavailable rather than failing silently.
+        </p>
+      </HelpPanel>
       <ProvidersView />
     </AppShell>
   );

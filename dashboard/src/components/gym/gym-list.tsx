@@ -42,6 +42,8 @@ import {
   CardHeader,
   EmptyState,
   ErrorState,
+  HelpPanel,
+  InfoTip,
   Sparkline,
   Stack,
   StatusPill,
@@ -124,6 +126,14 @@ export function GymList({ initialEvalCases }: GymListProps = {}) {
     >
       <div className="gym-page">
         <Stack gap={5}>
+          <HelpPanel id="gym">
+            <p>
+              Graded tests of how your blueprints behave. Each eval case{" "}
+              <InfoTip term="eval_case" /> carries a score and an origin{" "}
+              <InfoTip term="origin" /> — only real cases can promote{" "}
+              <InfoTip term="promotion" /> a customer-facing version.
+            </p>
+          </HelpPanel>
           <Card>
             <CardHeader
               eyebrow="Eval gym"

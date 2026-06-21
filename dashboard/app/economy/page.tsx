@@ -15,6 +15,8 @@ import {
   CardBody,
   CardHeader,
   EmptyState,
+  HelpPanel,
+  InfoTip,
   Section,
   Stack,
   StatTile,
@@ -102,6 +104,13 @@ export default function EconomyPage() {
       refreshing={refreshing}
     >
       <Stack gap={5}>
+        <HelpPanel id="economy">
+          <p>
+            Profit and loss per instance and business unit, built from settled runs{" "}
+            <InfoTip term="settlement" />. Revenue, cost, and margin roll up here so you can see which
+            mandates pay for themselves.
+          </p>
+        </HelpPanel>
         {error ? (
           <Card tone="danger">
             <CardHeader

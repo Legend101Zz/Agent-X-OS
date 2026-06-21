@@ -30,6 +30,8 @@ import {
   AsyncButton,
   Badge,
   ErrorState,
+  HelpPanel,
+  InfoTip,
   Skeleton,
   Stack,
   Tabs,
@@ -220,6 +222,21 @@ export function InstanceInspector({
               isRefreshing={refreshing}
               onAfterCommand={() => void load("refresh")}
             />
+
+            <HelpPanel id="instance-inspector">
+              <p>
+                Everything this instance is and does, in one place. Its{" "}
+                <strong>ring</strong> <InfoTip term="ring" /> sets how much it can do on its own and{" "}
+                <strong>trust</strong> <InfoTip term="trust" /> is the track record that moves it.
+              </p>
+              <p>
+                Tabs: <strong>Overview</strong> (charter &amp; résumé), <strong>Live activity</strong>{" "}
+                (the trace as it happens), <strong>Memory</strong> (
+                <InfoTip term="fact" /> facts it has learned), <strong>Actions</strong> (effects it
+                took <InfoTip term="syscall" />), <strong>Runs</strong>, <strong>Approvals</strong>{" "}
+                <InfoTip term="approval" />, and <strong>Trust &amp; ring</strong>.
+              </p>
+            </HelpPanel>
 
             <Tabs
               items={tabItems}

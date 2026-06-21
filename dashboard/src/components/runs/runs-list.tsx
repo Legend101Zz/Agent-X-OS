@@ -47,6 +47,8 @@ import {
   CardHeader,
   EmptyState,
   ErrorState,
+  HelpPanel,
+  InfoTip,
   Row,
   Skeleton,
   Stack,
@@ -200,6 +202,14 @@ export function RunsList({
       refreshing={refreshing}
     >
       <Stack gap={4}>
+        <HelpPanel id="runs">
+          <p>
+            Every run across all instances. A run&apos;s state <InfoTip term="run_state" /> tells you
+            if it&apos;s working, parked for your approval <InfoTip term="approval" />, settled
+            (finished and billed <InfoTip term="settlement" />), or crashed. Click one to see its
+            full trace, claimed facts, and settlement.
+          </p>
+        </HelpPanel>
         {/* Stat tiles — always over the FULL list so they don't shift as the
             user toggles filters. */}
         <Row gap={3} wrap>
