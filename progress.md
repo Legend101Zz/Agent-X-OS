@@ -285,3 +285,31 @@ the F1 sampling + F2 pain-extraction + F3 demand-clustering gates produce a port
 team would actually build. Until then: the sim-mode machinery works end-to-end (Layer B
 proof). Also: the `mandate-discovery` mandate's first shortlist will spawn a `lead-finder`
 that targets the buyer channels, closing the loop.
+
+## Session M follow-up (2026-06-22) — Phase 12 closeout: dogfood driver + charter + visual status
+Three follow-up artifacts landed in `724adef`:
+
+- **`scripts/run_mandate_discovery.py`** — Layer C dogfood driver. The mandate is read-only,
+  so the script parks at the Rung 3 portfolio review (not draft_email approval). Pre-flight
+  checks MONGODB_URI / MINIMAX_API_KEY / FACULTY_MODEL_* / EXA or FIRECRAWL. 15-min
+  asyncio.wait_for watchdog. Build kernel stack ONCE; register MandateType with the
+  skip-if-exists guard (Pitfall 1 of multi-angle-dogfood.md). Override the default
+  target.segment (Series A SaaS RevOps) via MANDATE_DISCOVERY_SEGMENT env var.
+  mypy --strict clean, ruff clean, imports cleanly.
+
+- **`docs/MANDATE_DISCOVERY_CHARTER.md`** — user-facing charter. 14 sections: faculties,
+  gates, postconditions, anti-portfolio, shortlist contract, loop closer, hard constraints,
+  settlement, run paths (A/B/C), test scoreboard, what it does NOT do, acceptance bar.
+
+- **`docs/AGENTX_STATUS_2026-06-22.html`** — visual status. Stat strip (3 / 13 / 70 / 266 /
+  mypy 0 / ruff 23 / lint 3-3 / 336h), verdict, clickable SVG architecture diagram (F1-F7 +
+  5 gates + F6 portfolio + spawn rule, all with file:// links to source). 3 mandate-types
+  inventory, 13-faculties inventory, anti-portfolio table, 3 run paths, gate table, gap
+  bars, 3-card 'what to do this week', Sessions A-M timeline. All 9 file:// paths verified
+  to exist; click-through to F3 verified via browser tool.
+
+Verification ladder: mypy 0 errors, pytest 266 pass, ruff 23 baseline, lint-imports 3/3.
+Pushed to main as `724adef`.
+
+**NEXT (Phase 13):** the first LIVE `mandate-discovery` run against real community sources
+— implement F1/F4/F5 read syscall adapters in the syscall lane, set EXA + FIRECRAWL + FACULTY_MODEL_*, run the script, inspect the L1-parked portfolio in the approval inbox, approve, start the 14-day Rung 4 watch. That's the reality-check that proves the F1/F2/F3 pipeline produces a portfolio the team would actually build.
