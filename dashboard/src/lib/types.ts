@@ -553,35 +553,39 @@ export interface InstanceMemory {
 /** Per-instance P&L row. */
 export interface InstancePnL {
   instance_id: string;
-  instance_name: string;
-  business: string;
-  revenue: number;
-  cost: number;
-  net: number;
-  runs: number;
-  period_start: string;
-  period_end: string;
+  billing_total: number;
+  currency: string;
+  settled_count: number;
+  trust_score: number;
+  settlements: Array<{
+    run_id: string;
+    amount: number;
+    ts: string;
+  }>;
+  missing?: boolean;
 }
 
 /** Per-business-unit P&L row. */
 export interface BusinessUnitPnL {
-  business: string;
-  revenue: number;
-  cost: number;
-  net: number;
-  runs: number;
+  customer_id: string;
   instance_count: number;
+  instance_ids: string[];
+  billing_total: number;
+  settled_count: number;
+  trust_score: number;
+  currency: string;
 }
 
-/** The full economy page payload. */
-export interface EconomySnapshot {
-  period_start: string;
-  period_end: string;
-  total_revenue: number;
-  total_cost: number;
-  total_net: number;
-  instances: InstancePnL[];
+export interface EconomyTotals {
+  billing_total: number;
+  settled_count: number;
+  currency: string;
+}
+
+/** The business-unit rollup payload returned by GET /economy/units. */
+export interface EconomyUnitsSnapshot {
   units: BusinessUnitPnL[];
+  totals: EconomyTotals;
 }
 
 /** A scheduler work item (Kernel view, C13/C14). Dashboard-facing camelCase view model. */

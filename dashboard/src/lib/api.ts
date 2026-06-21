@@ -17,6 +17,7 @@ import type {
   DashboardData,
   EmailTransportDetails,
   EvalCase,
+  EconomyUnitsSnapshot,
   Fact,
   FacultyLibraryEntry,
   HealthStatus,
@@ -27,6 +28,7 @@ import type {
   EditPayload,
   EditResult,
   InstantiateResult,
+  InstancePnL,
   InstanceSummary,
   JournalEvent,
   GateDecisionView,
@@ -755,14 +757,21 @@ export async function fetchKernelSnapshot(options: RequestOptions = {}): Promise
 export function fetchEconomy(
   query: { instance_id?: string } = {},
   options: RequestOptions = {},
-): Promise<ApiResult<unknown>> {
-  return fetchJson("/economy", {}, { ...options, query });
+): Promise<ApiResult<InstancePnL>> {
+  const fallback = emptyInstanceEconomy(query.instance_id ?? "");
+  return fetchJson("/economy", fallback, { ...options, query }).then((result) => ({
+    ...result,
+    data: mapInstancePnL(result.data, fallback),
+  }));
 }
 
 export function fetchEconomyUnits(
   options: RequestOptions = {},
-): Promise<ApiResult<unknown>> {
-  return fetchJson("/economy/units", { units: [] }, options);
+): Promise<ApiResult<EconomyUnitsSnapshot>> {
+  return fetchJson("/economy/units", emptyEconomyUnits(), options).then((result) => ({
+    ...result,
+    data: mapEconomyUnits(result.data),
+  }));
 }
 
 /**
@@ -1499,6 +1508,70 @@ export function mapSwarmRunReport(raw: unknown): SwarmRunReport {
     scorecard: value.scorecard ? mapScorecardView(value.scorecard) : null,
     gate_decision: value.gate_decision ? mapGateDecisionView(value.gate_decision) : null,
     message: typeof value.message === "string" ? value.message : undefined,
+  };
+}
+
+export function mapInstancePnL(raw: unknown, fallback = emptyInstanceEconomy()): InstancePnL {
+  const value = asRecord(raw);
+  const settlements = arrayValue(value.settlements).map((entry) => {
+    const item = asRecord(entry);
+    return {
+      run_id: stringValue(item.run_id, ""),
+      amount: numberValue(item.amount),
+      ts: stringValue(item.ts, ""),
+    };
+  });
+  return {
+    instance_id: stringValue(value.instance_id, fallback.instance_id),
+    billing_total: numberValue(value.billing_total, fallback.billing_total),
+    currency: stringValue(value.currency, fallback.currency),
+    settled_count: numberValue(value.settled_count, fallback.settled_count),
+    trust_score: numberValue(value.trust_score, fallback.trust_score),
+    settlements: settlements.length > 0 ? settlements : fallback.settlements,
+    ...(value.missing === true || fallback.missing ? { missing: value.missing === true || fallback.missing } : {}),
+  };
+}
+
+export function mapEconomyUnits(raw: unknown): EconomyUnitsSnapshot {
+  const value = asRecord(raw);
+  const totals = asRecord(value.totals);
+  return {
+    units: arrayValue(value.units).map((entry) => {
+      const item = asRecord(entry);
+      return {
+        customer_id: stringValue(item.customer_id, "Unassigned"),
+        instance_count: numberValue(item.instance_count),
+        instance_ids: arrayValue(item.instance_ids).map((id) => stringValue(id, "")).filter(Boolean),
+        billing_total: numberValue(item.billing_total),
+        settled_count: numberValue(item.settled_count),
+        trust_score: numberValue(item.trust_score),
+        currency: stringValue(item.currency, stringValue(totals.currency, "INR")),
+      };
+    }),
+    totals: {
+      billing_total: numberValue(totals.billing_total),
+      settled_count: numberValue(totals.settled_count),
+      currency: stringValue(totals.currency, "INR"),
+    },
+  };
+}
+
+function emptyInstanceEconomy(instanceId = ""): InstancePnL {
+  return {
+    instance_id: instanceId,
+    billing_total: 0,
+    currency: "INR",
+    settled_count: 0,
+    trust_score: 0,
+    settlements: [],
+    missing: true,
+  };
+}
+
+function emptyEconomyUnits(): EconomyUnitsSnapshot {
+  return {
+    units: [],
+    totals: { billing_total: 0, settled_count: 0, currency: "INR" },
   };
 }
 

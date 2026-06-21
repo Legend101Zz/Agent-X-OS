@@ -33,6 +33,7 @@ import {
 import { useJournalStream } from "../src/lib/events";
 import {
   fetchApprovals,
+  fetchEconomyUnits,
   fetchInstances,
   fetchRuns,
   fetchSystemOverview,
@@ -44,6 +45,7 @@ import { useFeature } from "../src/providers/feature-provider";
 import { useToast } from "../src/providers/toast-provider";
 import type {
   ApprovalCard,
+  EconomyUnitsSnapshot,
   InstanceSummary,
   RunSummary,
   SystemOverview,
@@ -57,6 +59,7 @@ export default function HomePage() {
   const [instances, setInstances] = useState<InstanceSummary[]>([]);
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [approvals, setApprovals] = useState<ApprovalCard[]>([]);
+  const [economyUnits, setEconomyUnits] = useState<EconomyUnitsSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,16 +73,18 @@ export default function HomePage() {
     async (mode: "initial" | "refresh" = "initial") => {
       if (mode === "refresh") setRefreshing(true);
       try {
-        const [ov, ins, ru, ap] = await Promise.all([
+        const [ov, ins, ru, ap, econ] = await Promise.all([
           fetchSystemOverview(),
           fetchInstances(),
           fetchRuns({}),
           fetchApprovals(),
+          fetchEconomyUnits(),
         ]);
         setOverview(ov.data);
         setInstances(ins.data);
         setRuns(ru.data);
         setApprovals(ap.data);
+        setEconomyUnits(econ.data);
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -147,12 +152,19 @@ export default function HomePage() {
               label="Monthly net"
               value={
                 economy.live
-                  ? formatCurrency(overview?.monthly_net, { sign: true })
+                  ? formatCurrency(economyUnits?.totals.billing_total, {
+                      currency: economyUnits?.totals.currency ?? "INR",
+                      sign: true,
+                    })
                   : "—"
               }
-              tone={(overview?.monthly_net ?? 0) >= 0 ? "good" : "hot"}
+              tone={(economyUnits?.totals.billing_total ?? 0) >= 0 ? "good" : "hot"}
               icon={<CircleDollarSign size={14} />}
-              hint={economy.live ? "P&L (C15 wired)" : "P&L API not wired yet (C15)"}
+              hint={
+                economy.live
+                  ? `${economyUnits?.totals.settled_count ?? 0} settles · /economy/units`
+                  : "P&L API not wired yet (C15)"
+              }
               to="/economy"
             />
             <StatTile
