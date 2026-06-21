@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Agent-X-OS UI Overhaul Status — 2026-06-21</title>
+<style>
+:root { --bg:#041c1c; --panel:#0b2a28; --panel2:#123633; --cream:#ffe6cb; --muted:#bba995; --green:#4ade80; --yellow:#ffbd38; --red:#fb2c36; --line:rgba(255,230,203,.16); }
+*{box-sizing:border-box} body{margin:0;background:radial-gradient(circle at 20% 0%,#103a36 0,#041c1c 42%,#020f0f 100%);color:#fff;font:14px/1.5 system-ui,-apple-system,Segoe UI,sans-serif} 
+main{max-width:1240px;margin:0 auto;padding:32px} h1{font-size:42px;line-height:1.05;margin:0;color:var(--cream)} h2{margin:28px 0 12px;color:var(--cream)} .muted{color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:24px 0} .card{background:linear-gradient(180deg,rgba(255,230,203,.08),rgba(255,230,203,.035));border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 18px 50px rgba(0,0,0,.22)}
+.k{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.1em} .v{font-size:28px;font-weight:800;color:var(--cream)}
+.pill{display:inline-flex;align-items:center;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:800;letter-spacing:.04em} .pass{background:rgba(74,222,128,.14);color:var(--green);border:1px solid rgba(74,222,128,.35)} .warn{background:rgba(255,189,56,.13);color:var(--yellow);border:1px solid rgba(255,189,56,.35)}
+table{width:100%;border-collapse:collapse;background:rgba(4,28,28,.4);border:1px solid var(--line);border-radius:16px;overflow:hidden} th,td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top} th{text-align:left;color:var(--cream);font-size:12px;text-transform:uppercase;letter-spacing:.08em;background:rgba(255,230,203,.06)} code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace} code{color:#d6fff0} pre{white-space:pre-wrap;background:#021313;border:1px solid var(--line);border-radius:14px;padding:16px;color:#dff}
+.banner{margin:20px 0;padding:16px;border:1px solid rgba(74,222,128,.35);background:rgba(74,222,128,.08);border-radius:18px}
+@media(max-width:900px){.grid{grid-template-columns:1fr 1fr} main{padding:18px}} @media(max-width:560px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body><main>
+<p class="muted">Generated 2026-06-21 19:52:37 IST · branch <code>main</code> · HEAD <code>dfe0d0c</code> · pushed to <code>origin/main</code></p>
+<h1>Agent-X-OS UI Overhaul<br><span class="muted">Calm & Powerful Control Surface</span></h1>
+<div class="banner"><strong>Verdict:</strong> <span class="pill pass">PASS — IMPLEMENTED, MERGED, PUSHED</span> C1–C17 are done; C18 report generated directly because worker quotas were exhausted.</div>
+<section class="grid">
+ <div class="card"><div class="k">Kanban cards</div><div class="v">18/18</div><div class="muted">C1–C17 done + C18 report</div></div>
+ <div class="card"><div class="k">Dashboard gate</div><div class="v">162/162</div><div class="muted">npm test + build green</div></div>
+ <div class="card"><div class="k">Focused API gate</div><div class="v">46/46</div><div class="muted">ruff + pytest green</div></div>
+ <div class="card"><div class="k">Main / Push</div><div class="v">✓</div><div class="muted">origin/main at latest pushed HEAD after report commit</div></div>
+</section>
+<h2>Per-card delivery map</h2><table><thead><tr><th>Card</th><th>Scope</th><th>Status</th><th>Commit evidence</th><th>Notes</th></tr></thead><tbody><tr><td>C1</td><td>Foundation / design system</td><td><span class="pill pass">DONE</span></td><td><code>08c92e6 / 356b5e6</code></td><td>dashboard primitives, shell, Mission Control, tokens</td></tr>
+<tr><td>C2</td><td>Instances + Inspector core</td><td><span class="pill pass">DONE</span></td><td><code>7bae003</code></td><td>instances list, deep inspector, overview/activity/runs/approvals/trust</td></tr>
+<tr><td>C3</td><td>Heap/memory read API</td><td><span class="pill pass">DONE</span></td><td><code>957da2b / 96d0a7f</code></td><td>GET /instances/{id}/memory + tests</td></tr>
+<tr><td>C4</td><td>Inspector Memory + Actions tabs</td><td><span class="pill pass">DONE</span></td><td><code>5836d08 / 2d742d8</code></td><td>memory and journal/syscall action tabs</td></tr>
+<tr><td>C5</td><td>Blueprints</td><td><span class="pill pass">DONE</span></td><td><code>4fa2bc3 / ae12b47</code></td><td>mandate types, 7-organs inspector, instantiate drawer</td></tr>
+<tr><td>C6</td><td>Runs &amp; Trace viewer</td><td><span class="pill pass">DONE</span></td><td><code>f45b7cc / 663c881</code></td><td>run list/detail, trace/timeline, claimed facts/settlement</td></tr>
+<tr><td>C7</td><td>Approvals inbox</td><td><span class="pill pass">DONE</span></td><td><code>b047160 / bf0477b</code></td><td>approve/reject/edit, diff UX, API command handling</td></tr>
+<tr><td>C8</td><td>Gym &amp; Evals</td><td><span class="pill pass">DONE</span></td><td><code>93aebc7 / e008075</code></td><td>eval cases, scores, promote gate, compiler scaffold</td></tr>
+<tr><td>C9</td><td>Eval-case detail API</td><td><span class="pill pass">DONE</span></td><td><code>t_9784f4e3</code></td><td>GET /eval-cases/{id} detail surface</td></tr>
+<tr><td>C10</td><td>Foundry / Swarm wind-tunnel</td><td><span class="pill pass">DONE</span></td><td><code>43497fe / 433a881</code></td><td>run→judge→gate workflow UI</td></tr>
+<tr><td>C11</td><td>Capability health detail API</td><td><span class="pill pass">DONE</span></td><td><code>738a5dc / 7f28bee</code></td><td>/capabilities providers/transport/model routing health</td></tr>
+<tr><td>C12</td><td>Providers / Connectors view</td><td><span class="pill pass">DONE</span></td><td><code>4e06767 / bcfc33d</code></td><td>capabilities, connector health, model routing</td></tr>
+<tr><td>C13</td><td>Scheduler-work list API</td><td><span class="pill pass">DONE</span></td><td><code>242cd4c / e01a548</code></td><td>GET /scheduler-work?status=</td></tr>
+<tr><td>C14</td><td>Kernel / System view</td><td><span class="pill pass">DONE</span></td><td><code>23f82d9 / be4d889</code></td><td>journal, scheduler, system health, core gaps</td></tr>
+<tr><td>C15</td><td>Economy / P&amp;L API</td><td><span class="pill pass">DONE</span></td><td><code>a3ba2f5 / fe8047a</code></td><td>GET /economy and /economy/units</td></tr>
+<tr><td>C16</td><td>Economy / P&amp;L view</td><td><span class="pill pass">DONE</span></td><td><code>ec8e616 / a12fa50</code></td><td>instance and business-unit P&amp;L view + Home tile</td></tr>
+<tr><td>C17</td><td>Docs view</td><td><span class="pill pass">DONE</span></td><td><code>437dac9 / cfb7d11</code></td><td>rendered docs + concept explainers</td></tr>
+<tr><td>C18</td><td>Final report / validation</td><td><span class="pill pass">DONE</span></td><td><code>this report</code></td><td>visual status, spec checklist, final judge prompt</td></tr></tbody></table>
+<h2>Spec validation checklist</h2><table><thead><tr><th>Area</th><th>Verdict</th><th>Evidence / caveat</th></tr></thead><tbody><tr><td>Design language</td><td><span class="pill pass">PASS</span></td><td>Deep teal / warm cream tokenized dark system, shell, nav, cards, status pills, mono traces.</td></tr>
+<tr><td>Foundation primitives</td><td><span class="pill pass">PASS</span></td><td>AsyncButton, toasts, skeleton/empty/error states, cards, tabs, drawers, code/json/timeline primitives.</td></tr>
+<tr><td>Mission Control + IA</td><td><span class="pill pass">PASS</span></td><td>Home plus primary/entity rail: Instances, Blueprints, Runs, Approvals, Gym, Foundry, Providers, Kernel, Economy, Docs.</td></tr>
+<tr><td>Instance Inspector</td><td><span class="pill pass">PASS</span></td><td>Deep route with overview/activity/runs/approvals/trust plus C4 memory/actions integration.</td></tr>
+<tr><td>Backend READ APIs</td><td><span class="pill pass">PASS</span></td><td>Heap, eval detail, capability health, scheduler-work list, economy/P&amp;L implemented with tests.</td></tr>
+<tr><td>Per-section UX</td><td><span class="pill pass">PASS</span></td><td>Progressive list/detail routes; explicit status vocabulary; graceful disabled/error states.</td></tr>
+<tr><td>Quality bar</td><td><span class="pill pass">PASS</span></td><td>Final merged dashboard: npm test 162/162 and npm run build green; focused API: ruff green and pytest 46/46.</td></tr>
+<tr><td>Merge/push</td><td><span class="pill pass">PASS</span></td><td>C1-C17 merged to main and pushed to origin/main. Report commit follows this validation.</td></tr>
+<tr><td>Known caveat</td><td><span class="pill warn">WATCH</span></td><td>Untracked .worktrees/ directory exists locally from Kanban worktrees; intentionally not committed.</td></tr>
+<tr><td>Known caveat</td><td><span class="pill warn">WATCH</span></td><td>C18 worker could not run due MiniMax + OpenAI/Codex quota exhaustion, so Hermes generated this report directly.</td></tr></tbody></table>
+<h2>Final validation commands used</h2><pre>cd "/Volumes/Mrigesh SSD/Startup/Agent-X-OS/dashboard"
+npm test        # 162/162 pass
+npm run build   # green
+
+cd "/Volumes/Mrigesh SSD/Startup/Agent-X-OS"
+api/.venv/bin/python -m ruff check api/src/agentx_api/app.py api/src/agentx_api/state.py api/src/agentx_api/capability_health.py api/tests/test_memory_read_api.py api/tests/test_economy_api.py api/tests/test_scheduler_work_list_api.py api/tests/test_capability_health.py
+PYTHONPATH="$PWD/api/src:$PWD/packages/contracts/src:$PWD/packages/kernel/src:$PWD/packages/mandate/src:$PWD/packages/syscall/src:$PWD/packages/swarm/src" api/.venv/bin/python -m pytest api/tests/test_memory_read_api.py api/tests/test_economy_api.py api/tests/test_scheduler_work_list_api.py api/tests/test_capability_health.py -q  # 46/46 pass</pre>
+<h2>Prompt for a final AI judge</h2><pre>You are the final AI judge for the Agent-X-OS UI overhaul. Repository: /Volumes/Mrigesh SSD/Startup/Agent-X-OS, branch main, remote origin/main. Canonical spec: docs/superpowers/specs/2026-06-21-agentx-ui-overhaul-design.md. Please independently judge whether the merged implementation satisfies the spec. Verify: (1) all C1-C18 Kanban scope is represented; (2) dashboard design language and IA match the calm Hermes-style control surface; (3) all routes work and deep Inspector is central; (4) backend READ APIs exist and are read-only; (5) final gates are reproducible: cd dashboard &amp;&amp; npm test &amp;&amp; npm run build, and API focused gate with PYTHONPATH=&quot;$PWD/api/src:$PWD/packages/contracts/src:$PWD/packages/kernel/src:$PWD/packages/mandate/src:$PWD/packages/syscall/src:$PWD/packages/swarm/src&quot; api/.venv/bin/python -m pytest api/tests/test_memory_read_api.py api/tests/test_economy_api.py api/tests/test_scheduler_work_list_api.py api/tests/test_capability_health.py -q. Produce a verdict: PASS / PASS WITH GAPS / FAIL, with exact file/route evidence and highest-priority remaining fixes.</pre>
+</main></body></html>
