@@ -507,6 +507,134 @@ export function fetchInstanceRaw(
   return fetchJson<unknown>(`/instances/${encodeURIComponent(instanceId)}`, {}, options);
 }
 
+// ============================================================================
+// v2 focused fetchers (UI overhaul, C1 + downstream cards).
+// Each one targets a single resource the new views need; they keep the same
+// fail-soft contract (ApiResult + source: "api" | "fixture") so un-wired
+// endpoints degrade to a fixture (or null) instead of throwing.
+// ============================================================================
+
+export function fetchSystemOverview(
+  options: RequestOptions = {},
+): Promise<ApiResult<SystemOverview>> {
+  return fetchJson("/system/overview", fixtureDashboardData.overview, options).then((result) => ({
+    ...result,
+    data: mapOverview(result.data),
+  }));
+}
+
+export function fetchInstances(
+  options: RequestOptions = {},
+): Promise<ApiResult<InstanceSummary[]>> {
+  return fetchJson("/instances", fixtureDashboardData.instances, options).then((result) => ({
+    ...result,
+    data: mapInstances(result.data),
+  }));
+}
+
+export function fetchMandateTypes(
+  options: RequestOptions = {},
+): Promise<ApiResult<MandateType[]>> {
+  return fetchJson("/mandate-types", fixtureDashboardData.mandateTypes, options).then((result) => ({
+    ...result,
+    data: mapMandateTypes(result.data),
+  }));
+}
+
+export function fetchEvalCases(
+  options: RequestOptions = {},
+): Promise<ApiResult<EvalCase[]>> {
+  return fetchJson("/eval-cases", fixtureDashboardData.evalCases, options).then((result) => ({
+    ...result,
+    data: mapEvalCases(result.data),
+  }));
+}
+
+export function fetchCapabilities(
+  options: RequestOptions = {},
+): Promise<ApiResult<Capability[]>> {
+  return fetchJson("/capabilities", fixtureDashboardData.capabilities, options).then((result) => ({
+    ...result,
+    data: mapCapabilities(result.data),
+  }));
+}
+
+export function fetchCoreGaps(
+  options: RequestOptions = {},
+): Promise<ApiResult<CoreGap[]>> {
+  return fetchJson("/core-gaps", fixtureDashboardData.coreGaps, options).then((result) => ({
+    ...result,
+    data: mapCoreGaps(result.data),
+  }));
+}
+
+/** Raw GET — used by the Inspector Memory tab (C4) to keep source provenance intact. */
+export function fetchInstanceMemoryRaw(
+  instanceId: string,
+  options: RequestOptions = {},
+): Promise<ApiResult<unknown>> {
+  return fetchJson(`/instances/${encodeURIComponent(instanceId)}/memory`, { facts: [] }, options);
+}
+
+export function fetchEvalCase(
+  caseId: string,
+  options: RequestOptions = {},
+): Promise<ApiResult<unknown>> {
+  return fetchJson(`/eval-cases/${encodeURIComponent(caseId)}`, {}, options);
+}
+
+export function fetchSchedulerWorkList(
+  query: { status?: string } = {},
+  options: RequestOptions = {},
+): Promise<ApiResult<unknown>> {
+  return fetchJson("/scheduler-work", { items: [] }, { ...options, query });
+}
+
+export function fetchEconomy(
+  query: { instance_id?: string } = {},
+  options: RequestOptions = {},
+): Promise<ApiResult<unknown>> {
+  return fetchJson("/economy", {}, { ...options, query });
+}
+
+export function fetchEconomyUnits(
+  options: RequestOptions = {},
+): Promise<ApiResult<unknown>> {
+  return fetchJson("/economy/units", { units: [] }, options);
+}
+
+/**
+ * `/capabilities` may be extended (C11) with `health_detail` per row. This
+ * fetch returns raw rows; callers can pass the result to `mapCapabilities` for
+ * the base shape and then overlay the health_detail field as needed.
+ */
+export function fetchCapabilitiesWithHealth(
+  options: RequestOptions = {},
+): Promise<ApiResult<Capability[]>> {
+  return fetchCapabilities(options);
+}
+
+/** Reject a parked approval (L0/L1 inbox). */
+export function rejectCommand(payload: Required<Pick<CommandPayload, "instance_id" | "run_id" | "actor">>) {
+  return postCommand("/commands/reject", payload, "gap-edit-reject");
+}
+
+/** Edit a parked approval (the "old → new" diff path on the inbox). */
+export function editCommand(
+  payload: Required<Pick<CommandPayload, "instance_id" | "run_id" | "actor">> & {
+    edited_drafted_effect?: Record<string, unknown>;
+  },
+) {
+  return postCommand("/commands/edit", payload, "gap-edit-reject");
+}
+
+/** Promote a gym eval case (`/commands/promote`). */
+export function promoteCommand(
+  payload: Required<Pick<CommandPayload, "case_id" | "actor">>,
+) {
+  return postCommand("/commands/promote", payload, "gap-eval-promote");
+}
+
 function mapHealth(raw: unknown): HealthStatus {
   const value = asRecord(raw);
   if (typeof value.status === "string") return raw as HealthStatus;

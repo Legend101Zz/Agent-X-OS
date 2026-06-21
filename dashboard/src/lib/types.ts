@@ -360,3 +360,143 @@ export interface SetRingPayload {
   ring: string;
   actor: string;
 }
+
+// ============================================================================
+// Inspector + dashboard view models added by C1 (UI overhaul).
+// These are DASHBOARD view models, NOT contracts — packages/contracts stays
+// frozen. They are the shapes the new UI consumes; backend READ APIs (C3,
+// C9, C11, C13, C15) will return JSON that maps into these.
+// ============================================================================
+
+/** A single fact in an instance's heap (Memory tab). */
+export interface MemoryFact {
+  id: string;
+  subject: string;
+  predicate: string;
+  object: string;
+  confidence: number;
+  status: "probation" | "verified" | "disputed";
+  run_id: string | null;
+  evidence: string[];
+  committed_at: string;
+}
+
+/** The full memory page for an instance. */
+export interface InstanceMemory {
+  instance_id: string;
+  total: number;
+  probation: number;
+  verified: number;
+  facts: MemoryFact[];
+}
+
+/** Per-instance P&L row. */
+export interface InstancePnL {
+  instance_id: string;
+  instance_name: string;
+  business: string;
+  revenue: number;
+  cost: number;
+  net: number;
+  runs: number;
+  period_start: string;
+  period_end: string;
+}
+
+/** Per-business-unit P&L row. */
+export interface BusinessUnitPnL {
+  business: string;
+  revenue: number;
+  cost: number;
+  net: number;
+  runs: number;
+  instance_count: number;
+}
+
+/** The full economy page payload. */
+export interface EconomySnapshot {
+  period_start: string;
+  period_end: string;
+  total_revenue: number;
+  total_cost: number;
+  total_net: number;
+  instances: InstancePnL[];
+  units: BusinessUnitPnL[];
+}
+
+/** A scheduler work item (Kernel view, C13). */
+export interface SchedulerWorkItem {
+  work_id: string;
+  kind: "trigger" | "approval";
+  status: "pending" | "claimed" | "completed" | "failed";
+  attempts: number;
+  available_at: string;
+  run_id?: string;
+  instance_id?: string;
+  type_ref?: string;
+  updated_at: string;
+}
+
+/** Extended capability with health detail (C11). */
+export interface CapabilityHealth {
+  reachable: boolean;
+  transport_configured: boolean;
+  model_routing: string | null;
+  credential_status: "ok" | "missing" | "invalid" | "unknown";
+  last_checked_at: string | null;
+  notes?: string;
+}
+
+export interface CapabilityWithHealth extends Capability {
+  health_detail: CapabilityHealth;
+}
+
+/** Eval-case detail (C9). */
+export interface EvalCaseDetail extends EvalCase {
+  rubric: string;
+  expected_outputs: Record<string, unknown>;
+  history: Array<{
+    run_id: string;
+    score: number;
+    at: string;
+    origin: string;
+  }>;
+  notes?: string;
+}
+
+/** Status of a feature/backend wiring — drives graceful disable. */
+export type FeatureStatus = "live" | "wip" | "stub";
+
+export interface FeatureFlags {
+  heap_read: FeatureStatus;
+  eval_case_detail: FeatureStatus;
+  capability_health: FeatureStatus;
+  scheduler_work_list: FeatureStatus;
+  economy_pnl: FeatureStatus;
+}
+
+/** SSE event kinds we route into the global invalidation table. */
+export type DashboardSliceV2 =
+  | "overview"
+  | "instances"
+  | "runs"
+  | "journal"
+  | "approvals"
+  | "evalCases"
+  | "mandateTypes"
+  | "capabilities"
+  | "coreGaps"
+  | "economy"
+  | "scheduler";
+
+/** An entry on the Mission Control live event ribbon. */
+export interface LiveRibbonEvent {
+  id: string;
+  kind: string;
+  ts: string;
+  title: string;
+  detail: string;
+  tone: "good" | "warn" | "hot" | "info" | "neutral";
+  instance_id?: string;
+  run_id?: string;
+}
