@@ -62,6 +62,11 @@ from agentx_kernel.stores.mongo import (
 from agentx_kernel.vault import ConfigVault
 from agentx_kernel.verifier import RulesVerifier
 from agentx_mandate.library.mandate_discovery import build_mandate_discovery_type
+from agentx_syscall.discovery_adapters import (
+    BuyerChannelDiscoveryAdapter,
+    CommunitySourceSampleAdapter,
+    CompetitorSearchAdapter,
+)
 from agentx_syscall.registry import build_phase1_registry
 from pymongo import AsyncMongoClient
 
@@ -305,10 +310,28 @@ async def main() -> int:
         projection_store = MongoProjectionStore(database)
         projections = Projections(projection_store, journal)
         receipts = MongoSyscallReceiptStore(database)
+        # Build the live syscall registry; include the Phase-12 mandate-discovery
+        # read adapters if Firecrawl is configured (the F1/F4/F5 Calls otherwise
+        # fall to the human-task terminal fallback — the run parks for human).
+        firecrawl_key = (
+            settings.firecrawl_api_key.get_secret_value()
+            if settings.firecrawl_api_key is not None
+            else ""
+        )
+        if firecrawl_key:
+            registry = build_phase1_registry(
+                discovery_adapters=[
+                    CommunitySourceSampleAdapter(api_key=firecrawl_key),
+                    CompetitorSearchAdapter(api_key=firecrawl_key),
+                    BuyerChannelDiscoveryAdapter(api_key=firecrawl_key),
+                ]
+            )
+        else:
+            registry = build_phase1_registry()
         gateway = Gateway(
             journal=journal,
             vault=ConfigVault(settings),
-            registry=build_phase1_registry(),
+            registry=registry,
             receipts=receipts,
         )
         hydration = HydrationLoader(projection_store, journal)

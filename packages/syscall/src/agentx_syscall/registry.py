@@ -47,6 +47,7 @@ class Phase1SyscallRegistry:
 def build_phase1_registry(
     *,
     send_email_adapters: Sequence[SendEmailAdapter] = (),
+    discovery_adapters: Sequence[Adapter] = (),
 ) -> SyscallRegistry:
     """Build the live Phase-1 syscall ladder.
 
@@ -54,6 +55,11 @@ def build_phase1_registry(
     each instance's outbound sender identity (invariant #8) is honoured without ever sharing a
     global From across tenants. When no send_email adapter is configured (or none can_handle
     given its transport), the registry resolves ``send_email`` to ``human_task`` — invariant #5.
+
+    ``discovery_adapters`` lets the bootstrap register the Phase-12 mandate-discovery read
+    adapters (``community_source_sample``, ``competitor_search``, ``buyer_channel_discovery``).
+    When omitted, the mandate-discovery run parks at L1 awaiting the F1/F4/F5 read fulfilment
+    (the manual queue is the human-task fallback for un-implemented read intents).
     """
     store = ManualTaskStore()
     providers = build_configured_research_providers()
@@ -66,6 +72,12 @@ def build_phase1_registry(
     registry.register(DraftCandidateTypeAdapter())
     for send_adapter in send_email_adapters:
         registry.register(send_adapter)
+    # Phase-12 (HERMES_BUILD_PLAN §Phase 12): mandate-discovery read adapters.
+    # The caller is responsible for instantiating with the right API key; if no
+    # discovery_adapters are passed, the F1/F4/F5 Calls fall to the human-task
+    # terminal fallback (the run parks for human fulfilment).
+    for discovery_adapter in discovery_adapters:
+        registry.register(discovery_adapter)
     registry.register(QueueManualActionAdapter(store=store))
     registry.register(MarkOutcomeAdapter(store=store))
     return registry

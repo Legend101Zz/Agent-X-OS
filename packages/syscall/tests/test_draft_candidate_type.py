@@ -262,8 +262,13 @@ def test_draft_candidate_type_module_does_not_import_credential_roots() -> None:
     import ast
     import pathlib
 
-    candidates = list(pathlib.Path("packages/syscall/src").rglob("*.py"))
-    src_file = next((p for p in candidates if "adapters" in str(p)), None)
+    candidates = list(pathlib.Path("packages/syscall/src/").rglob("*.py"))
+    # Use the canonical adapters.py (not discovery_adapters.py, which
+    # only contains the Phase-12 mandate-discovery read adapters).
+    src_file = next(
+        (p for p in candidates if str(p).endswith("agentx_syscall/adapters.py")),
+        None,
+    )
     assert src_file is not None, "could not locate adapters source file"
 
     forbidden = ("agentx_contracts.security", "agentx_contracts.config", "agentx_db", "pymongo")
