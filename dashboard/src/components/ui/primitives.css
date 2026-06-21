@@ -1767,3 +1767,208 @@
   font-family: var(--font-mono);
   margin-top: auto;
 }
+
+/* ============================================================================
+ * Guidance layer — InfoTip, HelpPanel, Wizard.
+ * Signature: terminal-style annotations (mono eyebrow, hairline accent rail),
+ * calm and native to the deep-teal/cream theme. All token-bound.
+ * ========================================================================== */
+
+/* ---------- InfoTip ---------- */
+.ax-infotip {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+  margin-inline-start: var(--space-1);
+}
+.ax-infotip__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--foreground-faint);
+  cursor: help;
+  transition: color var(--duration-fast) var(--ease);
+}
+.ax-infotip__trigger:hover,
+.ax-infotip__trigger:focus-visible {
+  color: var(--accent);
+  outline: none;
+}
+.ax-infotip__trigger:focus-visible {
+  box-shadow: var(--shadow-focus);
+}
+.ax-infotip__pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-modal);
+  width: max-content;
+  max-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--background-overlay, var(--background-raised));
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  text-align: left;
+  white-space: normal;
+  animation: ax-modal-in var(--duration-fast) var(--ease);
+}
+.ax-infotip__eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--foreground-faint);
+}
+.ax-infotip__title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--foreground);
+}
+.ax-infotip__body {
+  font-size: var(--text-sm);
+  color: var(--foreground-muted);
+  line-height: var(--leading-normal);
+}
+.ax-infotip__link {
+  font-size: var(--text-xs);
+  color: var(--accent);
+  margin-top: var(--space-1);
+}
+
+/* ---------- HelpPanel ---------- */
+.ax-help {
+  border: 1px solid var(--border-subtle);
+  border-left: 2px solid var(--accent-soft, var(--accent));
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  margin-bottom: var(--space-4);
+  overflow: hidden;
+}
+.ax-help__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--foreground-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.ax-help__head:hover {
+  color: var(--foreground);
+}
+.ax-help__icon {
+  color: var(--accent);
+  flex: none;
+}
+.ax-help__title {
+  flex: 1;
+  text-align: left;
+}
+.ax-help__chevron {
+  flex: none;
+  transition: transform var(--duration-fast) var(--ease);
+}
+.ax-help--open .ax-help__chevron {
+  transform: rotate(180deg);
+}
+.ax-help__body {
+  padding: 0 var(--space-4) var(--space-4) var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--foreground-muted);
+  line-height: var(--leading-normal);
+}
+.ax-help__body p {
+  margin: 0 0 var(--space-2) 0;
+}
+.ax-help__body p:last-child {
+  margin-bottom: 0;
+}
+
+/* ---------- Wizard ---------- */
+.ax-wizard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.ax-wizard__steps {
+  display: flex;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex-wrap: wrap;
+}
+.ax-wizard__step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--foreground-faint);
+}
+.ax-wizard__step:not(:last-child)::after {
+  content: "";
+  width: 18px;
+  height: 1px;
+  background: var(--border-subtle);
+}
+.ax-wizard__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  flex: none;
+}
+.ax-wizard__step--current .ax-wizard__dot {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.ax-wizard__step--done .ax-wizard__dot {
+  border-color: var(--accent);
+  background: var(--accent-soft, var(--accent));
+}
+.ax-wizard__step--current .ax-wizard__steplabel {
+  color: var(--foreground);
+  font-weight: 600;
+}
+.ax-wizard__eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--foreground-faint);
+  letter-spacing: 0.04em;
+}
+.ax-wizard__title {
+  margin: var(--space-1) 0 var(--space-3) 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--foreground);
+}
+.ax-wizard__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.ax-wizard__footer {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-4);
+}

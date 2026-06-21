@@ -22,8 +22,11 @@ import {
   Drawer,
   EmptyState,
   ErrorState,
+  HelpPanel,
+  InfoTip,
   JsonViewer,
   Modal,
+  Wizard,
   RingPill,
   Row,
   Section,
@@ -60,6 +63,7 @@ export default function ComponentsDemoPage() {
   const [busy, setBusy] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
   const [tab, setTab] = useState("buttons");
 
   function fakeWork(title: string, tone: "good" | "hot" | "info" = "good") {
@@ -192,6 +196,65 @@ export default function ComponentsDemoPage() {
             </CardFooter>
           </Card>
         </Section>
+
+        <Section title="Guidance layer" eyebrow="Usability">
+          <Card>
+            <CardHeader
+              eyebrow="InfoTip · HelpPanel · Wizard"
+              title="The pieces that explain the app to a new operator"
+              subtitle="Hover the ⓘ for a glossary tooltip, collapse the help panel, or open the guided wizard."
+            />
+            <CardBody>
+              <Stack gap={4}>
+                <HelpPanel id="design-system-demo">
+                  <p>
+                    This panel orients you on each page. It remembers whether you collapsed it.
+                    Terms carry an info icon
+                    <InfoTip term="blueprint" /> you can hover or focus for a plain-language
+                    definition.
+                  </p>
+                </HelpPanel>
+
+                <Row gap={3} align="center">
+                  <span>
+                    Ring <InfoTip term="ring" />
+                  </span>
+                  <span>
+                    Trust <InfoTip term="trust" />
+                  </span>
+                  <span>
+                    Approval gate <InfoTip term="approval" />
+                  </span>
+                  <span>
+                    Sender identity <InfoTip term="sender_identity" />
+                  </span>
+                </Row>
+
+                <Cluster gap={2}>
+                  <AsyncButton variant="secondary" onClick={() => setWizardOpen(true)} icon={<Sparkles size={14} />}>
+                    Open guided wizard
+                  </AsyncButton>
+                </Cluster>
+              </Stack>
+            </CardBody>
+          </Card>
+        </Section>
+
+        <Wizard
+          open={wizardOpen}
+          onClose={() => setWizardOpen(false)}
+          title="Guided wizard (demo)"
+          finishLabel="Finish"
+          onFinish={() => {
+            setWizardOpen(false);
+            toast.push({ title: "Wizard finished", message: "demo complete", tone: "good" });
+          }}
+          steps={[
+            { id: "one", title: "Intro", render: <p>Step content renders here. Each step can validate before you continue.</p> },
+            { id: "two", title: "Details", render: <p>The Next button is gated by the step&apos;s <code>valid</code> flag.</p> },
+            { id: "three", title: "Review", render: <p>The final step swaps Next for the Finish action (an AsyncButton).</p> },
+          ]}
+        />
 
         <Section title="Color tokens" eyebrow="Theme" density="compact">
           <Cluster gap={2}>

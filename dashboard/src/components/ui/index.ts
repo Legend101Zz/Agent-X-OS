@@ -38,3 +38,12 @@ export type { ToastItem, ToastInput, ToastApi, ToastTone } from "./toast";
 
 export { Sparkline } from "./sparkline";
 export type { SparklineProps } from "./sparkline";
+
+export { InfoTip } from "./info-tip";
+export type { InfoTipProps } from "./info-tip";
+
+export { HelpPanel } from "./help-panel";
+export type { HelpPanelProps } from "./help-panel";
+
+export { Wizard } from "./wizard";
+export type { WizardProps, WizardStep } from "./wizard";
