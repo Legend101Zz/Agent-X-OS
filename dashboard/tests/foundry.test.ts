@@ -78,16 +78,18 @@ const baseReport = (overrides: Partial<SwarmRunReport> = {}): SwarmRunReport => 
   ...overrides,
 });
 
-const baseMandate = (overrides: Partial<MandateType> = {}): MandateType => ({
-  id: "mt_lead_finder",
-  title: "lead-finder",
-  stage: "0.1.0",
-  ring_floor: "L2",
-  unit_economics: "₹/lead",
-  commands: ["draft_email", "send_email"],
-  status: "ready",
-  ...overrides,
-});
+const baseMandate = (overrides: Partial<MandateType> = {}): MandateType =>
+  ({
+    id: "mt_lead_finder",
+    title: "lead-finder",
+    type_ref: "lead-finder@0.1.0",
+    stage: "0.1.0",
+    ring_floor: "L2",
+    unit_economics: "₹/lead",
+    commands: ["draft_email", "send_email"],
+    status: "ready",
+    ...overrides,
+  }) as MandateType;
 
 // ---- formatMandateRef -----------------------------------------------------------
 

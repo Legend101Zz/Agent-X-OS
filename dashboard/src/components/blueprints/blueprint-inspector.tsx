@@ -67,7 +67,7 @@ import { InstantiateDrawer } from "./instantiate-drawer";
 
 interface BlueprintInspectorProps {
   /** Either the bare id (e.g. "lead-finder") or the full type_ref (e.g. "lead-finder@0.3.1"). */
-  ref: string;
+  typeRef: string;
 }
 
 type TabKey =
@@ -93,7 +93,7 @@ const TAB_LABELS: Record<TabKey, string> = {
   library: "Faculty library",
 };
 
-export function BlueprintInspector({ ref }: BlueprintInspectorProps) {
+export function BlueprintInspector({ typeRef }: BlueprintInspectorProps) {
   const toast = useToast();
   const [type, setType] = useState<MandateType | null>(null);
   const [facultyLibrary, setFacultyLibrary] = useState<FacultyLibraryEntry[]>([]);
@@ -108,7 +108,7 @@ export function BlueprintInspector({ ref }: BlueprintInspectorProps) {
       if (mode === "refresh") setRefreshing(true);
       try {
         const [single, library] = await Promise.all([
-          fetchMandateType(ref),
+          fetchMandateType(typeRef),
           fetchMandateTypes(),
         ]);
         setType(single.data);
@@ -129,7 +129,7 @@ export function BlueprintInspector({ ref }: BlueprintInspectorProps) {
         setRefreshing(false);
       }
     },
-    [ref, toast],
+    [typeRef, toast],
   );
 
   useEffect(() => {
@@ -167,10 +167,10 @@ export function BlueprintInspector({ ref }: BlueprintInspectorProps) {
     return (
       <AppShell
         title="Blueprints"
-        crumbs={[{ label: "Blueprints", href: "/blueprints" }, { label: ref }]}
+        crumbs={[{ label: "Blueprints", href: "/blueprints" }, { label: typeRef }]}
       >
         <Card>
-          <CardHeader eyebrow={`Loading ${ref}`} title="Resolving mandate type…" />
+          <CardHeader eyebrow={`Loading ${typeRef}`} title="Resolving mandate type…" />
           <CardBody>
             <TableSkeleton columns={5} rows={4} />
           </CardBody>
@@ -183,7 +183,7 @@ export function BlueprintInspector({ ref }: BlueprintInspectorProps) {
     return (
       <AppShell
         title="Blueprints"
-        crumbs={[{ label: "Blueprints", href: "/blueprints" }, { label: ref }]}
+        crumbs={[{ label: "Blueprints", href: "/blueprints" }, { label: typeRef }]}
         onRefresh={() => void load("refresh")}
         refreshing={refreshing}
       >
@@ -204,10 +204,10 @@ export function BlueprintInspector({ ref }: BlueprintInspectorProps) {
     return (
       <AppShell
         title="Blueprints"
-        crumbs={[{ label: "Blueprints", href: "/blueprints" }, { label: ref }]}
+        crumbs={[{ label: "Blueprints", href: "/blueprints" }, { label: typeRef }]}
       >
         <EmptyState
-          title={`No blueprint matches "${ref}"`}
+          title={`No blueprint matches "${typeRef}"`}
           detail="The catalog doesn't carry this id or type_ref. Head back to /blueprints to pick a different one."
           action={
             <Link href="/blueprints" className="ax-input ax-button ax-button--ghost">

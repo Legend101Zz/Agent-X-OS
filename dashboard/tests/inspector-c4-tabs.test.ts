@@ -95,32 +95,18 @@ test("factStatusTone + factStatusLabel reflect promotion state", () => {
 test("formatFactSummary returns subject predicate object", () => {
   assert.equal(
     formatFactSummary({
-      id: "f-1",
       subject: "Kaveri Crackers",
       predicate: "is_business_type",
       object: "sparklers-wholesale",
-      confidence: 0.9,
-      status: "promoted",
-      source: "agent-inferred",
-      provenance: { run_id: "run-1", evidence: [], note: "" },
-      created_at: "2026-06-18T08:00:00+05:30",
-      updated_at: null,
     }),
     "Kaveri Crackers is_business_type sparklers-wholesale",
   );
   // Missing subject should not blow up — degrade to a placeholder.
   assert.equal(
     formatFactSummary({
-      id: "f-2",
       subject: "",
       predicate: "is",
       object: "thing",
-      confidence: 0.5,
-      status: "probation",
-      source: "agent-inferred",
-      provenance: { run_id: "r-1", evidence: [] },
-      created_at: "",
-      updated_at: null,
     }),
     "(unknown) is thing",
   );

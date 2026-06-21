@@ -235,6 +235,9 @@ async def test_promptfoo_judge_runs_subprocess_and_parses_scorecard(monkeypatch:
     assert "provider: 'openrouter:anthropic/claude-sonnet-4'" in calls[0]["config"]
     assert calls[0]["env"]["JUDGE_MODEL_ID"] == "openrouter/anthropic/claude-sonnet-4"
     assert calls[0]["env"]["OPENROUTER_API_KEY"] == "test-key"
+    # A failing rubric must not crash the bridge: promptfoo's failure exit code
+    # is forced to 0 so results.json is still parsed into a failing Scorecard.
+    assert calls[0]["env"]["PROMPTFOO_FAILED_TEST_EXIT_CODE"] == "0"
     assert calls[0]["input"]["trace"]["run_id"] == "run_promptfoo"
     assert scorecard.score == pytest.approx(0.75)
     assert scorecard.passed

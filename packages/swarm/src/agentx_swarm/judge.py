@@ -202,6 +202,12 @@ def _promptfoo_env(source: Mapping[str, str]) -> dict[str, str]:
     env["PROMPTFOO_DISABLE_TELEMETRY"] = "1"
     env["OPENAI_API_KEY"] = openrouter_key
     env["OPENAI_BASE_URL"] = "https://openrouter.ai/api/v1"
+    # promptfoo exits 100 when a test case fails its assertions — i.e. when the
+    # judged trace legitimately fails the rubric. That is a valid grading
+    # outcome (a failing Scorecard parsed from results.json), not a bridge
+    # error, so force a 0 exit for failures. Genuine errors still exit 1 and
+    # are surfaced by ``check=True``.
+    env["PROMPTFOO_FAILED_TEST_EXIT_CODE"] = "0"
     return env
 
 

@@ -9,7 +9,6 @@ import {
   mapSchedulerWorkList,
   mapSystemInfo,
   type KernelSnapshot,
-  type SchedulerWorkItem,
   type SystemInfo,
 } from "../src/lib/api";
 import type { ApiResult } from "../src/lib/types";
@@ -70,7 +69,7 @@ test("healthStatusTone maps kernel health values", () => {
 test("backendTone reports backend health at a glance", () => {
   assert.equal(backendTone("memory"), "good"); // local in-memory backend always healthy
   assert.equal(backendTone("mongo"), "good");
-  assert.equal(backendTone(undefined), "muted" as never || "neutral");
+  assert.equal(backendTone(undefined), "muted");
 });
 
 test("kernelHealthTone is the safe top-level summary for the Kernel view header", () => {
@@ -109,7 +108,7 @@ test("mapSystemInfo normalises the /system/info envelope", () => {
 });
 
 test("mapSchedulerWorkList unwraps {work,count} and tolerates {items}", () => {
-  const workRows: SchedulerWorkItem[] = [
+  const workRows: Record<string, unknown>[] = [
     {
       work_id: "wkr_abc123",
       kind: "trigger",

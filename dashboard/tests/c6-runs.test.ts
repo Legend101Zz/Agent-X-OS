@@ -103,7 +103,7 @@ test("fetchRunRaw returns the raw payload (or empty object on failure)", async (
 // ---------- runStateOptions ----------
 
 test("runStateOptions includes every run state in the RunSummary type", () => {
-  const labels = runStateOptions().map((opt) => opt.value);
+  const labels: string[] = runStateOptions().map((opt) => opt.value);
   for (const state of [
     "active",
     "parked",

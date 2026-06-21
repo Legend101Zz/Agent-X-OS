@@ -8,5 +8,5 @@ interface BlueprintRefPageProps {
 
 export default async function BlueprintRefPage({ params }: BlueprintRefPageProps) {
   const { ref } = await params;
-  return <BlueprintInspector ref={ref} />;
+  return <BlueprintInspector typeRef={ref} />;
 }

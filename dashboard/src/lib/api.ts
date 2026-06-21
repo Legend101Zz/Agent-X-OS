@@ -76,7 +76,10 @@ export function buildApiUrl(
   path: string,
   query: Record<string, QueryValue> = {},
 ): string {
-  const url = new URL(path, baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`);
+  // An empty base URL (operator settings not yet hydrated) would make
+  // `new URL` throw "Invalid base URL". Fall back to the default backend.
+  const resolvedBase = baseUrl || DEFAULT_API_BASE_URL;
+  const url = new URL(path, resolvedBase.endsWith("/") ? resolvedBase : `${resolvedBase}/`);
 
   Object.entries(query).forEach(([key, value]) => {
     if (value === undefined || value === null || value === "") return;

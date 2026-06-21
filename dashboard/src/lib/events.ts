@@ -62,7 +62,14 @@ export function useJournalStream({
     setEvents([]);
     setConnected(false);
 
-    const streamUrl = new URL("/events", baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`);
+    // `baseUrl` is empty on first render (before the operator settings hydrate
+    // from localStorage). Fall back to the default backend so `new URL` never
+    // throws "Invalid base URL".
+    const resolvedBase = baseUrl || DEFAULT_API_BASE_URL;
+    const streamUrl = new URL(
+      "/events",
+      resolvedBase.endsWith("/") ? resolvedBase : `${resolvedBase}/`,
+    );
     const source = new EventSource(streamUrl);
     const handleJournal = (rawEvent: Event) => {
       if (!(rawEvent instanceof MessageEvent)) return;
