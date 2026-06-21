@@ -147,7 +147,7 @@ export interface EvalCase {
   title: string;
   status: string;
   score: number;
-  promotion: "blocked" | "eligible";
+  promotion: "blocked" | "eligible" | "needs_review";
 }
 
 // --- Swarm REPL view models (Session I) ----------------------------------------------------
@@ -499,4 +499,85 @@ export interface LiveRibbonEvent {
   tone: "good" | "warn" | "hot" | "info" | "neutral";
   instance_id?: string;
   run_id?: string;
+}
+
+// ============================================================================
+// Gym / Eval view models (C8 — UI overhaul).
+// These are DASHBOARD view models, NOT contracts. The packages/contracts seam
+// stays frozen; these shape derived UI state the Gym view consumes.
+//
+// EvalCase already lives above; below are the derived analytics + the compiler
+// scaffold status (per BLUEPRINT §5: a proposal gated on the same PromotionGate
+// — synthetic-only never promotable).
+// ============================================================================
+
+/** Origin buckets we count when rendering the distribution panel. */
+export type EvalOriginKey = "synthetic" | "real" | "human_reviewed";
+
+/** Aggregate stats derived from a `EvalCase[]` (used by the Gym hero tiles). */
+export interface EvalCaseStats {
+  total: number;
+  byOrigin: Record<EvalOriginKey, number>;
+  eligible: number;
+  blocked: number;
+  needsReview: number;
+  /** Average score across all cases with a numeric score. Null when empty. */
+  averageScore: number | null;
+  /** Average score grouped by origin. Null when the bucket is empty. */
+  averageByOrigin: Partial<Record<EvalOriginKey, number>>;
+  /** Score samples for the sparkline (sorted oldest → newest). */
+  scoreTimeline: number[];
+}
+
+/** Compiler scaffold status, derived from the `PromotionGate` health. */
+export type CompilerScaffoldState =
+  | "ready"
+  | "warming_up"
+  | "blocked_synthetic_only"
+  | "not_started";
+
+export interface CompilerScaffold {
+  state: CompilerScaffoldState;
+  /** Cumulative real-and-human-reviewed cases accumulated so far. */
+  realCases: number;
+  /** Real-case threshold the compiler wants before it will propose improvements. */
+  threshold: number;
+  /** Last proposal ID + timestamp, if any. */
+  lastProposal: { id: string; at: string } | null;
+  /** Why the state is what it is — for the UI tooltip. */
+  note: string;
+}
+
+/** Tone for the compiler scaffold pill. */
+export function compilerStateTone(
+  state: CompilerScaffoldState,
+): "good" | "warn" | "hot" | "info" | "neutral" {
+  switch (state) {
+    case "ready":
+      return "good";
+    case "warming_up":
+      return "info";
+    case "blocked_synthetic_only":
+      return "hot";
+    case "not_started":
+      return "warn";
+    default:
+      return "neutral";
+  }
+}
+
+/** Human-readable label for a compiler scaffold state. */
+export function compilerStateLabel(state: CompilerScaffoldState): string {
+  switch (state) {
+    case "ready":
+      return "ready";
+    case "warming_up":
+      return "warming up";
+    case "blocked_synthetic_only":
+      return "blocked · synthetic only";
+    case "not_started":
+      return "not started";
+    default:
+      return state;
+  }
 }
