@@ -1014,3 +1014,135 @@
 .ax-swatch--warn { background: var(--warning); }
 .ax-swatch--hot { background: var(--destructive); }
 .ax-swatch--info { background: var(--info); }
+
+/* ---------- Utility classes (C6: Runs & Trace viewer) ----------
+ *
+ * Small, focused additions to keep the Runs & Trace surface on the same
+ * visual grid as the rest of the C1 design system. None of these replace
+ * any existing primitive — they're thin wrappers so the per-page JSX
+ * stays readable without re-stating token values.
+ * -------------------------------------------------------------------- */
+
+/* Inline anchor — small, accent-tinted link with subtle hover underline. */
+.ax-link {
+  color: var(--accent);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border-radius: var(--radius-xs);
+  padding: 1px 2px;
+  margin: -1px -2px;
+  transition: color var(--duration-fast) var(--ease),
+    background-color var(--duration-fast) var(--ease);
+}
+.ax-link:hover {
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  text-decoration: none;
+}
+
+/* Eyebrow label — small uppercase micro-label, matches the .ax-card__eyebrow
+   / .ax-section__eyebrow vocabulary so anything tagged with .ax-eyebrow
+   reads as a section-eyebrow wherever it sits. */
+.ax-eyebrow {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--foreground-dim);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Headline scale (utility-classes matching .h1/.h2/.h3 from globals.css but
+   using the ax- prefix so pages can opt-in either way). */
+.ax-h2 {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: var(--leading-tight);
+  margin: 0;
+}
+.ax-h3 {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  margin: 0;
+}
+
+/* Mono subject/predicate/object line used by the claimed-facts card. */
+.ax-mono-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  line-height: var(--leading-snug);
+}
+.ax-mono-line code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--surface-1);
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  color: var(--cream-100);
+}
+
+/* Progress bar — used by the settlement card. */
+.ax-progress {
+  position: relative;
+  height: 6px;
+  background: var(--surface-2);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+}
+.ax-progress__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--foreground-faint);
+  transition: width var(--duration) var(--ease);
+}
+.ax-progress__fill[data-tone="good"] { background: var(--success); }
+.ax-progress__fill[data-tone="warn"] { background: var(--warning); }
+.ax-progress__fill[data-tone="hot"]  { background: var(--destructive); }
+.ax-progress__fill[data-tone="info"] { background: var(--info); }
+
+/* Filter-pill row extensions — same .ax-pill base, but a button variant
+   (pressable) and a select variant (wrapping a native <select>). */
+.ax-pill--active {
+  color: var(--foreground-on-accent);
+  background: var(--accent);
+  border-color: var(--accent-strong);
+}
+.ax-pill--select {
+  padding: 0;
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  color: var(--foreground-muted);
+  cursor: pointer;
+}
+.ax-pill--select[data-active="true"] {
+  color: var(--foreground);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.ax-pill--select select {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 2px var(--space-3) 2px var(--space-2);
+  cursor: pointer;
+  text-transform: uppercase;
+}
+.ax-pill--select select:focus {
+  outline: none;
+}
+.ax-pill--select select option {
+  color: var(--foreground);
+  background: var(--background-raised);
+}
