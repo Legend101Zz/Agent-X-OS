@@ -62,7 +62,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from .gaps import CORE_GAPS, gap_by_id
+from .gaps import CORE_GAPS
 from .state import (
     DashboardState,
     approval_cards,

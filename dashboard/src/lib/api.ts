@@ -18,6 +18,11 @@ import type {
   Fact,
   HealthStatus,
   InstantiatePayload,
+  EditDiff,
+  EditDiffKey,
+  EditDiffOp,
+  EditPayload,
+  EditResult,
   InstantiateResult,
   InstanceSummary,
   JournalEvent,
@@ -619,13 +624,75 @@ export function rejectCommand(payload: Required<Pick<CommandPayload, "instance_i
   return postCommand("/commands/reject", payload, "gap-edit-reject");
 }
 
-/** Edit a parked approval (the "old → new" diff path on the inbox). */
-export function editCommand(
-  payload: Required<Pick<CommandPayload, "instance_id" | "run_id" | "actor">> & {
-    edited_drafted_effect?: Record<string, unknown>;
-  },
-) {
-  return postCommand("/commands/edit", payload, "gap-edit-reject");
+/**
+ * Edit a parked approval's args (C7 — first-class companion to approve).
+ *
+ * Mirrors the backend's `_arg_diff_keys` helper so the dashboard can preview
+ * the diff in the modal *before* sending the request (no network needed for
+ * the preview), and the server response is then a typed confirmation carrying
+ * the canonical diff the kernel recorded.
+ */
+export function argDiffKeys(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): EditDiffKey[] {
+  const keys = new Set<string>([...Object.keys(before), ...Object.keys(after)]);
+  const out: EditDiffKey[] = [];
+  for (const key of [...keys].sort()) {
+    if (!(key in before)) {
+      out.push({ key, op: "added", before: null, after: after[key] });
+    } else if (!(key in after)) {
+      out.push({ key, op: "removed", before: before[key], after: null });
+    } else if (!Object.is(before[key], after[key])) {
+      out.push({ key, op: "changed", before: before[key], after: after[key] });
+    }
+  }
+  return out;
+}
+
+/**
+ * Typed wrapper for `/commands/edit`. The body shape matches `EditApprovalCommand`
+ * on the server (``edited_args`` is the syscall arg-dict, NOT a full drafted_effect).
+ * Returns the 202 envelope with the canonical diff the kernel recorded on the
+ * continuation rewrite. Fails closed when no operator token is set.
+ */
+export async function editApprovalRun(
+  payload: EditPayload,
+  options: CommandOptions = {},
+): Promise<EditResult> {
+  if (!payload.edited_args || Object.keys(payload.edited_args).length === 0) {
+    return { supported: false, message: "edited_args is empty; pass at least one arg to edit." };
+  }
+  const { ok, body, message } = await postTypedCommand("/commands/edit", payload, options);
+  if (!ok) return { supported: false, message };
+  const edit = asRecord(body.edit);
+  const diffKeys = arrayValue(edit.diff_keys).map((entry) => {
+    const v = asRecord(entry);
+    const opValue = stringValue(v.op, "changed") as EditDiffOp;
+    return {
+      key: stringValue(v.key, ""),
+      op: opValue,
+      before: v.before ?? null,
+      after: v.after ?? null,
+    } satisfies EditDiffKey;
+  });
+  const editDiff: EditDiff | undefined = edit.before !== undefined || edit.after !== undefined
+    ? {
+        before: asRecord(edit.before),
+        after: asRecord(edit.after),
+        diff_keys: diffKeys,
+      }
+    : undefined;
+  return {
+    supported: true,
+    status: stringValue(body.status, "queued"),
+    edited: body.edited === true,
+    decision: stringValue(body.decision, "approve"),
+    syscall: typeof body.syscall === "string" ? body.syscall : undefined,
+    edit: editDiff,
+    workId: stringValue(body.work_id, "") || undefined,
+    workEnqueued: body.work_enqueued === true,
+  };
 }
 
 /** Promote a gym eval case (`/commands/promote`). */
