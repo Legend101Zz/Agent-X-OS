@@ -103,7 +103,7 @@ export function InstantiateDrawer({ mandate, onClose, onCreated }: InstantiateDr
           sender_identity: senderIdentity.trim() || undefined,
           actor: "manager:dashboard",
         },
-        { baseUrl, live: isLive, token },
+        { baseUrl, token },
       );
       if (!result.supported) {
         const message = result.message ?? "Backend rejected the request.";
@@ -142,7 +142,7 @@ export function InstantiateDrawer({ mandate, onClose, onCreated }: InstantiateDr
     let cancelled = false;
     void (async () => {
       try {
-        const result = await fetchMandateType(mandate.id, { baseUrl, token });
+        const result = await fetchMandateType(mandate.id, { baseUrl });
         if (cancelled) return;
         if (result.source === "api" && !result.data) {
           setLookupError(`Kernel returned no MandateType for ${mandate.type_ref}.`);
@@ -160,7 +160,7 @@ export function InstantiateDrawer({ mandate, onClose, onCreated }: InstantiateDr
     return () => {
       cancelled = true;
     };
-  }, [mandate, baseUrl, token]);
+  }, [mandate, baseUrl]);
 
   if (!mandate) {
     return <Drawer open={false} onClose={onClose} title="Instantiate" />;
@@ -203,7 +203,6 @@ export function InstantiateDrawer({ mandate, onClose, onCreated }: InstantiateDr
                 <ErrorState
                   title="Kernel couldn't resolve this type"
                   detail={lookupError}
-                  compact
                 />
               ) : null}
             </Stack>
@@ -291,14 +290,14 @@ export function InstantiateDrawer({ mandate, onClose, onCreated }: InstantiateDr
             disabled={submitting}
           />
           {!icpValid ? (
-            <div className="dim" style={{ fontSize: 11, color: "var(--color-warn)" }}>
+            <div className="dim" style={{ fontSize: 11, color: "var(--warning)" }}>
               Not valid JSON. The drawer will still submit, but target_override will be omitted.
             </div>
           ) : null}
         </Field>
 
         {submitError ? (
-          <ErrorState title="Instantiate failed" detail={submitError} compact />
+          <ErrorState title="Instantiate failed" detail={submitError} />
         ) : null}
 
         <CardFooter>
