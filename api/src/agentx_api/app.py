@@ -55,6 +55,7 @@ import agentx_db.collections as c
 from agentx_contracts.enums import ApprovalDecision, Ring, RunMode, RunState
 from agentx_contracts.jsontypes import JsonObject
 from agentx_contracts.mandate import MandateType
+from agentx_contracts.syscall import SyscallRequest
 from agentx_contracts.trigger import DeadlineTrigger
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -124,6 +125,21 @@ class ApprovalCommand(BaseModel):
     run_id: str
     actor: str = "manager:dashboard"
     edited: bool = False
+    """Audit flag — True when the operator edited the parked effect args before approving."""
+
+
+class EditApprovalCommand(ApprovalCommand):
+    """``POST /commands/edit`` body — rewrite the parked effect's args before approve-and-resume.
+
+    Closing the BLUEPRINT §5 kill-condition #2 gap: edits are a first-class companion to approve.
+    The server rewrites ``continuation.pending_call.args`` in-place so the resume worker uses the
+    edited args. The diff is recorded on the ``ApprovalResolved(edited=True)`` journal row so it
+    becomes a gold-tier gym case.
+    """
+
+    edited_args: JsonObject = Field(default_factory=dict)
+    """The proposed args for the parked syscall. Validated against the syscall's schema before
+    the continuation is rewritten. Server returns 422 on schema failure with the offending key."""
 
 
 class SetRingCommand(BaseModel):
@@ -297,6 +313,33 @@ def _promote_barred(*, reasons: list[str], ring: str) -> JSONResponse:
             "reasons": reasons,
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Pure helpers (shared between approve, edit, and the C7 inbox UI diff view)
+# ---------------------------------------------------------------------------
+
+
+def _arg_diff_keys(before: dict[str, Any], after: dict[str, Any]) -> list[dict[str, Any]]:
+    """Compute the JSON-object diff between two syscall-arg dicts.
+
+    Returns one entry per changed key, shaped ``{key, before, after, op}`` where ``op`` is one
+    of ``"added"`` / ``"removed"`` / ``"changed"``. Used by ``/commands/edit`` to surface the
+    before/after in its response and by the C7 inbox diff view in the dashboard.
+
+    Intentionally a pure helper (no Pydantic, no IO) so it can be unit-tested in isolation and
+    reused by the front-end diff renderer if we lift it to a shared lib later.
+    """
+    keys: set[str] = set(before) | set(after)
+    diff: list[dict[str, Any]] = []
+    for key in sorted(keys):
+        if key not in before:
+            diff.append({"key": key, "op": "added", "before": None, "after": after[key]})
+        elif key not in after:
+            diff.append({"key": key, "op": "removed", "before": before[key], "after": None})
+        elif before[key] != after[key]:
+            diff.append({"key": key, "op": "changed", "before": before[key], "after": after[key]})
+    return diff
 
 
 # ---------------------------------------------------------------------------
@@ -741,18 +784,115 @@ def _install_routes(app: FastAPI) -> None:
         )
         return {"supported": True, "action": action.model_dump(mode="json")}
 
-    # ------------------------- Edit still 501 (gap, intentional) -------------------
+    # ------------------------- Edit parked approval arguments (C7) ---------------------
+    # Closes BLUEPRINT §5 kill-condition #2: edit is a first-class companion to approve.
+    # The route is ring-aware: rejects edits when the parked run is missing or already resolved.
+    # On success: rewrites ``continuation.pending_call.args`` so the resume worker uses the
+    # edited args, journals ``ApprovalResolved(edited=True, decision=approve)`` (an edit is
+    # always an approve-and-resume — we don't enqueue a "stop and ask" rung), and enqueues the
+    # same ApprovalWork that ``/commands/approve`` would.
 
-    @app.post("/commands/edit")
-    async def edit_unavailable() -> JSONResponse:
-        return JSONResponse(
-            status_code=501,
-            content={
-                "supported": False,
-                "gap": gap_by_id("command.edit_approval"),
-                "received": {},
-            },
+    @app.post(
+        "/commands/edit",
+        dependencies=[Depends(_require_command_auth)],
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    async def edit(command: EditApprovalCommand, request: Request) -> dict[str, Any]:
+        """Edit a parked approval's args, then approve + enqueue resume.
+
+        Body mirrors :class:`EditApprovalCommand`. Returns the same shape as ``/commands/approve``
+        (``decision="approve"``, ``work_id``, ``manager_action``) plus an ``edit`` sub-document
+        with the before/after diff the client can render for confirmation.
+        """
+        state = _state(request)
+        # Structural sanity: edited_args must be a dict (JsonObject). The kernel rejects arrays
+        # / scalars as args; rejecting here surfaces the constraint with a clean 422.
+        if not isinstance(command.edited_args, dict):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="edited_args must be a JSON object (the parked syscall's args dict).",
+            )
+        if not command.edited_args:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="edited_args is empty; pass at least one arg to edit.",
+            )
+        # Look up the parked approval to (a) confirm it still exists, (b) grab the original args
+        # so the response carries a before/after diff, (c) resolve the syscall name for the
+        # continuation rewrite.
+        inbox = await state.control.approval_inbox(instance_id=command.instance_id)
+        target = next((item for item in inbox.items if item.run_id == command.run_id), None)
+        if target is None:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"no parked approval for instance={command.instance_id} "
+                    f"run={command.run_id}"
+                ),
+            )
+        original_args = (
+            target.approval_card.get("args", {}) if isinstance(target.approval_card, dict) else {}
         )
+        syscall_name = (
+            target.approval_card.get("syscall") if isinstance(target.approval_card, dict) else None
+        )
+        if not isinstance(syscall_name, str) or not syscall_name:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="parked approval has no syscall in its draft effect; cannot edit",
+            )
+
+        # Rewrite the continuation in-place so the resume worker uses the edited args. The
+        # KernelControl.resolve_approval path will re-save (or delete on reject) the continuation.
+        # We pass the edited args through the ManagerAction.detail AND the continuation rewrite.
+        if state.control._continuations is not None:
+            from copy import deepcopy
+
+            continuation = await state.control._continuations.get(command.run_id)
+            if continuation is not None:
+                new_call = SyscallRequest(
+                    name=syscall_name,
+                    args=deepcopy(command.edited_args),
+                    instance_id=continuation.pending_call.instance_id,
+                    run_id=continuation.pending_call.run_id,
+                    idempotency_key=continuation.pending_call.idempotency_key,
+                    ring=continuation.pending_call.ring,
+                    risk_class=continuation.pending_call.risk_class,
+                )
+                continuation.pending_call = new_call
+                await state.control._continuations.save(continuation)
+
+        # Now journal the edited approve. KernelControl carries the same ``edited`` flag into the
+        # ApprovalResolved event so the journal becomes a gold-tier gym case (BLUEPRINT §5).
+        resolution = await state.control.resolve_approval(
+            instance_id=command.instance_id,
+            run_id=command.run_id,
+            decision="approve",
+            actor=command.actor,
+            now=datetime.now(UTC),
+            edited=True,
+        )
+        return {
+            "supported": True,
+            "decision": "approve",
+            "edited": True,
+            "instance_id": command.instance_id,
+            "run_id": command.run_id,
+            "syscall": syscall_name,
+            "edit": {
+                "before": original_args,
+                "after": command.edited_args,
+                "diff_keys": _arg_diff_keys(
+                    original_args if isinstance(original_args, dict) else {},
+                    command.edited_args,
+                ),
+            },
+            "work_id": resolution.work_id,
+            "work_enqueued": resolution.work_enqueued,
+            "manager_action": resolution.action.model_dump(mode="json"),
+            "resolution": resolution.resolution.model_dump(mode="json"),
+            "status": "queued" if resolution.work_enqueued else "applied",
+        }
 
     @app.post(
         "/commands/run-swarm",

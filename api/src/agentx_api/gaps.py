@@ -6,19 +6,6 @@ from agentx_contracts.jsontypes import JsonObject
 
 CORE_GAPS: Final[list[JsonObject]] = [
     {
-        "id": "command.edit_approval",
-        "title": "Edit parked approval arguments",
-        "detail": (
-            "Approve/reject are journaled and ApprovalWork enqueued for approve, but the API does "
-            "not yet expose an edit-with-modified-args path. The KernelControl.resolve_approval "
-            "command already accepts an ``edited`` flag; a thin HTTP route over it is the only gap."
-        ),
-        "needed_core_surface": (
-            "POST /commands/edit that validates edited args against the syscall schema and "
-            "journals ApprovalResolved(edited=True) before the same enqueue + resume path."
-        ),
-    },
-    {
         "id": "projection.full_trace_snapshot",
         "title": "Persist full run result trace",
         "detail": (
@@ -30,7 +17,10 @@ CORE_GAPS: Final[list[JsonObject]] = [
             "process exit. Not blocking Phase 1 dashboard operability."
         ),
     },
-]
+]  # end CORE_GAPS — C7 (2026-06-21) closed command.edit_approval; the live /commands/edit route
+#   now accepts edited_args, rewrites continuation.pending_call.args, and journals
+#   ApprovalResolved(edited=True) before the same approve + enqueue path as /commands/approve.
+#   The id remains in KNOWN_CLOSED below so older dashboards/fixtures still get a stable answer.
 
 
 def gap_by_id(gap_id: str) -> JsonObject:
@@ -48,6 +38,7 @@ def gap_by_id(gap_id: str) -> JsonObject:
 # Stale ids that older dashboards or fixtures still reference. Kept here so /core-gaps returns a
 # stable response — Phase H closed instantiate, trigger_run, reject_approval in the kernel.
 # Phase-4 closed command.promote (HERMES_BUILD_PLAN §Phase 4 — the candidate→live bridge).
+# Phase C7 (2026-06-21) closed command.edit_approval — /commands/edit is now a real route.
 KNOWN_CLOSED: Final[frozenset[str]] = frozenset(
     {
         "command.instantiate",
@@ -55,6 +46,7 @@ KNOWN_CLOSED: Final[frozenset[str]] = frozenset(
         "command.reject_approval",
         "command.run_swarm",
         "command.promote",
+        "command.edit_approval",
         "projection.manual_queue_durable",
     }
 )
