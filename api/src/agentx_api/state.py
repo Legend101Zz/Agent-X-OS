@@ -518,6 +518,51 @@ def _memory_fact(doc: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+async def scheduler_work_list(
+    state: DashboardState,
+    *,
+    status: str | None = None,
+    limit: int = 200,
+) -> dict[str, Any]:
+    """Read-side projection for the Kernel view's Scheduler tab (BLUEPRINT §8 row 3).
+
+    Returns the scheduler store's current work rows in a UI-ready envelope:
+
+        {"work": [{"work_id": "...", "kind": "trigger"|"approval",
+                   "status": "pending"|"claimed"|"completed"|"failed",
+                   "attempts": int, "available_at": "ISO-8601",
+                   "run_id": "...|null", "instance_id": "...|null", "type_ref": "...|null",
+                   "updated_at": "ISO-8601"},
+                  ...],
+         "count": int}
+
+    The reader is a thin projection over ``SchedulerStore.list_statuses`` — it doesn't
+    mutate the queue and doesn't touch contracts. ``status`` is an optional filter on
+    the row's status field (``pending``, ``claimed``, ``completed``, ``failed``); an
+    invalid value is rejected here, before the store ever sees it, so a typo returns a
+    clean 400 instead of a silent empty list. ``limit`` caps the page size; the route
+    layer enforces the FastAPI Query bounds (1..1000) and we clamp again here as a
+    safety net.
+
+    An empty store returns ``{"work": [], "count": 0}`` — never raises — so the Kernel
+    view can render an EmptyState on a cold install.
+    """
+    allowed_statuses = {"pending", "claimed", "completed", "failed"}
+    if status is not None and status not in allowed_statuses:
+        # Surface as a ValueError; the route layer translates to HTTP 400.
+        raise ValueError(
+            f"invalid status filter: {status!r}; must be one of {sorted(allowed_statuses)}"
+        )
+    safe_limit = max(1, min(int(limit), 1000))
+    rows = await state.runtime.scheduler_store.list_statuses(
+        status=status, limit=safe_limit
+    )
+    return {
+        "work": [row.model_dump(mode="json") for row in rows],
+        "count": len(rows),
+    }
+
+
 async def run_summaries(
     state: DashboardState,
     *,
@@ -748,5 +793,6 @@ __all__ = [
     "manual_queue",
     "run_detail",
     "run_summaries",
+    "scheduler_work_list",
     "system_overview",
 ]

@@ -103,6 +103,21 @@ class SchedulerStore(Protocol):
         """Return the current status row for ``work_id`` (None if unknown)."""
         ...
 
+    async def list_statuses(
+        self, *, status: str | None = None, limit: int = 200
+    ) -> list[SchedulerWorkStatus]:
+        """Return a snapshot of scheduler work rows for the operator dashboard.
+
+        READ-ONLY — never mutates queue state. ``status`` is an optional filter on the
+        row's ``status`` field (one of ``"pending"``, ``"claimed"``, ``"completed"``,
+        ``"failed"``); ``None`` returns every status. Results are sorted by
+        ``(available_at, work_id)`` ascending so the oldest due work is first, mirroring
+        the order used by ``claim_next`` so the dashboard and the worker agree on
+        "what's next". ``limit`` caps the page size so a busy queue can't blow the
+        HTTP response; default 200, callers may ask for more.
+        """
+        ...
+
 
 class SchedulerWorkStatus(AgentXModel):
     """Read-only status snapshot of one scheduler work row, used by the operator dashboard."""
