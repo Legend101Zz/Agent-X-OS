@@ -286,6 +286,94 @@ samp,
   color: var(--foreground-faint);
 }
 
+/* ---------- Foundry gate banner (C10) ---------- */
+.foundry-gate-subtitle {
+  margin: 0 0 var(--space-3) 0;
+  color: var(--foreground-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.foundry-gate-reasons {
+  margin-top: var(--space-2);
+}
+
+/* ---------- Foundry form (C10) ---------- */
+.foundry-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.foundry-form__row {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.foundry-form__actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+}
+.foundry-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 180px;
+  flex: 1 1 180px;
+}
+.foundry-field__label {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--foreground-dim);
+}
+.foundry-field__input {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--foreground);
+  background: var(--background-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-3);
+  height: 34px;
+  transition: border-color var(--duration-fast) var(--ease), box-shadow var(--duration-fast) var(--ease);
+}
+.foundry-field__input:hover { border-color: var(--border-strong); }
+.foundry-field__input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.foundry-checkbox {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  font-size: var(--text-sm);
+  color: var(--foreground-muted);
+  cursor: pointer;
+}
+.foundry-checkbox input { accent-color: var(--accent); }
+.foundry-running {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  color: var(--foreground-muted);
+  font-size: var(--text-sm);
+  padding: var(--space-3);
+}
+.foundry-judge-comments {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--border-subtle);
+}
+.foundry-judge-comment {
+  font-size: var(--text-sm);
+  color: var(--foreground-muted);
+  padding: var(--space-1) 0;
+}
+.foundry-page { max-width: 1100px; }
+
 /* ---------- Subtle live update pulse (no layout thrash) ---------- */
 @keyframes ax-pulse {
   0% {
