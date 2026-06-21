@@ -1012,5 +1012,276 @@
 .ax-swatch--accent { background: var(--accent); }
 .ax-swatch--good { background: var(--success); }
 .ax-swatch--warn { background: var(--warning); }
-.ax-swatch--hot { background: var(--destructive); }
+.ax-swatch--hot  { background: var(--destructive); }
 .ax-swatch--info { background: var(--info); }
+
+/* ---------- Blueprints list page ---------- */
+.blueprints-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.blueprints-row__name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+}
+.blueprints-row__name:hover .h3 { color: var(--accent); }
+
+.blueprints-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-3);
+}
+.blueprints-summary[data-state="loading"] { opacity: 0.7; }
+.blueprints-summary__tile {
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: border-color var(--duration-fast) var(--ease);
+}
+.blueprints-summary__tile:hover { border-color: var(--border); }
+.blueprints-summary__label {
+  font-size: var(--text-xs);
+  color: var(--foreground-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.blueprints-summary__value {
+  font-size: var(--text-xl);
+  color: var(--foreground);
+  font-variant-numeric: tabular-nums;
+}
+.blueprints-summary__tile--good .blueprints-summary__value { color: var(--success); }
+.blueprints-summary__tile--warn .blueprints-summary__value { color: var(--warning); }
+.blueprints-summary__tile--info .blueprints-summary__value { color: var(--accent); }
+.blueprints-summary__tile--muted .blueprints-summary__value { color: var(--foreground-dim); }
+
+/* ---------- Blueprint Instantiate drawer ---------- */
+.blueprints-instantiate__type {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.blueprints-instantiate__pills {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.blueprints-instantiate__rings {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface-1);
+}
+.blueprints-instantiate__ring {
+  background: transparent;
+  border: none;
+  padding: var(--space-2) var(--space-3);
+  color: var(--foreground-muted);
+  font-size: var(--text-sm);
+  font-family: var(--font-mono);
+  cursor: pointer;
+  border-right: 1px solid var(--border-subtle);
+  transition: background-color var(--duration-fast) var(--ease), color var(--duration-fast) var(--ease);
+}
+.blueprints-instantiate__ring:last-child { border-right: none; }
+.blueprints-instantiate__ring:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--foreground);
+}
+.blueprints-instantiate__ring.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.blueprints-instantiate__ring:disabled { opacity: 0.5; cursor: not-allowed; }
+.blueprints-instantiate__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+.blueprints-instantiate__field-label {
+  font-size: var(--text-xs);
+  color: var(--foreground-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+.blueprints-instantiate__field-help {
+  font-size: var(--text-xs);
+  color: var(--foreground-dim);
+  margin-top: 2px;
+}
+.blueprints-instantiate__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+}
+.blueprints-instantiate__actions {
+  display: inline-flex;
+  gap: var(--space-2);
+}
+.blueprints-instantiate__economics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-5);
+  font-size: var(--text-sm);
+}
+.blueprints-instantiate__economics > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 100px;
+}
+.blueprints-instantiate__economics .dim { font-size: var(--text-xs); }
+
+/* ---------- Blueprint Inspector ---------- */
+.blueprint-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.blueprint-inspector__back {
+  font-size: var(--text-sm);
+}
+.blueprint-inspector__back-link {
+  color: var(--foreground-muted);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: color var(--duration-fast) var(--ease);
+}
+.blueprint-inspector__back-link:hover { color: var(--accent); }
+.blueprint-inspector__cta { display: inline-flex; gap: var(--space-2); align-items: center; }
+
+.blueprint-inspector__meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-3);
+}
+.blueprint-inspector__meta-cell { display: flex; flex-direction: column; gap: 2px; }
+.blueprint-inspector__meta-label {
+  font-size: var(--text-xs);
+  color: var(--foreground-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.blueprint-inspector__meta-value {
+  font-size: var(--text-md);
+  color: var(--foreground);
+}
+.blueprint-inspector__meta-hint {
+  font-size: var(--text-xs);
+  color: var(--foreground-dim);
+}
+
+.blueprint-inspector__economics {
+  font-size: var(--text-sm);
+  color: var(--foreground-muted);
+  border-top: 1px dashed var(--border-subtle);
+  padding-top: var(--space-3);
+}
+
+.blueprint-inspector__tabs {
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 0 var(--space-2);
+}
+
+.blueprint-inspector__kv {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-3) var(--space-5);
+  margin-bottom: var(--space-4);
+}
+.blueprint-inspector__kv > div { display: flex; flex-direction: column; gap: 2px; }
+.blueprint-inspector__kv dt {
+  font-size: var(--text-xs);
+  color: var(--foreground-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.blueprint-inspector__kv dd {
+  font-size: var(--text-md);
+  color: var(--foreground);
+  margin: 0;
+}
+
+/* ---------- Organ panels (shared by all inspector tabs) ---------- */
+.organ-panel { display: flex; flex-direction: column; gap: var(--space-4); }
+.organ-panel__section { display: flex; flex-direction: column; gap: var(--space-2); }
+.organ-panel__heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--text-md);
+  color: var(--foreground);
+  font-weight: 600;
+}
+.organ-panel__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-3) var(--space-4);
+}
+.organ-panel__list { display: flex; flex-direction: column; gap: var(--space-1); }
+.organ-panel__list-heading {
+  margin: 0;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--foreground-dim);
+  font-weight: 600;
+}
+.organ-panel__list-items {
+  list-style: disc inside;
+  padding: 0;
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--foreground-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.organ-panel__ladder {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.organ-panel__rung {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+}
+.organ-panel__rung-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--foreground-faint);
+}
+.organ-panel__rung--present .organ-panel__rung-dot { background: var(--success); }
+.organ-panel__rung--absent { opacity: 0.6; }
+.organ-panel__rung-label { font-size: var(--text-sm); color: var(--foreground); }

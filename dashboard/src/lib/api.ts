@@ -16,6 +16,7 @@ import type {
   DashboardData,
   EvalCase,
   Fact,
+  FacultyLibraryEntry,
   HealthStatus,
   InstantiatePayload,
   InstantiateResult,
@@ -183,6 +184,7 @@ export async function loadDashboardData(
       instances: mapInstances(instances.data),
       runs: mapRuns(runs.data),
       mandateTypes: mapMandateTypes(mandateTypes.data),
+      facultyLibrary: buildFacultyLibrary(mapMandateTypes(mandateTypes.data)),
       journal: mapJournal(journal.data),
       capabilities: mapCapabilities(capabilities.data),
       evalCases: mapEvalCases(evalCases.data),
@@ -196,6 +198,7 @@ export async function loadDashboardData(
       instances,
       runs,
       mandateTypes,
+      facultyLibrary: mandateTypes,
       journal,
       capabilities,
       evalCases,
@@ -541,6 +544,88 @@ export function fetchMandateTypes(
   }));
 }
 
+/**
+ * Fetch a single mandate type by id (or fully-qualified ``name@version`` ref).
+ *
+ * The kernel list endpoint already carries every row, so we look up locally to
+ * stay fail-soft. A future backend could add ``GET /mandate-types/{ref}`` to
+ * return a richer single-row payload (e.g. cumulative cross-customer stats);
+ * for now this is the cheapest correct path.
+ */
+export function fetchMandateType(
+  ref: string,
+  options: RequestOptions = {},
+): Promise<ApiResult<MandateType | null>> {
+  return fetchMandateTypes(options).then((result) => {
+    if (!ref) {
+      return { ...result, data: null };
+    }
+    const decoded = decodeURIComponent(ref);
+    const match =
+      result.data.find((m) => m.id === decoded) ??
+      result.data.find((m) => m.type_ref === decoded) ??
+      result.data.find((m) => `${m.id}@${m.stage}` === decoded) ??
+      result.data.find((m) => m.id.toLowerCase() === decoded.toLowerCase()) ??
+      null;
+    return { ...result, data: match };
+  });
+}
+
+/**
+ * Build the faculty library view from the loaded mandate types.
+ *
+ * No new endpoint required: every faculty referenced by any mandate type
+ * appears in the rich payload's ``faculties`` field. The reducer collects the
+ * unique ``name@version`` pairs and unions them with the curated fixture
+ * library so an offline / pre-wired kernel still shows the canonical faculty
+ * catalogue.
+ */
+export function buildFacultyLibrary(types: MandateType[]): FacultyLibraryEntry[] {
+  const seen = new Map<string, FacultyLibraryEntry>();
+  for (const mandate of types) {
+    for (const faculty of mandate.faculties) {
+      const key = `${faculty.faculty_name}@${faculty.faculty_version}`;
+      const existing = seen.get(key);
+      if (existing) {
+        if (!existing.used_by.includes(mandate.title)) {
+          existing.used_by.push(mandate.title);
+        }
+        continue;
+      }
+      seen.set(key, {
+        name: faculty.faculty_name,
+        version: faculty.faculty_version,
+        description: faculty.description ?? `Faculty ${faculty.faculty_name} (${faculty.faculty_version}).`,
+        category: inferFacultyCategory(faculty.faculty_name),
+        used_by: [mandate.title],
+      });
+    }
+  }
+  // Union with the curated fixture library so faculties appear even when the
+  // backend isn't reachable. The reducer marks fixture-only entries (no
+  // mandate references them yet) with an empty `used_by` list.
+  for (const entry of fixtureDashboardData.facultyLibrary ?? []) {
+    const key = `${entry.name}@${entry.version}`;
+    if (!seen.has(key)) {
+      seen.set(key, entry);
+    }
+  }
+  return Array.from(seen.values()).sort((a, b) => {
+    if (a.category !== b.category) return a.category.localeCompare(b.category);
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function inferFacultyCategory(name: string): FacultyLibraryEntry["category"] {
+  const lowered = name.toLowerCase();
+  if (/research|find|scrape|lead|prospect|search|crawl/.test(lowered)) return "research";
+  if (/send|email|outreach|draft|whatsapp|sms|reply/.test(lowered)) return "outreach";
+  if (/analy[sz]e|score|classify|qualify|verify|judge/.test(lowered)) return "analysis";
+  if (/write|content|copy|draft/.test(lowered)) return "content";
+  if (/settle|invoice|bill|charge|pay|reconcil/.test(lowered)) return "settlement";
+  return "ops";
+}
+
 export function fetchEvalCases(
   options: RequestOptions = {},
 ): Promise<ApiResult<EvalCase[]>> {
@@ -802,22 +887,217 @@ function firstSyscall(timeline: unknown[]): string | undefined {
 }
 
 function mapMandateTypes(raw: unknown): MandateType[] {
-  return unwrapArray(raw, "mandate_types").map((item) => {
-    const value = asRecord(item);
-    if (typeof value.title === "string") return item as MandateType;
-    const charter = asRecord(value.charter);
+  return unwrapArray(raw, "mandate_types").map((item) => mapMandateType(item));
+}
+
+/**
+ * Reducer — kernel `MandateType` payload (or legacy lean row) → dashboard
+ * view model. Tolerates both shapes so a kernel that returns the full
+ * 7-organ Pydantic payload AND a stale/legacy lean row both render correctly.
+ */
+export function mapMandateType(raw: unknown): MandateType {
+  const value = asRecord(raw);
+  // Already-mapped shape (fixture / round-tripped) — trust it.
+  if (typeof value.title === "string" && typeof value.type_ref === "string") {
+    return value as unknown as MandateType;
+  }
+  // Legacy lean row (just title + commands) — synthesize missing organs.
+  if (typeof value.title === "string") {
+    const legacyTitle = stringValue(value.title, "Mandate");
+    const legacyCommands = unwrapArray(value.commands, "commands").map((c) => stringValue(c, ""));
     return {
-      id: stringValue(value.id, "mandate"),
-      title: stringValue(value.name, "Mandate"),
-      stage: stringValue(value.version, "Phase 1"),
-      ring_floor: "L0",
-      unit_economics: stringValue(charter.goal, "kernel-managed mandate"),
-      commands: unwrapArray(value.faculties, "faculties").map((faculty) =>
-        stringValue(asRecord(faculty).faculty_name, "faculty"),
-      ),
-      status: "ready",
+      id: stringValue(value.id, legacyTitle.toLowerCase().replace(/\s+/g, "-")),
+      title: legacyTitle,
+      type_ref: stringValue(value.type_ref, `${legacyTitle.toLowerCase().replace(/\s+/g, "-")}@0.1.0`),
+      stage: stringValue(value.stage, "Phase 1"),
+      ring_floor: stringValue(value.ring_floor, "L0"),
+      unit_economics: stringValue(value.unit_economics, "kernel-managed mandate"),
+      commands: legacyCommands,
+      status: (["ready", "gap", "locked", "canary"].includes(stringValue(value.status, "ready"))
+        ? stringValue(value.status, "ready")
+        : "ready") as "ready" | "gap" | "locked" | "canary",
+      gap_id: typeof value.gap_id === "string" ? value.gap_id : undefined,
+      description: typeof value.description === "string" ? value.description : undefined,
+      instances_count: numberOrZero(value.instances_count),
+      versions: [
+        {
+          version: stringValue(value.stage, "0.1.0"),
+          released_at: "2026-06-15T00:00:00+05:30",
+          status: "live",
+          changelog: "Legacy lean row — synthesized from compact shape.",
+        },
+      ],
+      charter: {
+        goal: stringValue(value.unit_economics, "kernel-managed mandate"),
+        preconditions: [],
+        pathconditions: [],
+        postconditions: [],
+        constraints: [],
+        target: {},
+      },
+      faculties: legacyCommands.map((name) => ({
+        faculty_name: name,
+        faculty_version: "1.0.0",
+        harness: "sim",
+        model: "—",
+        budget: null,
+      })),
+      domain_pack: { name: "core", version: "0.1.0", vertical: "" },
+      verification: {
+        ladder: [
+          { rung: "rules", present: true },
+          { rung: "judge", present: true },
+          { rung: "human", present: false },
+          { rung: "reality", present: false },
+        ],
+        rules: [],
+        rubrics: [],
+      },
+      settlement: {
+        fact_commit_confidence: 0.6,
+        trust_on_success: 1,
+        trust_on_failure: -1,
+        watch_window_hours: 72,
+        spawn_rules: [],
+        billing_per_run: null,
+      },
+      gym_ref: null,
+      execution: { routing: [] },
+      service_ports: [],
+    };
+  }
+  // Kernel payload: id/name/version + charter + faculties + domain_pack + verification + settlement + gym_ref + execution.
+  const charter = asRecord(value.charter);
+  const version = stringValue(value.version, "0.1.0");
+  const name = stringValue(value.name, stringValue(value.id, "mandate"));
+  const id = stringValue(value.id, name);
+  const goal = stringValue(charter.goal, "kernel-managed mandate");
+  const faculties = unwrapArray(value.faculties, "faculties").map((faculty) => {
+    const record = asRecord(faculty);
+    const facultyName = stringValue(record.faculty_name, "faculty");
+    const routingEntry = (Array.isArray(value.execution)
+      ? value.execution
+      : unwrapArray(asRecord(value.execution).routing, "routing")
+    )
+      .map((entry) => asRecord(entry))
+      .find((entry) => stringValue(entry.faculty_name, "") === facultyName);
+    return {
+      faculty_name: facultyName,
+      faculty_version: stringValue(record.faculty_version, "1.0.0"),
+      harness: stringValue(routingEntry?.harness, "sim"),
+      model: stringValue(routingEntry?.model, "—"),
+      budget: numberOrNull(routingEntry?.budget),
     };
   });
+  const executionRecord = asRecord(value.execution);
+  const routing = unwrapArray(executionRecord.routing, "routing").map((entry) => {
+    const record = asRecord(entry);
+    return {
+      faculty_name: stringValue(record.faculty_name, "faculty"),
+      harness: stringValue(record.harness, "sim"),
+      model: stringValue(record.model, "—"),
+      budget: numberOrNull(record.budget),
+    };
+  });
+  const verificationRecord = asRecord(value.verification);
+  const ladder = unwrapArray(verificationRecord.ladder, "ladder").map((rung) => {
+    const record = asRecord(rung);
+    const rungName = stringValue(record.rung, "rules");
+    return {
+      rung: (["rules", "judge", "human", "reality"].includes(rungName)
+        ? rungName
+        : "rules") as "rules" | "judge" | "human" | "reality",
+      present: true,
+    };
+  });
+  const settlementRecord = asRecord(value.settlement);
+  const spawnRules = unwrapArray(settlementRecord.spawn_rules, "spawn_rules").map((entry) => {
+    const record = asRecord(entry);
+    return {
+      on_condition: stringValue(record.on_condition, ""),
+      child_type_ref: stringValue(record.child_type_ref, ""),
+    };
+  });
+  const domainPack = asRecord(value.domain_pack);
+  const gymRefRecord = value.gym_ref ? asRecord(value.gym_ref) : null;
+  return {
+    id,
+    title: name,
+    type_ref: `${name}@${version}`,
+    stage: version,
+    ring_floor: "L0",
+    unit_economics: goal,
+    commands: faculties.map((f) => f.faculty_name),
+    status: "ready",
+    description: goal,
+    instances_count: numberOrZero(value.instances_count),
+    versions: [
+      {
+        version,
+        released_at: stringValue(value.released_at, "2026-06-15T00:00:00+05:30"),
+        status: "live",
+        changelog: stringValue(value.changelog, "Initial release."),
+      },
+    ],
+    charter: {
+      goal,
+      preconditions: unwrapArray(charter.preconditions, "preconditions").map((c) =>
+        stringValue(asRecord(c).description, stringValue(c, "")),
+      ),
+      pathconditions: unwrapArray(charter.pathconditions, "pathconditions").map((c) =>
+        stringValue(asRecord(c).description, stringValue(c, "")),
+      ),
+      postconditions: unwrapArray(charter.postconditions, "postconditions").map((c) =>
+        stringValue(asRecord(c).description, stringValue(c, "")),
+      ),
+      constraints: unwrapArray(charter.constraints, "constraints").map((c) => stringValue(c, "")),
+      target: asRecord(charter.target),
+    },
+    faculties,
+    domain_pack: {
+      name: stringValue(domainPack.name, "core"),
+      version: stringValue(domainPack.version, "0.1.0"),
+      vertical: stringValue(domainPack.vertical, ""),
+    },
+    verification: {
+      ladder,
+      rules: unwrapArray(verificationRecord.rules, "rules").map((r) => stringValue(r, "")),
+      rubrics: unwrapArray(verificationRecord.rubrics, "rubrics").map((r) =>
+        stringValue(asRecord(r).name, stringValue(r, "")),
+      ),
+    },
+    settlement: {
+      fact_commit_confidence: numberOrZero(settlementRecord.fact_commit_confidence, 0.6),
+      trust_on_success: numberOrZero(settlementRecord.trust_on_success, 1),
+      trust_on_failure: numberOrZero(settlementRecord.trust_on_failure, -1),
+      watch_window_hours: numberOrZero(settlementRecord.watch_window_hours, 72),
+      spawn_rules: spawnRules,
+      billing_per_run: numberOrNull(settlementRecord.billing_per_run),
+    },
+    gym_ref: gymRefRecord
+      ? {
+          name: stringValue(gymRefRecord.name, "core_gym"),
+          status: (["active", "dormant", "blocked"].includes(stringValue(gymRefRecord.status, "active"))
+            ? stringValue(gymRefRecord.status, "active")
+            : "active") as "active" | "dormant" | "blocked",
+          cases_count: numberOrZero(gymRefRecord.cases_count),
+        }
+      : null,
+    execution: { routing },
+    service_ports: unwrapArray(value.service_ports, "service_ports").map((p) => stringValue(p, "")),
+  };
+}
+
+function numberOrNull(value: unknown): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function numberOrZero(value: unknown, fallback = 0): number {
+  if (value === undefined || value === null || value === "") return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function mapJournal(raw: unknown): JournalEvent[] {

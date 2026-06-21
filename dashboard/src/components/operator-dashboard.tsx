@@ -248,6 +248,7 @@ export function OperatorDashboard() {
     approvals: [],
     manualQueue: [],
     coreGaps: [],
+    facultyLibrary: [],
   };
 
   const selectedInstance =
