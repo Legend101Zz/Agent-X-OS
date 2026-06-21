@@ -7,6 +7,8 @@ Endpoints (Phase 1 dashboard operability):
     GET  /system/overview
     GET  /instances
     GET  /instances/{id}
+    GET  /economy?instance_id=                        (C15 — per-instance P&L)
+    GET  /economy/units                               (C15 — per-business-unit rollup)
     GET  /runs?state=&instance_id=
     GET  /runs/{run_id}
     GET  /approvals?instance_id=
@@ -67,7 +69,9 @@ from .state import (
     approval_cards,
     capability_rows,
     create_state,
+    economy_units,
     instance_detail,
+    instance_economy,
     instance_rows,
     manual_queue,
     run_detail,
@@ -437,6 +441,46 @@ def _install_routes(app: FastAPI) -> None:
     @app.get("/instances/{instance_id}")
     async def get_instance(instance_id: str, request: Request) -> dict[str, Any]:
         return await instance_detail(_state(request), instance_id)
+
+    @app.get("/economy")
+    async def get_economy(
+        request: Request,
+        instance_id: str = Query(..., min_length=1),
+    ) -> JSONResponse:
+        """Per-instance P&L endpoint (BLUEPRINT §8 row 2).
+
+        Aggregates the ``billing_line`` projection (one doc per ``RunSettled``,
+        written by ``BillingProjector`` from ``RunSettled.billing_amount``) and the
+        ``resume`` projection (per-instance trust score maintained by
+        ``ResumeProjector`` from ``RunSettled.trust_delta``) into the envelope the
+        Economy view + Home P&L tile render.
+
+        READ-ONLY. Graceful 404 when the projection store has no ``billing_line`` docs
+        yet (instance missing or just no settled runs): the spec treats both as
+        "no settlement data yet" so the UI can render an EmptyState without
+        distinguishing them.
+        """
+        body = await instance_economy(_state(request), instance_id)
+        if body.get("missing"):
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                content=body,
+            )
+        return JSONResponse(status_code=status.HTTP_200_OK, content=body)
+
+    @app.get("/economy/units")
+    async def get_economy_units(request: Request) -> dict[str, Any]:
+        """Per-business-unit rollup endpoint (BLUEPRINT §8 row 2).
+
+        A "business unit" is the ``customer_id`` on ``MandateInstance`` (the only
+        customer/tenant identifier on the contract). Multiple instances for one
+        customer roll up into one unit — billing_total + settled_count + trust_score
+        summed across instances.
+
+        Always returns 200 (even on a fresh boot with zero instances); the Economy
+        view renders an EmptyState when ``units: []``.
+        """
+        return await economy_units(_state(request))
 
     @app.get("/runs")
     async def get_runs(
