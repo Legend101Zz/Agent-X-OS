@@ -870,7 +870,7 @@ function mapHealthStatus(status: string): DashboardData["capabilities"][number][
   return "degraded";
 }
 
-function mapEvalCases(raw: unknown): EvalCase[] {
+export function mapEvalCases(raw: unknown): EvalCase[] {
   return unwrapArray(raw, "eval_cases").map((item) => {
     const value = asRecord(item);
     if (typeof value.title === "string") return item as EvalCase;
