@@ -30,6 +30,20 @@ This design is the consensus shape the market already validated: even >98%-accur
 
 ---
 
+## 2.1 Data-informed refinements (CA interviews — Dennis, Akhil, Richa — 2026-06-21)
+
+Three real CA interviews confirmed books-prep targets a genuine, recurring pain (bank rec = 20–30% of month-end effort; *"bad, repeated, incorrect data that needs cleaning every time"*; tools they tried were *"unreliable"*). They also showed the **highest-value** pain is the gap between accounting → GST → **collections** (lakhs in blocked working capital, not software fees). We keep books-prep as mandate #1 (the clean-data foundation), but we **shape its output to feed the money mandates** that follow — for near-zero extra cost, since these are just additional fields the categorizer already emits per transaction:
+
+- **Capture vendor + GSTIN + state** on each transaction where present in the narration. Feeds the future `gst-recon` mandate and guards against the multi-GST-state mix-up Dennis described as a real blow-up.
+- **Flag `missing_supporting_doc`** on expense/purchase rows with no matching invoice/bill. This *is* pain #4 ("following up for missing bills") surfaced as data, and it is the hand-off list to gst-recon (blocked-ITC risk) and the client-chase loop.
+- **Tag `receivable` / `payable` nature** where detectable. Seeds the future `collections` mandate (pain #1) with an ageing-ready dataset.
+
+These are charter/output additions only (see §4.1) — no new adapters, no scope creep into v0's build surface.
+
+**Mandate-suite arc (recorded for sequencing, not all built now):** `books-prep` (clean data, #1 build) → `gst-recon` (GSTR-2B/ITC, spawned) → `collections` (receivables follow-up + cash-flow visibility — the highest-WTP "money" mandate). The `collections` send model is decided: **the agent drafts every reminder; the owner approves each send before it reaches their customer** (the existing approval-rung pattern, same as lead-finder's `draft_email`).
+
+---
+
 ## 3. Architecture — division of labor
 
 The blueprint invariant "no brain does I/O directly" decides the split cleanly:
@@ -66,6 +80,7 @@ Why this is fast: the *new* real-world work is two deterministic adapters (`inge
   - `every_txn_categorized` — every transaction has a ledger head + GST treatment + confidence.
   - `low_confidence_queued` — no transaction below the confidence threshold is finalized without a queued review card.
   - `balance_continuity` — running-balance continuity holds across the statement, or each break is flagged.
+  - **(§2.1 data-informed, feed-forward fields — emitted, not gated):** each transaction additionally carries, where derivable, `vendor` + `gstin` + `state`, a `missing_supporting_doc` flag, and a `receivable`/`payable` tag. These are part of the categorizer's output and the Excel columns; they are *not* hard postconditions (a transaction without a derivable GSTIN still passes), so they add value without making v0 brittle.
   - `constraints`: never invent a transaction with no source; read-only on source docs; never moves money (books only).
   - `target`: `{ "documents": [...refs], "output_format": "xlsx", "confidence_threshold": 0.8 }` (the trigger carries the actual doc refs per run).
 - **Faculties** (bindings):

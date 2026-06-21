@@ -1,0 +1,215 @@
+{
+  "label": "B_growth_agencies_evaluating_AI_SDR",
+  "instance_id": "agentx_dogfood_B_growth_agencies_evaluating_AI_SDR_1782055866",
+  "run_id": "agentx_dogfood_B_growth_agencies_evaluating_AI_SDR_1782055866:deadline:1782036066",
+  "trigger_work_id": "trigger:563022bbbf2cd22f3c22a65ba66f1d41e9d63d6517bd8387d8e4e700cbc6eb91",
+  "approval_work_id": "approval:564560a02814fdb2b418048b29fa49cb1fabe7c9301b85e9c7ad9e9962df14df",
+  "icp_target": {
+    "icp": "B2B growth and outbound agencies evaluating AI SDR or autonomous lead-finder tools",
+    "location": "India",
+    "count": 3
+  },
+  "l1_state": "parked",
+  "park_reason": "draft_email requires L2",
+  "approval_card": {
+    "syscall": "draft_email",
+    "subject": "For Adhip \u2014 an autonomous lead-finder to fill WinSavvy's \"I Need More Leads\" pipeline",
+    "to": "Adhip Ray, Founder \u2014 WinSavvy (Mumbai)",
+    "body": "Hi Adhip,\n\nCame across WinSavvy while mapping AI-first growth consultancies in India, and two things on your own site made me want to reach out:\n\n1) Your intake form is literally titled \"AI-First Marketing By WinSavvy \u2014 Let's Discuss,\" and one of the options a prospect can pick is \"I Need More Leads.\" That tells me lead-gen is core to how you grow \u2014 both for the VC-funded tech startups you serve, and, given you personally sign off on intake (\"Hi, I am Adhip, the founder of WinSavvy\u2026\"), likely for WinSavvy's own pipeline too.\n\n2) Your positioning \u2014 \"We Strategize and Help Implement and Manage Extremely Fast Growth for Tech Startups and Small Digital Businesses\" \u2014 plus the Mumbai team (caught the GLC Mumbai credit on your editorial bios) means a tool that autonomously finds and qualifies ICP-matched startup founders and growth leads would slot straight into how you already work, not replace it.\n\nAgent-X is exactly that: an accountable AI lead-finder that researches target accounts, verifies a named decision-maker + reachable contact path, and drafts grounded outreach for your sign-off \u2014 with every fact citable and claim-checked. For a founder-led consultancy like WinSavvy, it's a way to run a fully traceable outbound motion to seed\u2013Series A SaaS founders without adding SDR headcount, and to white-label the same capability to your startup clients.\n\nIf it's useful, I can run a no-cost 10-account pilot against an ICP you define (e.g., India/US SaaS, seed\u2013Series A, specific verticals) and hand you the drafted emails plus the evidence for each lead \u2014 no commitment.\n\nSubmitting this through your \"AI-First Marketing\" consultation form on winsavvy.com (the one you personally read), at:\n\nhttps://docs.google.com/forms/d/e/1FAIpQLSf4DkxU_Sk_xbGERv1vH-OvHzDJooctnPgxwSVEkYHN8ucFXw/viewform\n\n\u2014 [Sender], Agent-X\nAutonomous lead-finder for B2B growth agencies",
+    "lead_id": "firecrawl_1"
+  },
+  "draft_receipt": {
+    "status": "ok",
+    "fulfilled_by": "draft_email"
+  },
+  "settled_event": "agentx_dogfood_B_growth_agencies_evaluating_AI_SDR_1782055866:deadline:1782036066:settled",
+  "heap_fact_count": 2,
+  "actionable_lead_facts": [
+    {
+      "subject": "WinSavvy",
+      "object": "B2B growth/marketing consultancy based in Mumbai, India; founder Adhip Ray; reachable via the 'AI-First Marketing' consultation form on winsavvy.com",
+      "confidence": 0.9,
+      "provenance_evidence": [
+        "Author bio on winsavvy.com: \"Adhip Ray is the founder of WinSavvy. He has a legal, finance and data analytics background and has provided marketing consultancy to startups for over 5 years.\"",
+        "Editor bio on winsavvy.com/trade-secrets-ipr: \"Sugandha Nagariya is a law student at GLC, Mumbai and is an intern at WinSavvy.com.\" (grounds India/Mumbai)",
+        "og:site_name on winsavvy.com pages: \"WinSavvy - We Strategize and Help Implement and Manage Extremely Fast Growth for Tech Startups and Small Digital Businesses.\"",
+        "Embedded form on winsavvy.com: \"Hi, I am Adhip, the founder of WinSavvy. Please spend a moment and fill out this form in detail.\""
+      ],
+      "provenance_note": "hermes claim: actionable_lead"
+    }
+  ],
+  "qualified_lead_score_facts": [
+    {
+      "subject": "WinSavvy",
+      "object": "0.82",
+      "confidence": 0.85
+    }
+  ],
+  "journal_kinds": [
+    "run_created",
+    "run_hydrated",
+    "syscall_attempted",
+    "syscall_settled",
+    "syscall_attempted",
+    "syscall_settled",
+    "syscall_attempted",
+    "syscall_settled",
+    "syscall_attempted",
+    "syscall_settled",
+    "syscall_attempted",
+    "syscall_settled",
+    "syscall_attempted",
+    "syscall_settled",
+    "syscall_attempted",
+    "syscall_settled",
+    "syscall_attempted",
+    "syscall_settled",
+    "syscall_attempted",
+    "syscall_settled",
+    "syscall_attempted",
+    "run_parked",
+    "manager_action",
+    "approval_resolved",
+    "syscall_settled",
+    "run_verified",
+    "run_settled",
+    "watch_registered"
+  ],
+  "syscall_trace_rows": 20,
+  "latency_seconds": {
+    "l1": 343.69,
+    "approval_to_settle": 12.54
+  },
+  "trace_events": [
+    {
+      "seq": 1,
+      "kind": "thought",
+      "summary": "Plan: ICP is B2B growth/outbound agencies in India that would BUY an AI SDR/lead-finder tool (not competitors who sell lead-gen). Need real agency websites with named decision-makers. Step 1: search_leads with specific query excluding directories/competitor vendor domains. Step 2: read_url top candidates. Step 3: claim_facts then draft_email. Target 1 lead per cycle (user said 3 wanted but process 1 at a time).",
+      "detail": {}
+    },
+    {
+      "seq": 2,
+      "kind": "syscall_result",
+      "summary": "lead_research_batch",
+      "detail": {
+        "status": "ok",
+        "fulfilled_by": "lead_research_batch",
+        "maturity_used": 3
+      }
+    },
+    {
+      "seq": 3,
+      "kind": "syscall_result",
+      "summary": "lead_research_batch",
+      "detail": {
+        "status": "ok",
+        "fulfilled_by": "lead_research_batch",
+        "maturity_used": 3
+      }
+    },
+    {
+      "seq": 4,
+      "kind": "syscall_result",
+      "summary": "lead_research_batch",
+      "detail": {
+        "status": "ok",
+        "fulfilled_by": "lead_research_batch",
+        "maturity_used": 3
+      }
+    },
+    {
+      "seq": 5,
+      "kind": "syscall_result",
+      "summary": "read_url",
+      "detail": {
+        "status": "ok",
+        "fulfilled_by": "read_url",
+        "maturity_used": 3
+      }
+    },
+    {
+      "seq": 6,
+      "kind": "syscall_result",
+      "summary": "lead_research_batch",
+      "detail": {
+        "status": "ok",
+        "fulfilled_by": "lead_research_batch",
+        "maturity_used": 3
+      }
+    },
+    {
+      "seq": 7,
+      "kind": "syscall_result",
+      "summary": "lead_research_batch",
+      "detail": {
+        "status": "ok",
+        "fulfilled_by": "lead_research_batch",
+        "maturity_used": 3
+      }
+    },
+    {
+      "seq": 8,
+      "kind": "syscall_result",
+      "summary": "read_url",
+      "detail": {
+        "status": "ok",
+        "fulfilled_by": "read_url",
+        "maturity_used": 3
+      }
+    },
+    {
+      "seq": 9,
+      "kind": "syscall_result",
+      "summary": "lead_research_batch",
+      "detail": {
+        "status": "ok",
+        "fulfilled_by": "lead_research_batch",
+        "maturity_used": 3
+      }
+    },
+    {
+      "seq": 10,
+      "kind": "syscall_result",
+      "summary": "read_url",
+      "detail": {
+        "status": "ok",
+        "fulfilled_by": "read_url",
+        "maturity_used": 3
+      }
+    },
+    {
+      "seq": 11,
+      "kind": "parked",
+      "summary": "draft_email requires L2",
+      "detail": {
+        "required_ring": "L2"
+      }
+    },
+    {
+      "seq": 12,
+      "kind": "resumed",
+      "summary": "human approval resolved; replaying parked syscall",
+      "detail": {
+        "approval_event_id": "agentx_dogfood_B_growth_agencies_evaluating_AI_SDR_1782055866:deadline:1782036066:approval:resolved"
+      }
+    },
+    {
+      "seq": 13,
+      "kind": "syscall_result",
+      "summary": "draft_email",
+      "detail": {
+        "status": "ok",
+        "fulfilled_by": "draft_email",
+        "maturity_used": 1
+      }
+    },
+    {
+      "seq": 14,
+      "kind": "verify",
+      "summary": "settled",
+      "detail": {
+        "fact_count": 2
+      }
+    }
+  ]
+}

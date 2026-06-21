@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent-X-OS — books-prep mandate + harness generalization (design)</title>
+<style>
+  :root{
+    --bg:#07090e; --panel:#0f131c; --panel2:#161c2a; --line:#1f2638; --line2:#2c3650;
+    --text:#e8eef9; --muted:#8a96ad; --dim:#5b667a;
+    --g:#22c55e; --a:#f59e0b; --r:#ef4444; --s:#38bdf8; --v:#a78bfa; --t:#2dd4bf; --p:#f472b6; --o:#fb923c;
+    --good:#0c1d18; --good-b:#1f4d3f; --warn:#1d1606; --warn-b:#5c4515; --bad:#1d0a0a; --bad-b:#5a2222;
+    --info:#091d24; --info-b:#1d4a5c;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:radial-gradient(ellipse at top,#0d121d 0%,#07090e 60%);color:var(--text);
+    font:14px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,system-ui,Segoe UI,sans-serif;-webkit-font-smoothing:antialiased}
+  code,pre,kbd{font-family:"JetBrains Mono","SF Mono",Menlo,Consolas,ui-monospace,monospace}
+  a{color:var(--s);text-decoration:none}
+  .wrap{max-width:1080px;margin:0 auto;padding:8px 16px 80px}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 18px;background:rgba(15,19,28,.8);
+    backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:10px;margin-bottom:18px;position:sticky;top:8px;z-index:50;flex-wrap:wrap}
+  .topbar .brand{font-weight:600;letter-spacing:-.01em}
+  .topbar .brand b{color:var(--s)}
+  .topbar .nav{display:flex;gap:2px;flex-wrap:wrap}
+  .topbar .nav a{font-size:12.5px;color:var(--muted);padding:5px 10px;border-radius:6px;border:1px solid transparent}
+  .topbar .nav a:hover{color:var(--text);border-color:var(--line2);background:#0d121d}
+  .topbar .right{font-size:11.5px;color:var(--dim);font-family:"JetBrains Mono",monospace}
+
+  h1.title{font-size:25px;letter-spacing:-.02em;margin:8px 0 2px}
+  .sub{color:var(--muted);margin:0 0 18px;font-size:14px}
+
+  .grid{display:grid;gap:12px}
+  .g4{grid-template-columns:repeat(4,1fr)} .g3{grid-template-columns:repeat(3,1fr)} .g2{grid-template-columns:repeat(2,1fr)}
+  @media(max-width:820px){.g4,.g3,.g2{grid-template-columns:1fr 1fr}}
+  @media(max-width:520px){.g4,.g3,.g2{grid-template-columns:1fr}}
+
+  .s{background:linear-gradient(180deg,#0f131c,#0a0d14);border:1px solid var(--line);border-radius:10px;padding:14px;position:relative;overflow:hidden}
+  .s::before{content:"";position:absolute;top:0;left:0;right:0;height:2px;background:var(--g)}
+  .s.a::before{background:var(--a)} .s.s::before{background:var(--s)} .s.v::before{background:var(--v)} .s.t::before{background:var(--t)} .s.p::before{background:var(--p)}
+  .s .v{font-size:24px;font-weight:700;letter-spacing:-.02em;line-height:1;color:var(--g)}
+  .s.a .v{color:var(--a)} .s.s .v{color:var(--s)} .s.v .v{color:var(--v)} .s.t .v{color:var(--t)} .s.p .v{color:var(--p)}
+  .s .l{font-size:11.5px;color:var(--muted);margin-top:7px;line-height:1.4}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin:14px 0;position:relative;overflow:hidden}
+  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 14px;display:flex;align-items:center;gap:9px;font-weight:600}
+  .card h2 .icon{width:24px;height:24px;border-radius:7px;background:#1a2236;display:inline-flex;align-items:center;justify-content:center;font-size:13px}
+  .card h3{font-size:15px;margin:16px 0 6px;color:var(--text);font-weight:600}
+  .card p{margin:6px 0;color:#cfd6e3}
+  .card ul,.card ol{margin:6px 0 6px 18px;color:#cfd6e3} .card li{margin:4px 0}
+  .lead{font-size:15px;color:#dce3ef !important;line-height:1.65}
+
+  .pill{display:inline-block;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid;letter-spacing:.04em;text-transform:uppercase;vertical-align:middle}
+  .pill.g{color:var(--g);border-color:var(--good-b);background:var(--good)}
+  .pill.a{color:var(--a);border-color:var(--warn-b);background:var(--warn)}
+  .pill.r{color:var(--r);border-color:var(--bad-b);background:var(--bad)}
+  .pill.s{color:var(--s);border-color:var(--info-b);background:var(--info)}
+  .pill.v{color:var(--v);border-color:#3a2f63;background:#160f29}
+  .pill.t{color:var(--t);border-color:#1f4f49;background:#06201d}
+  .pill.dim{color:var(--dim);border-color:var(--line2);background:#0c1018}
+
+  .note{border-radius:10px;padding:12px 14px;margin:12px 0;font-size:13.5px;border:1px solid}
+  .note.good{background:var(--good);border-color:var(--good-b)} .note.good b{color:var(--g)}
+  .note.warn{background:var(--warn);border-color:var(--warn-b)} .note.warn b{color:var(--a)}
+  .note.info{background:var(--info);border-color:var(--info-b)} .note.info b{color:var(--s)}
+  .note.bad{background:var(--bad);border-color:var(--bad-b)} .note.bad b{color:var(--r)}
+
+  /* flow pipeline */
+  .flow{display:flex;flex-direction:column;gap:0;margin:6px 0}
+  .step{background:var(--panel2);border:1px solid var(--line2);border-radius:11px;padding:13px 15px;position:relative}
+  .step .tag{position:absolute;top:-9px;left:13px;font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:6px}
+  .step .tag.code{background:#0c1018;border:1px solid var(--line2);color:var(--s)}
+  .step .tag.brain{background:#160f29;border:1px solid #3a2f63;color:var(--v)}
+  .step .tag.out{background:#06201d;border:1px solid #1f4f49;color:var(--t)}
+  .step .name{font-weight:600;font-size:14.5px;margin-top:4px}
+  .step .desc{color:var(--muted);font-size:12.5px;margin-top:3px}
+  .arrow{align-self:center;color:var(--dim);font-size:18px;line-height:1;padding:6px 0}
+  .branch{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+  @media(max-width:520px){.branch{grid-template-columns:1fr}}
+  .twig{border-radius:9px;padding:10px 12px;font-size:12.5px;border:1px solid}
+  .twig.ok{background:var(--good);border-color:var(--good-b)} .twig.ok b{color:var(--g)}
+  .twig.q{background:var(--warn);border-color:var(--warn-b)} .twig.q b{color:var(--a)}
+
+  /* before/after */
+  .ba{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:640px){.ba{grid-template-columns:1fr}}
+  .col{border-radius:11px;padding:14px;border:1px solid}
+  .col.before{background:var(--bad);border-color:var(--bad-b)}
+  .col.after{background:var(--good);border-color:var(--good-b)}
+  .col h4{margin:0 0 8px;font-size:13px;letter-spacing:.04em;text-transform:uppercase}
+  .col.before h4{color:var(--r)} .col.after h4{color:var(--g)}
+  .col code{font-size:12px;color:#cfd6e3;background:#0008;padding:1px 5px;border-radius:5px}
+  .col ul{margin:6px 0 0 16px} .col li{font-size:13px;margin:5px 0;color:#cfd6e3}
+
+  pre.box{background:#0a0d14;border:1px solid var(--line);border-radius:10px;padding:13px 15px;overflow:auto;font-size:12.5px;color:#c6d0e2;line-height:1.5}
+  pre.box .c{color:var(--dim)} pre.box .k{color:var(--s)} pre.box .v{color:var(--v)} pre.box .g{color:var(--g)} pre.box .a{color:var(--a)}
+
+  table{width:100%;border-collapse:collapse;margin:8px 0;font-size:13px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em}
+  td{color:#cfd6e3} td b{color:var(--text)}
+  tr:last-child td{border-bottom:none}
+
+  /* build order timeline */
+  .steps{counter-reset:bo;margin-top:6px}
+  .bo{display:flex;gap:13px;padding:11px 0;border-bottom:1px dashed var(--line)}
+  .bo:last-child{border-bottom:none}
+  .bo .num{counter-increment:bo;flex:0 0 30px;height:30px;border-radius:8px;background:#0c1018;border:1px solid var(--line2);
+    display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--s);font-size:14px}
+  .bo .num::before{content:counter(bo)}
+  .bo .body{flex:1}
+  .bo .body .t{font-weight:600}
+  .bo .body .d{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .tag2{font-size:10px;font-weight:600;padding:1px 7px;border-radius:5px;border:1px solid var(--line2);color:var(--muted);background:#0c1018;margin-left:6px;text-transform:lowercase;letter-spacing:.02em;font-family:"JetBrains Mono",monospace}
+
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin-top:4px}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .dot{width:9px;height:9px;border-radius:3px;display:inline-block}
+  .foot{color:var(--dim);font-size:12px;text-align:center;margin-top:30px}
+  hr.sep{border:none;border-top:1px solid var(--line);margin:18px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="brand">Agent-X-OS · <b>books-prep</b> design</div>
+    <div class="nav">
+      <a href="#tldr">tl;dr</a>
+      <a href="#scope">scope</a>
+      <a href="#cadata">CA data</a>
+      <a href="#flow">how it works</a>
+      <a href="#parts">the parts</a>
+      <a href="#harness">harness</a>
+      <a href="#gemini">gemini</a>
+      <a href="#ui">UI contract</a>
+      <a href="#order">build order</a>
+      <a href="#risk">risks</a>
+    </div>
+    <div class="right">design · 2026-06-21 · awaiting approval</div>
+  </div>
+
+  <h1 class="title">books-prep mandate + harness generalization</h1>
+  <p class="sub">Mandate #2 — turn a CA's messy client data-dump into a clean, categorized, source-cited Excel ledger. Plus the harness change that makes every future mandate cheap to add.</p>
+
+  <!-- AT A GLANCE -->
+  <div class="grid g4">
+    <div class="s"><div class="v">Excel</div><div class="l">v0 output: one clean categorized ledger, every row citing its source</div></div>
+    <div class="s s"><div class="v">No Gemini</div><div class="l">needed for v0 — PDFs parsed deterministically; Gemini is an optional toggle</div></div>
+    <div class="s a"><div class="v">2 adapters</div><div class="l">the only new real-world code: <code>ingest_document</code> + <code>export_ledger</code></div></div>
+    <div class="s v"><div class="v">0 breaks</div><div class="l">lead-finder regression-locked; dashboard↔backend contract unchanged</div></div>
+  </div>
+
+  <!-- TLDR -->
+  <div class="card" id="tldr">
+    <h2><span class="icon">◆</span> the one-paragraph version</h2>
+    <p class="lead">A CA's biggest headache is that business owners dump them messy financial records — bank-statement PDFs, Excel exports, piles of invoices — and someone has to turn that into clean books by hand (5–10 hours per client, every month). <b>books-prep</b> does the grunt work: it reads the dump, extracts every transaction, categorizes it into a ledger head with a GST treatment and a confidence score, and hands the CA a clean Excel ledger — with anything <i>doubtful</i> pushed to a review queue for the CA to check. It is an <b>assistant that preps the books</b>, never an autopilot that closes them. The market already proved this is the winning shape: even 98%-accurate tools "still require lightweight approval queues for low-confidence items" — which is exactly our verification ladder + human-approval rung.</p>
+    <div class="note good"><b>Why this is the right wedge:</b> one CA is a concentrated buyer with acute, recurring pain and a real budget — and a channel into the 50–200 businesses they serve. It also maps onto the hackathon's Money / Professional-Services / Small-Business categories.</div>
+  </div>
+
+  <!-- SCOPE -->
+  <div class="card" id="scope">
+    <h2><span class="icon">▣</span> what v0 is — and isn't</h2>
+    <div class="ba">
+      <div class="col after">
+        <h4>✓ in scope (v0)</h4>
+        <ul>
+          <li><b>Input:</b> digital-text PDF bank statements + Excel/CSV exports</li>
+          <li><b>Extract:</b> date · debit · credit · running-balance · narration · reference — deterministically</li>
+          <li><b>Categorize:</b> MiniMax assigns ledger head + GST treatment + confidence; resolves vendor from narration</li>
+          <li><b>Verify:</b> rules → judge → <b>CA review queue</b> → reality (CA accepts/corrects)</li>
+          <li><b>Output:</b> clean Excel ledger, every row source-cited + a queue of flagged items</li>
+          <li><b>Settle:</b> clean txns → this business's private heap; CA corrections feed the gym</li>
+        </ul>
+      </div>
+      <div class="col before">
+        <h4>✗ deliberately deferred</h4>
+        <ul>
+          <li><b>Scanned / photo statements</b> → routed to human queue in v0 (OCR/vision later)</li>
+          <li><b>GST reconciliation</b> (GSTR-2B / ITC, GSTR-1/3B, TDS) → a separate <code>gst-recon</code> mandate, <i>spawned</i> from a settled books-prep run</li>
+          <li><b>Tally / Zoho integration</b> → Excel first; those export adapters come later</li>
+          <li><b>Signup / Stripe / multi-tenant</b> → separate workstream</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- CA DATA -->
+  <div class="card" id="cadata">
+    <h2><span class="icon">🎙</span> what the CA interviews changed</h2>
+    <p>Three real CAs (Dennis, Akhil, Richa) ranked their clients' pains. books-prep targets a <b>real, recurring</b> pain — but the data showed the <b>biggest-money</b> pain sits downstream, in the gap between accounting → GST → collections.</p>
+    <table>
+      <tr><th>Pain</th><th>Rank (Richa)</th><th>Size</th></tr>
+      <tr><td><b>Collections / overdue / cash-flow visibility</b></td><td><span class="pill r">#1–2</span></td><td>₹18–50 <b>lakh</b> stuck per client — the money pain</td></tr>
+      <tr><td>GST mismatch / blocked ITC</td><td><span class="pill a">#3</span></td><td>₹2–4.5 lakh blocked; 20+ man-hours per blow-up</td></tr>
+      <tr><td>Missing invoices / docs chasing</td><td><span class="pill a">#4</span></td><td>the coordination tax</td></tr>
+      <tr><td><b>Reconciliation + data cleanup</b> (← books-prep)</td><td><span class="pill s">#5</span></td><td>bank rec = 20–30% of effort; real but ranked last</td></tr>
+    </table>
+    <div class="note info"><b>Decision:</b> keep <b>books-prep as mandate #1</b> — it's the clean-data <i>foundation</i> the money mandates stand on (both Dennis &amp; Richa: bad data poisons everything downstream). The suite arc: <span class="pill g">books-prep</span> → <span class="pill v">gst-recon</span> → <span class="pill p">collections</span> (the highest-WTP money mandate; agent drafts, owner approves each send).</div>
+    <h3>Three near-free refinements folded into books-prep</h3>
+    <p>So the foundation actively <i>feeds</i> the next mandates — these are just extra columns the categorizer already emits, no new adapters:</p>
+    <ul>
+      <li><span class="pill g">+field</span> <b>vendor + GSTIN + state</b> per transaction → feeds gst-recon; guards Dennis's multi-state GST mix-up</li>
+      <li><span class="pill g">+flag</span> <b>missing_supporting_doc</b> on expense rows with no bill → <i>is</i> pain #4, as data; the hand-off list to GST/collections</li>
+      <li><span class="pill g">+tag</span> <b>receivable / payable</b> → seeds the collections mandate with an ageing-ready dataset</li>
+    </ul>
+  </div>
+
+  <!-- FLOW -->
+  <div class="card" id="flow">
+    <h2><span class="icon">▶</span> how it works — the pipeline</h2>
+    <p>The blueprint rule "no brain does I/O directly" splits the work cleanly: <b>deterministic code reads & writes files; the LLM only does judgment.</b></p>
+    <div class="legend" style="margin-bottom:10px">
+      <span><span class="dot" style="background:var(--s)"></span> deterministic adapter (no LLM)</span>
+      <span><span class="dot" style="background:var(--v)"></span> the brain (MiniMax / Hermes)</span>
+      <span><span class="dot" style="background:var(--t)"></span> deliverable</span>
+    </div>
+    <div class="flow">
+      <div class="step"><span class="tag code">trigger</span><div class="name">CA provides a document batch for a client</div><div class="desc">drops files in the intake folder; the trigger names them — no new endpoint needed</div></div>
+      <div class="arrow">↓</div>
+      <div class="step"><span class="tag code">adapter · ingest_document</span><div class="name">parse PDF / Excel → structured rows</div><div class="desc"><code>pdfplumber</code> / <code>pypdf</code> / <code>openpyxl</code> · returns rows + a source citation (doc + page/line) per row · <b>no LLM, no API, no cost</b> · more reliable than an LLM for numeric tables</div></div>
+      <div class="arrow">↓</div>
+      <div class="step"><span class="tag brain">brain · MiniMax</span><div class="name">categorize each row</div><div class="desc">ledger head + GST treatment + confidence + vendor · reuses faculties <span class="pill t">judgment</span> <span class="pill t">enrichment</span> <span class="pill t">memory-craft</span> <span class="pill t">escalation</span></div>
+        <div class="branch">
+          <div class="twig ok"><b>confidence ≥ threshold</b><br>→ claim as a clean transaction → commits to the heap</div>
+          <div class="twig q"><b>confidence &lt; threshold / ambiguous</b><br>→ queue_manual_action → <b>CA review card</b></div>
+        </div>
+      </div>
+      <div class="arrow">↓</div>
+      <div class="step"><span class="tag out">adapter · export_ledger</span><div class="name">write the clean Excel</div><div class="desc"><code>openpyxl</code> · parks at L1 for approval, then produces the deliverable file</div></div>
+      <div class="arrow">↓</div>
+      <div class="step"><span class="tag out">verify → settle</span><div class="name">rules → judge → CA queue → reality, then commit</div><div class="desc">clean txns → private heap · CA corrections → the gym (mandate gets smarter) · one billing line per batch · journaled, auditable receipt</div></div>
+    </div>
+    <div class="note info"><b>The CA's experience (your demo):</b> "Uploaded Sharma Textiles' April dump — 87 pages, 230 transactions. 8 minutes later: a categorized ledger, 14 items flagged for review, each with a reason and the source snippet. Fixed 6, approved 8. Next month it remembered my fixes."</div>
+  </div>
+
+  <!-- PARTS -->
+  <div class="card" id="parts">
+    <h2><span class="icon">⊞</span> the parts we build (and which package each lives in)</h2>
+    <div class="legend" style="margin-bottom:12px">
+      <span><span class="pill g">new</span> brand new</span>
+      <span><span class="pill a">modify</span> generalize, don't break</span>
+      <span><span class="pill dim">reuse</span> already exists</span>
+    </div>
+    <table>
+      <tr><th>Component</th><th>Package</th><th>Status</th><th>What it is</th></tr>
+      <tr><td><b>books-prep MandateType</b></td><td><code>agentx_mandate</code></td><td><span class="pill g">new</span></td><td>~60 lines of declarative config — charter, faculties, domain pack, settlement. Mirrors <code>lead_finder.py</code>.</td></tr>
+      <tr><td><b>extraction</b> + <b>ledger-export</b> faculties</td><td><code>agentx_mandate</code></td><td><span class="pill g">new</span></td><td>Thin bricks: declare which syscalls they may request (<code>ingest_document</code>; <code>export_ledger</code> + <code>queue_manual_action</code>).</td></tr>
+      <tr><td>judgment · enrichment · memory-craft · escalation</td><td><code>agentx_mandate</code></td><td><span class="pill dim">reuse</span></td><td>Categorize · resolve vendor · claim clean txns · flag to CA. Already in the library.</td></tr>
+      <tr><td><b>IngestDocumentAdapter</b></td><td><code>agentx_syscall</code></td><td><span class="pill g">new</span></td><td>Parses PDF/Excel/CSV → rows. Scanned PDFs → clean error → human queue. Ships a test fixture.</td></tr>
+      <tr><td><b>ExportLedgerAdapter</b></td><td><code>agentx_syscall</code></td><td><span class="pill g">new</span></td><td>Writes the categorized rows to <code>.xlsx</code>. L1 (parks for approval).</td></tr>
+      <tr><td><b>Tool-schema registry</b></td><td><code>agentx_contracts</code></td><td><span class="pill g">new</span></td><td>Maps each syscall → its LLM tool schema. <i>Must</i> live here (see harness note).</td></tr>
+      <tr><td>Hermes runner</td><td><code>agentx_kernel</code></td><td><span class="pill a">modify</span></td><td>Build the tool set + prompt from the mandate, not hard-coded lead-finder.</td></tr>
+      <tr><td>Run loop</td><td><code>agentx_kernel</code></td><td><span class="pill a">modify</span></td><td>Unwire 3 lead-finder-specific spots into mandate-driven registries.</td></tr>
+      <tr><td><b>indian-smb-books</b> domain pack</td><td><code>agentx_mandate</code></td><td><span class="pill g">new</span></td><td>Chart-of-accounts conventions, GST/HSN hints, §17(5) blocked credits, narration→vendor patterns, bank-format quirks.</td></tr>
+    </table>
+  </div>
+
+  <!-- HARNESS -->
+  <div class="card" id="harness">
+    <h2><span class="icon">⚙</span> the harness generalization (the reusable win)</h2>
+    <p>Today the Hermes runner's tools and system prompt are <b>hard-coded to lead-finder</b>. To add any second mandate cleanly, we make them <b>derived from the mandate</b> — its faculties already declare a <code>tool_manifest</code>, so the seam was anticipated; the runner just doesn't use it yet.</p>
+    <div class="ba">
+      <div class="col before">
+        <h4>before — hard-wired</h4>
+        <ul>
+          <li><code>_TOOLS</code> = a fixed list (<code>search_leads</code>, <code>read_url</code>, <code>draft_email</code>…)</li>
+          <li><code>_system_prompt()</code> = a lead-finder essay</li>
+          <li><code>_RISK_BY_SYSCALL</code> = a hard-coded dict</li>
+          <li>A 2nd mandate would mean copy-paste + drift</li>
+        </ul>
+      </div>
+      <div class="col after">
+        <h4>after — mandate-driven</h4>
+        <ul>
+          <li><code>_TOOLS</code> = control tools + one per syscall in the mandate's faculties' manifests, schema from the registry</li>
+          <li>prompt = <code>charter.goal</code> + constraints + faculty skill-packs</li>
+          <li>risk + schema come from the contracts registry</li>
+          <li>A 3rd mandate is just config — the goal of the whole OS</li>
+        </ul>
+      </div>
+    </div>
+    <div class="note warn"><b>The constraint that shapes this:</b> import-linter forbids the kernel (where the runner lives) from importing the syscall package. So the tool-schema registry <b>must live in <code>agentx_contracts</code></b> — the shared seam both sides may import. Caught before it could break the build mid-way.</div>
+    <div class="note good"><b>Guardrail — lead-finder is regression-locked:</b> a test asserts the <i>generated</i> tools + prompt for lead-finder are byte-identical to today's hard-coded ones. If they match, live behavior is preserved <i>by construction</i>.</div>
+    <h3>The 3 lead-finder couplings in the run loop we unwire</h3>
+    <ul>
+      <li><span class="pill a">modify</span> <b>default sim playbook</b> → a <code>type → playbook</code> resolver (defaults to lead-finder; adds books-prep so the swarm can dry-run it)</li>
+      <li><span class="pill a">modify</span> <b>read-result handling</b> → a per-syscall handler registry (keeps lead handlers; adds an <code>ingest_document</code> one)</li>
+      <li><span class="pill a">modify</span> <b>sim-native reads</b> → add a synthetic-transactions branch for dry runs</li>
+    </ul>
+  </div>
+
+  <!-- GEMINI -->
+  <div class="card" id="gemini">
+    <h2><span class="icon">◈</span> the optional Gemini toggle</h2>
+    <p>You don't have a Gemini key and <b>v0 doesn't need one</b> — PDFs are parsed by deterministic libraries, and MiniMax does the categorization. But we wire a clean toggle for later (and for the hackathon's "≥1 Gemini call in production" rule):</p>
+    <pre class="box"><span class="c"># agentx_contracts/config.py — new settings, default OFF</span>
+<span class="k">use_gemini</span>: bool = <span class="a">False</span>
+<span class="k">gemini_api_key</span>: SecretStr | None = <span class="a">None</span>
+<span class="k">gemini_model_id</span>: str = <span class="g">"gemini-2.5-flash"</span>
+<span class="k">gemini_base_url</span>: str = <span class="g">"…/openai/"</span>   <span class="c"># Gemini's OpenAI-compatible endpoint</span></pre>
+    <div class="note good"><b>Why it's nearly free to add:</b> Gemini exposes an OpenAI-compatible API, and Hermes already drives an OpenAI-compatible transport. So the toggle is a one-line <i>transport swap at construction</i> — no runner rewrite. Off by default → MiniMax → nothing changes.</div>
+  </div>
+
+  <!-- UI -->
+  <div class="card" id="ui">
+    <h2><span class="icon">▤</span> the dashboard contract stays intact</h2>
+    <p>The dashboard talks to a <b>generic</b> surface — none of it changes:</p>
+    <p>
+      <span class="pill s">/commands/instantiate</span> <span class="pill s">/commands/trigger-run</span> <span class="pill s">/approvals</span>
+      <span class="pill s">/commands/approve</span> <span class="pill s">/events (SSE)</span> <span class="pill s">/runs/{id}</span> <span class="pill s">/journal</span>
+    </p>
+    <ul>
+      <li><b>Approval cards are already generic</b> — <code>{syscall, args, idempotency_key}</code> — so <code>export_ledger</code> &amp; the review queue render in the existing inbox with zero contract change.</li>
+      <li><b>Instantiate / trigger</b> are keyed by <code>type_ref</code>; <code>books-prep@0.1.0</code> flows through once registered in the catalog (mirrors how lead-finder is seeded).</li>
+      <li><b>The one new input — <i>which documents</i></b> — rides the trigger payload + a local intake folder. <b>No new endpoint.</b> The studio just gets an additive optional "document path" field; lead-finder's flow is untouched.</li>
+    </ul>
+  </div>
+
+  <!-- BUILD ORDER -->
+  <div class="card" id="order">
+    <h2><span class="icon">≡</span> build order — 7 sequenced, independently-testable steps</h2>
+    <div class="steps">
+      <div class="bo"><div class="num"></div><div class="body"><div class="t">Tool-schema registry + Gemini config <span class="tag2">agentx_contracts</span></div><div class="d">Pure additive — nothing consumes it yet. Includes the lead-finder entries (to reproduce today's tools exactly).</div></div></div>
+      <div class="bo"><div class="num"></div><div class="body"><div class="t">Generalize the Hermes runner <span class="tag2">agentx_kernel</span></div><div class="d">Build tools + risk map + prompt from the mandate. Regression-lock lead-finder.</div></div></div>
+      <div class="bo"><div class="num"></div><div class="body"><div class="t">Unwire the run-loop couplings <span class="tag2">agentx_kernel</span></div><div class="d">Sim-playbook resolver, read-result handler registry, sim-native transactions branch.</div></div></div>
+      <div class="bo"><div class="num"></div><div class="body"><div class="t">The two adapters <span class="tag2">agentx_syscall</span></div><div class="d">ingest_document + export_ledger, register them, ship test fixtures, add the parsing deps.</div></div></div>
+      <div class="bo"><div class="num"></div><div class="body"><div class="t">The mandate itself <span class="tag2">agentx_mandate</span></div><div class="d">2 faculties, books_prep MandateType, the sim playbook, the domain pack, skill packs.</div></div></div>
+      <div class="bo"><div class="num"></div><div class="body"><div class="t">Wire-up + Gemini factory <span class="tag2">api / kernel bootstrap</span></div><div class="d">Register books-prep in the catalog; build_faculty_transport toggle; additive studio field.</div></div></div>
+      <div class="bo"><div class="num"></div><div class="body"><div class="t">Tests + the full gate <span class="tag2">whole repo</span></div><div class="d"><code>pytest</code> · <code>mypy --strict</code> · <code>ruff</code> · <code>lint-imports</code> all green; lead-finder proven unbroken.</div></div></div>
+    </div>
+  </div>
+
+  <!-- RISKS -->
+  <div class="card" id="risk">
+    <h2><span class="icon">⚠</span> risks worth your eyes</h2>
+    <table>
+      <tr><th>Risk</th><th>How v0 handles it</th></tr>
+      <tr><td><b>Bank-PDF layouts vary</b> (SBI vs HDFC vs ICICI parse differently)</td><td>Deterministic table extraction + the <b>balance-continuity rule</b> catches mis-parses + the <b>CA queue</b> catches the rest. Per-bank profiles grow in the domain pack — not a blocker.</td></tr>
+      <tr><td><b>Confidence threshold</b> — too high floods the queue, too low risks errors</td><td>Start at 0.8; it's a per-instance setting, not hard-coded; the gym + CA corrections calibrate it over time.</td></tr>
+      <tr><td><b>The one bit of imperative shaping</b> (lead-finder's <code>search_leads</code> tool)</td><td>Kept as an isolated, named arg-normalizer kernel-side. If awkward, fold it into the lead-finder skill pack. Contained either way.</td></tr>
+      <tr><td><b>Parked-run resume across new syscalls</b></td><td><code>export_ledger</code> parks at L1; a test confirms the existing resume path replays it correctly.</td></tr>
+    </table>
+    <div class="note info">Full written spec (the source of truth for implementation): <code>docs/superpowers/specs/2026-06-21-books-prep-and-harness-generalization-design.md</code></div>
+  </div>
+
+  <div class="foot">Agent-X-OS · books-prep design · awaiting your approval → then a branch off <code>main</code> and implementation.</div>
+
+</div>
+
+<script>
+  document.querySelectorAll('.topbar .nav a').forEach(a=>{
+    a.addEventListener('click',e=>{
+      const t=document.querySelector(a.getAttribute('href'));
+      if(t){e.preventDefault();t.scrollIntoView({behavior:'smooth',block:'start'});}
+    });
+  });
+</script>
+</body>
+</html>
