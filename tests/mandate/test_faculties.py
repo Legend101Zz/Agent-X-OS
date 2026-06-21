@@ -27,10 +27,12 @@ def _ctx(*, error: str | None = None) -> FacultyContext:
     )
 
 
-def test_faculty_library_contains_exactly_phase1_faculties() -> None:
-    # Phase-1 faculties + Phase-3 (Creator, BLUEPRINT §5) additions:
-    # conversation + scheduling are the Creator's interview + cadence faculties.
-    assert set(FACULTY_LIBRARY) == {
+def test_faculty_library_contains_phase1_phase3_and_phase12_faculties() -> None:
+    # Phase-1 (lead-finder): research, enrichment, judgment, memory-craft, escalation
+    # Phase-3 (Creator, BLUEPRINT §5): conversation, scheduling
+    # Phase-12 (mandate-discovery, HERMES_BUILD_PLAN §Phase 12): the 6 F1-F6 faculties
+    #   (F7 escalation is the shared library entry above).
+    expected = {
         "research",
         "enrichment",
         "judgment",
@@ -38,7 +40,17 @@ def test_faculty_library_contains_exactly_phase1_faculties() -> None:
         "escalation",
         "conversation",
         "scheduling",
+        "mandate_discovery_community_source",
+        "mandate_discovery_pain_extraction",
+        "mandate_discovery_demand_clustering",
+        "mandate_discovery_competitor_stress",
+        "mandate_discovery_buyer_mapping",
+        "mandate_discovery_portfolio_builder",
     }
+    assert set(FACULTY_LIBRARY) == expected, (
+        f"faculty library drifted: missing={expected - set(FACULTY_LIBRARY)}; "
+        f"extra={set(FACULTY_LIBRARY) - expected}"
+    )
 
 
 def test_each_faculty_binds_hermes_with_effectful_tools_to_gateway_and_scratch_memory() -> None:
