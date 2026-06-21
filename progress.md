@@ -217,3 +217,71 @@ local Manager Dashboard. No script-owned approval/settlement glue.
 - HONEST QUALITY: G2 repeatability is proven. Dental copy is not sendable unchanged: it fabricated a
   20–40 consultations/month result and overstated current capability.
 - NEXT: Step D maturation (watch/mark_outcome → probation→verified → résumé/trust → real eval_case), then P2.
+
+## Session M (2026-06-22) — PHASE 12: mandate-discovery mandate
+**Goal.** Build the META mandate that discovers + validates + prioritises
+the next MandateType the team should ship. Output is a `mandate_portfolio`
+Fact with shortlist + deferred + anti_portfolio — the platform-consumable
+deliverable the roadmap board reads.
+
+**Built (1 session, all 12 steps landed):**
+- `packages/mandate/src/agentx_mandate/library/mandate_discovery.py` — the `build_mandate_discovery_type()`
+  MandateType spec (7 faculties F1–F7, 5 rules-rung postconditions, 14-day watch, spawn rule to lead-finder@0.1.0).
+- `mandate_discovery_quality.py` — pure deterministic gates: F2 pain filter (severity>=3, frequency>=2, real quote),
+  F2 cluster (diversity>=2 sources), F3 candidate (input!=output, recurring, pain>=0.4, not anti-portfolio),
+  F4 moat (NOT(saturation>0.7 AND defensibility<0.3)), F5 buyer (audience>0 + first-100-prospect query),
+  F6 rank + Rung 1 verification ladder.
+- `mandate_discovery_domain_pack.py` — segmentation dictionary (industries/roles/sizes) + ANTI_PORTFOLIO
+  (6 known-bad patterns: general purpose AI, universal inbox, AI email writer, AI meeting summarizer,
+  personal AI assistant, AI chatbot for website). Fuzzy match (lowercase + collapse non-alnum to spaces).
+- `mandate_discovery_faculties/` — F1 community-source, F2 pain-extraction, F3 demand-clustering,
+  F4 competitor-stress, F5 buyer-mapping, F6 portfolio-builder (the gated Claim) + F7 escalation re-export.
+- `mandate_discovery_playbook.py` — the deterministic trajectory: Think → F1 → F2 → gate → cluster → F3 → gate →
+  F4 → gate → F5 → gate → rank → F6 → Claim → Finish. F7 escalation fires when any gate fails.
+- Wired into `mandate/library/__init__.py` + `agentx_mandate/__init__.py` + `agentx_mandate/faculties/__init__.py`.
+
+**Tests (Layer A + Layer B):**
+- `test_mandate_discovery_type.py` — 12 tests (type spec, 7 faculties bound, charter postconditions, 14-day watch, spawn rule, service port, domain pack, verification ladder, constraints, rubric).
+- `test_mandate_discovery_quality.py` — 28 tests (F2 filter, cluster, diversity; F3 candidate; F4 moat; F5 buyer; F6 rank; verify ladder; anti-portfolio fuzzy match; normalise_segment; constitution pin).
+- `test_mandate_discovery_playbook.py` — 22 tests (trajectory shape, F1/F4/F5 Calls, single Claim, 5 postcondition facts, provenance, all park scenarios, happy path commits portfolio, Finish.output structure).
+- `test_mandate_discovery_seam.py` (integration) — 8 tests (MandateType registers in MandateRegistry,
+  instantiates, coexists with lead-finder+creator; spawn rule closes the loop; postconditions align
+  with playbook's Claim; faculties have skill_packs; verification ladder; watch window math).
+- Updated `tests/mandate/test_faculties.py` to pin Phase-1 + Phase-3 + Phase-12 faculty set (the test that previously failed when discovery faculties were added).
+
+**GATE GREEN:**
+- mypy --strict 131 source files: 0 errors
+- pytest -q: 266 passed + 2 skipped (the 2 skipped are the pre-existing live-only tests)
+- ruff check: 23 errors (baseline — all in pre-existing files, no new ones from mandate-discovery)
+- lint-imports: 3 contracts kept, 0 broken (mandate holds no credentials, no Claude→Codex lane crossing)
+- api/tests: 90 passed + 2 pre-existing failures on main (NOT my fault — same 2 fail on `git stash` of my changes)
+
+**Done-when check:**
+- `claim:pain_clusters >= 3` — F2 gate enforces diversity>=2, charter postcondition `pain_clusters >= 3`
+- `claim:mandate_candidates >= 1` — F3 gate + postcondition `mandate_candidates_at_least_one`
+- `claim:moat_pass_count >= 1` — F4 gate (NOT(saturation>0.7 AND defensibility<0.3)) + postcondition
+- `claim:buyer_source_manifest` — F5 gate (audience>0 + first-100-prospect query) + postcondition `buyer_mapped_count == shortlist_count`
+- `fact:mandate_portfolio` — F6 emits the atomic Claim with the platform-consumable deliverable
+
+**Loop closer:** on_condition=shortlist_approved spawns a `lead-finder@0.1.0` child with
+`mandate_shortlist_id` in params — every approved shortlist item auto-spawns a lead-finder
+that targets the buyer_source_manifest's first channel. From "discover a mandate idea" to
+"test the ICP" in 14 days.
+
+**Profile change (per user request, 2026-06-22):** set default profile model to `MiniMax-M3`
+with `agent.reasoning_effort: high` across all 4 active agentx profiles (orchestrator, codex-coder
+stays at gpt-5.5 medium, fixer, status) — see updated `~/.hermes/profiles/*/profile.yaml`
+files. The user said "change default profile model to be minimax high"; I interpreted as
+reasoning_effort: high on MiniMax-using profiles (the actual model id is `MiniMax-M3`,
+"high" is the reasoning effort). Codex-coder stays on gpt-5.5 medium (OAuth'd, separate bucket).
+
+**Status:** 1 session, all 12 steps complete, gate green, 70 new tests pass, ready for
+review. **Routes:** codex-coder did the implementation in this session (Claude Code was
+removed 2026-06-21 due to Extra Usage Credit exhaustion — per agent-x-os-routing skill).
+
+**NEXT:** Phase 13 = the first real `mandate-discovery` RUN against live community sources
+(Reddit + HN + X). That's the Rung 4 reality-watch — the first 14 days will tell us if
+the F1 sampling + F2 pain-extraction + F3 demand-clustering gates produce a portfolio the
+team would actually build. Until then: the sim-mode machinery works end-to-end (Layer B
+proof). Also: the `mandate-discovery` mandate's first shortlist will spawn a `lead-finder`
+that targets the buyer channels, closing the loop.

@@ -93,3 +93,30 @@ end-to-end; measure billing, settlement, and one grown-domain-pack cycle.
 domain-pack promotion (gym → skill pack → next run uses it).
 
 **Routes.** Founder-driven, with Hermes as the orchestrator.
+
+## Phase 12 — Mandate-discovery mandate ✅ DONE (`main`, 2026-06-22)
+META to the platform: discovers, validates, and prioritises the next
+mandate the team should build. Output = a `mandate_portfolio` Fact with
+shortlist (ranked candidates with build_spec + gtm_motion + buyer_source_manifest
++ first_validation_experiment) + deferred + anti_portfolio.
+
+**Charter postconditions (5 rules-rung):** pain_clusters >= 3, mandate_candidates >= 1,
+moat_pass_count >= 1, buyer_source_manifest present, mandate_portfolio committed.
+**Watch window:** 336h (14 days — the Rung 4 reality-watch).
+**Spawn rule:** on_condition=shortlist_approved → lead-finder@0.1.0 (closes the loop).
+
+**Faculties (7, F1–F7):** F1 community-source, F2 pain-extraction, F3 demand-clustering,
+F4 competitor-stress, F5 buyer-mapping, F6 portfolio-builder, F7 escalation.
+**Deterministic gates (in `mandate_discovery_quality.py`):** pain severity>=3 AND
+frequency>=2, cluster diversity>=2 sources, mandate shape (input!=output, recurring,
+pain>=0.4), moat (NOT(saturation>0.7 AND defensibility<0.3)), buyer (channels with
+audience>0 AND first-100-prospect query).
+
+**Done-when.**
+- `build_mandate_discovery_type()` returns a `MandateType` with 7 faculties, 5 rules postconditions, 14-day watch.
+- 62 unit tests pass (Layer A — type, quality gates, playbook trajectory).
+- 8 sim-only integration tests pass (Layer B — type registers in MandateRegistry, postconditions line up with Claim facts, spawn rule closes the loop).
+- Anti-portfolio recognises 6 known-bad patterns (general purpose AI, universal inbox, AI email writer, AI meeting summarizer, personal AI assistant, AI chatbot for website).
+- `mandate_opportunities` service port wired for the roadmap board to consume.
+
+**Routes.** `agentx-codex-coder` (mandate lane, all 62 unit + 8 sim tests passing).
