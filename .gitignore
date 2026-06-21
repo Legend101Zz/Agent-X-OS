@@ -25,6 +25,8 @@ node_modules/
 dashboard/.next/
 dashboard/out/
 dashboard/dist/
+dashboard/tsconfig.tsbuildinfo
+dashboard/tests/.coverage
 
 # --- promptfoo ---
 .promptfoo/

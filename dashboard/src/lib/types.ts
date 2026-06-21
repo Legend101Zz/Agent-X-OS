@@ -780,4 +780,74 @@ export function compilerStateLabel(state: CompilerScaffoldState): string {
     default:
       return state;
   }
+
+// Providers / Connectors view (C12) — view models for the §5 Providers row.
+//
+// The C11 backend extends `GET /capabilities` with three new top-level fields:
+//   * `providers`         — per-provider reachability + credential presence
+//   * `transport`         — outbound email transport configuration + live gate
+//   * `model_routing`     — which model the kernel + judge use
+//
+// These are VIEW models only. `packages/contracts` stays frozen. The dashboard
+// maps the raw JSON into these shapes; downstream sections can rely on the
+// discriminated `kind` and `configured` flags to render the right pill.
+// ============================================================================
+
+/** A single row in the per-provider reachability table. */
+export interface ProviderReachability {
+  /** Canonical provider name (exa, firecrawl, email, ...). */
+  name: string;
+  /** "research" (Exa/Firecrawl) or "outbound" (email transport). */
+  kind: "research" | "outbound";
+  /** Whether the relevant secret/env is present in `Settings`. */
+  configured: boolean;
+  /** Whether the provider's own `health_check` reports it usable RIGHT NOW. */
+  reachable: boolean;
+  /** Outbound-only: whether the live-send gate (`RUN_LIVE_EMAIL`) is on. */
+  live_gated?: boolean;
+  /** Optional error from the most recent health probe. */
+  error?: string | null;
+}
+
+/** Non-secret shape of the configured outbound email transport. */
+export interface EmailTransportDetails {
+  host?: string;
+  port?: number | string;
+  username?: string;
+  default_from?: string;
+  from_name?: string;
+}
+
+/** Outbound email transport configuration + live-send gate. */
+export interface TransportStatus {
+  configured: boolean;
+  /** Transport class name (e.g. `smtp`); null when not configured. */
+  name: string | null;
+  /** Whether the live-send gate (`RUN_LIVE_EMAIL`) is on. */
+  live_gated: boolean;
+  /** Non-secret configuration shape. Always present, may be empty. */
+  details: EmailTransportDetails;
+}
+
+/** Model routing — which model runs faculties, which runs the judge. */
+export interface ModelRoutingEntry {
+  provider?: string;
+  via?: string;
+  configured: boolean;
+  base_url?: string;
+  model_id?: string;
+}
+
+export interface ModelRoutingStatus {
+  faculty_model: ModelRoutingEntry;
+  judge_model: ModelRoutingEntry;
+  checked_at: string;
+}
+
+/** The full /capabilities response, with the C11 health-detail extensions. */
+export interface CapabilitiesWithHealth {
+  capabilities: Capability[];
+  providers: ProviderReachability[];
+  transport: TransportStatus;
+  model_routing: ModelRoutingStatus;
 }
