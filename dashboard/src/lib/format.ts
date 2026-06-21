@@ -156,6 +156,88 @@ export function evalOriginTone(
   }
 }
 
+/** Human-readable label for an eval-case origin (used in the UI). */
+export function evalOriginLabel(origin: EvalCase["origin"] | string | undefined): string {
+  if (!origin) return "—";
+  switch (origin) {
+    case "synthetic":
+      return "synthetic";
+    case "real":
+      return "real";
+    case "human_reviewed":
+      return "human-reviewed";
+    default:
+      return origin;
+  }
+}
+
+/** Tone for a promotion-state pill on an eval case. */
+export function promotionTone(
+  promotion: EvalCase["promotion"] | string | undefined,
+): "good" | "warn" | "hot" | "info" | "neutral" {
+  switch (promotion) {
+    case "eligible":
+      return "good";
+    case "blocked":
+      return "hot";
+    case "needs_review":
+      return "warn";
+    default:
+      return "neutral";
+  }
+}
+
+/** Human-readable label for the eval-case promotion state. */
+export function promotionLabel(
+  promotion: EvalCase["promotion"] | string | undefined,
+): string {
+  if (!promotion) return "—";
+  switch (promotion) {
+    case "eligible":
+      return "eligible";
+    case "blocked":
+      return "blocked · synthetic";
+    case "needs_review":
+      return "needs review";
+    default:
+      return promotion;
+  }
+}
+
+/** Tone for the eval-case run-state pill (graded | passed | failed | pending). */
+export function evalStatusTone(
+  status: string | undefined,
+): "good" | "warn" | "hot" | "info" | "neutral" {
+  switch (status) {
+    case "passed":
+      return "good";
+    case "graded":
+      return "info";
+    case "failed":
+      return "hot";
+    case "pending":
+    case "queued":
+      return "warn";
+    default:
+      return "neutral";
+  }
+}
+
+/** Score → tone band (0..1). Higher is better. */
+export function scoreTone(score: number | null | undefined): "good" | "info" | "warn" | "hot" | "neutral" {
+  if (score === null || score === undefined || Number.isNaN(score)) return "neutral";
+  if (score >= 0.8) return "good";
+  if (score >= 0.6) return "info";
+  if (score >= 0.4) return "warn";
+  return "hot";
+}
+
+/** Two-decimal score formatter. Returns "—" for nullish / NaN. */
+export function formatScore(score: number | null | undefined): string {
+  if (score === null || score === undefined || Number.isNaN(score)) return "—";
+  return score.toFixed(2);
+}
+
 // ---------- Journal kind ----------
 export function journalKindTone(kind: string | undefined): "good" | "warn" | "hot" | "info" | "neutral" {
   if (!kind) return "neutral";
