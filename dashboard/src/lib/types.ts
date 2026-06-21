@@ -614,3 +614,53 @@ export interface LiveRibbonEvent {
   instance_id?: string;
   run_id?: string;
 }
+
+// ============================================================================
+// Runs viewer (C6) — Runs list + Trace viewer view models.
+// These are DASHBOARD view models, NOT contracts. packages/contracts stays
+// frozen. They are the shapes the new Runs UI consumes; the existing
+// `fetchRun`/`fetchRunRaw`/`fetchRuns` helpers return JSON that maps here.
+// ============================================================================
+
+/** A claimed fact surfaced in the Inspector's "claimed facts" panel. */
+export interface ClaimedFact {
+  id: string;
+  subject: string;
+  predicate: string;
+  object: string;
+  confidence: number;
+  run_id: string | null;
+  evidence: string[];
+  committed_at: string;
+}
+
+/** Settlement summary block on the Run detail view. */
+export interface SettlementSummary {
+  /** Run state, used for the status pill. */
+  status: RunSummary["state"];
+  /** Cost incurred so far (USD). */
+  cost: number;
+  /** Expected value the run is targeting (USD). */
+  expected_value: number;
+  /** 0-100, the run's progress. */
+  progress: number;
+  /** Optional ISO timestamp of when the run settled, if settled. */
+  settled_at: string | null;
+  /** Optional billing amount (USD) for the settled run, if any. */
+  billing_amount: number | null;
+}
+
+/** Filter shape for the Runs list page. */
+export interface RunListFilters {
+  state?: RunSummary["state"] | string;
+  instance_id?: string;
+  query?: string;
+}
+
+/** The shape consumed by the Runs list view (rows + counts). */
+export interface RunsListView {
+  runs: RunSummary[];
+  total: number;
+  filtered: number;
+  by_state: Record<RunSummary["state"], number>;
+}
