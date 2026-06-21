@@ -21,8 +21,11 @@ export function generateStaticParams() {
   return DOC_REGISTRY.map((d) => ({ slug: d.slug }));
 }
 
-export function generateMetadata({ params }: { params: { slug: string } }) {
-  const doc = getDoc(params.slug);
+type DocRouteParams = Promise<{ slug: string }>;
+
+export async function generateMetadata({ params }: { params: DocRouteParams }) {
+  const { slug } = await params;
+  const doc = getDoc(slug);
   if (!doc) return { title: "Doc not found — Agent-X" };
   return {
     title: `${doc.title} — Agent-X Docs`,
@@ -30,12 +33,13 @@ export function generateMetadata({ params }: { params: { slug: string } }) {
   };
 }
 
-export default function DocDetailPage({
+export default async function DocDetailPage({
   params,
 }: {
-  params: { slug: string };
+  params: DocRouteParams;
 }) {
-  const doc = getDoc(params.slug);
+  const { slug } = await params;
+  const doc = getDoc(slug);
   if (!doc) {
     notFound();
   }
