@@ -155,11 +155,13 @@ def _research_row(
                 import asyncio
 
                 try:
-                    reachable = bool(asyncio.run(provider.health_check()))
+                    asyncio.get_running_loop()
                 except RuntimeError:
-                    # No event loop in this thread (e.g. sync test). Fall back to inspecting
-                    # ``_api_key`` directly via duck-typing — keeps the section usable from both
-                    # sync and async call sites.
+                    reachable = bool(asyncio.run(provider.health_check()))
+                else:
+                    # We are already inside an async test/app event loop. This synchronous
+                    # diagnostics builder cannot await here, so fall back to the same
+                    # non-secret configured-key check without constructing an unawaited coroutine.
                     reachable = bool(getattr(provider, "_api_key", ""))
             except Exception as exc:  # noqa: BLE001 - diagnostics surface, never crash
                 reachable = False

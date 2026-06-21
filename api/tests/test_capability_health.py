@@ -29,6 +29,7 @@ import pytest
 from agentx_contracts.config import Settings
 from agentx_contracts.config import get_settings as _get_settings_cached
 from httpx import ASGITransport, AsyncClient
+from pydantic import SecretStr
 
 from agentx_api.app import create_app
 from agentx_api.capability_health import (
@@ -38,6 +39,28 @@ from agentx_api.capability_health import (
 )
 
 TEST_TOKEN = "test-operator-token"
+
+
+def _blank_settings(**overrides: Any) -> Settings:
+    """Settings with credential/config fields explicitly blanked so unit tests are env-independent."""
+    values: dict[str, Any] = {
+        "exa_api_key": None,
+        "firecrawl_api_key": None,
+        "minimax_api_key": None,
+        "openrouter_api_key": None,
+        "faculty_model_id": "MiniMax-M3",
+        "faculty_model_base_url": "http://localhost:8080/v1",
+        "judge_model_id": "openrouter/judge",
+        "smtp_host": "",
+        "smtp_port": 0,
+        "smtp_username": "",
+        "smtp_password": None,
+        "email_from": "",
+        "email_from_name": "",
+        "run_live_email": False,
+    }
+    values.update(overrides)
+    return Settings(**values)
 
 
 # ---- helpers -----------------------------------------------------------------------------------
@@ -94,7 +117,7 @@ def test_unit_provider_reachability_emits_research_and_email_rows() -> None:
     The email row is always present too — never omitted — so the UI can render an explicit
     "not configured" pill instead of a missing row.
     """
-    settings = Settings()
+    settings = _blank_settings()
     rows = provider_reachability(settings)
     names = {row["name"] for row in rows}
     assert {"exa", "firecrawl", "email"}.issubset(names)
@@ -109,9 +132,7 @@ def test_unit_provider_reachability_emits_research_and_email_rows() -> None:
 
 def test_unit_provider_reachability_with_exa_key_marks_exa_configured() -> None:
     """Setting the Exa key flips ``exa.configured`` True; Firecrawl + email stay False."""
-    from pydantic import SecretStr
-
-    settings = Settings(exa_api_key=SecretStr("test-exa-key"))
+    settings = _blank_settings(exa_api_key=SecretStr("test-exa-key"))
     rows = provider_reachability(settings)
     by_name = {row["name"]: row for row in rows}
 
@@ -125,7 +146,7 @@ def test_unit_provider_reachability_with_exa_key_marks_exa_configured() -> None:
 
 def test_unit_transport_status_with_no_transport_reports_not_configured() -> None:
     """No SMTP/Resend settings → ``transport.configured`` is False and details is empty."""
-    settings = Settings()
+    settings = _blank_settings()
     snapshot = transport_status(settings)
 
     assert snapshot["configured"] is False
@@ -142,8 +163,6 @@ def test_unit_transport_status_with_smtp_settings_reports_smtp_details() -> None
     We exercise the SMTP path here (rather than Resend) because the SMTP settings have non-trivial
     details (host/port/username) that the section is supposed to surface.
     """
-    from pydantic import SecretStr
-
     settings = Settings(
         smtp_host="smtp.example.com",
         smtp_port=587,
@@ -174,7 +193,7 @@ def test_unit_transport_status_with_smtp_settings_reports_smtp_details() -> None
 
 def test_unit_model_routing_reports_faculty_and_judge_shape() -> None:
     """Both routing entries are present with the documented keys; ``configured`` reflects key presence."""
-    settings = Settings()
+    settings = _blank_settings()
     routing = model_routing_status(settings)
 
     assert set(routing) >= {"faculty_model", "judge_model", "checked_at"}
@@ -189,9 +208,7 @@ def test_unit_model_routing_reports_faculty_and_judge_shape() -> None:
 
 def test_unit_model_routing_with_keys_marks_configured() -> None:
     """When the faculty + judge keys are present, both report ``configured: True`` with the model id."""
-    from pydantic import SecretStr
-
-    settings = Settings(
+    settings = _blank_settings(
         minimax_api_key=SecretStr("test-minimax-key"),
         faculty_model_id="MiniMax-M2",
         faculty_model_base_url="https://api.minimax.io/v1",
