@@ -449,6 +449,75 @@ async def instance_detail(state: DashboardState, instance_id: str) -> dict[str, 
     }
 
 
+async def instance_memory(state: DashboardState, instance_id: str) -> dict[str, Any]:
+    """Read-side projection for the Inspector's Memory tab (BLUEPRINT §8 row 1).
+
+    Returns the instance's committed heap facts in a UI-ready envelope:
+
+        {"instance_id": "...", "facts": [{"id": "...", "subject": "...", "predicate": "...",
+                                           "object": "...", "confidence": 0.0..1.0,
+                                           "status": "probation"|"promoted"|"retired",
+                                           "source": "agent-inferred"|...,
+                                           "provenance": {"run_id": "...", "evidence": [...], "note": ...},
+                                           "created_at": "ISO-8601", "updated_at": "ISO-8601 | None"},
+                                          ...]}
+
+    Status semantics (per ``agentx_contracts.enums.FactStatus``):
+      - ``probation``: just settled; not yet verified by reality.
+      - ``promoted``: verified by reality (the deferred-settlement watch fired confirming it).
+        This is what the spec calls "verified".
+      - ``retired``: reality contradicted the fact; it's been removed from the working set.
+
+    Returns the *missing* envelope (``{"missing": True, "instance_id": ..., "facts": []}``)
+    when:
+      - the instance does not exist at all, OR
+      - the instance exists but the projection store has no ``heap_fact`` docs yet.
+
+    The route layer translates this envelope into HTTP 404 — the reader itself never raises
+    for these conditions, so a partial system (instance present, no settled runs yet) can
+    render an EmptyState instead of a 500.
+    """
+    instance = await state.get_doc(c.MANDATE_INSTANCE, instance_id)
+    raw_facts = await state.collection(c.HEAP_FACT, {"instance_id": instance_id})
+    if instance is None and not raw_facts:
+        return {"missing": True, "instance_id": instance_id, "facts": []}
+    if not raw_facts:
+        return {"missing": True, "instance_id": instance_id, "facts": []}
+    facts = [_memory_fact(doc) for doc in raw_facts]
+    return {"instance_id": instance_id, "facts": facts}
+
+
+def _memory_fact(doc: dict[str, Any]) -> dict[str, Any]:
+    """Project one ``heap_fact`` doc into the UI-ready Memory tab shape.
+
+    The contract ``Fact`` model already serializes to a stable JSON shape via
+    ``HeapProjector`` (``fact.model_dump(mode="json")``), so this projection is mostly a
+    pass-through with one deliberate omission: ``decay_at`` is internal GC bookkeeping and
+    leaks implementation details into the public API, so it is dropped here. ``instance_id``
+    is also dropped because the route is per-instance — repeating it on every fact is noise
+    on the wire and in the Memory tab UI.
+    """
+    provenance_raw = doc.get("provenance") or {}
+    provenance = {
+        "run_id": provenance_raw.get("run_id", ""),
+        "evidence": list(provenance_raw.get("evidence") or []),
+    }
+    if provenance_raw.get("note") is not None:
+        provenance["note"] = provenance_raw["note"]
+    return {
+        "id": doc.get("id", ""),
+        "subject": doc.get("subject", ""),
+        "predicate": doc.get("predicate", ""),
+        "object": doc.get("object", ""),
+        "confidence": _float(doc.get("confidence"), 0.0),
+        "status": doc.get("status", "probation"),
+        "source": doc.get("source", "agent-inferred"),
+        "provenance": provenance,
+        "created_at": doc.get("created_at"),
+        "updated_at": doc.get("updated_at"),
+    }
+
+
 async def run_summaries(
     state: DashboardState,
     *,
@@ -674,6 +743,7 @@ __all__ = [
     "capability_rows",
     "create_state",
     "instance_detail",
+    "instance_memory",
     "instance_rows",
     "manual_queue",
     "run_detail",

@@ -7,6 +7,7 @@ Endpoints (Phase 1 dashboard operability):
     GET  /system/overview
     GET  /instances
     GET  /instances/{id}
+    GET  /instances/{id}/memory               (C3 — heap browse for Inspector Memory tab)
     GET  /runs?state=&instance_id=
     GET  /runs/{run_id}
     GET  /approvals?instance_id=
@@ -68,6 +69,7 @@ from .state import (
     capability_rows,
     create_state,
     instance_detail,
+    instance_memory,
     instance_rows,
     manual_queue,
     run_detail,
@@ -437,6 +439,28 @@ def _install_routes(app: FastAPI) -> None:
     @app.get("/instances/{instance_id}")
     async def get_instance(instance_id: str, request: Request) -> dict[str, Any]:
         return await instance_detail(_state(request), instance_id)
+
+    @app.get("/instances/{instance_id}/memory")
+    async def get_instance_memory(
+        instance_id: str, request: Request
+    ) -> JSONResponse:
+        """Per-instance HEAP browse endpoint for the Inspector Memory tab (BLUEPRINT §8 row 1).
+
+        READ-ONLY. Returns the instance's committed heap facts in a UI-ready shape
+        (subject/predicate/object, confidence, provenance, status) so the Memory tab
+        doesn't have to reverse-engineer the kernel projection shape.
+
+        Graceful 404 when the projection store has no fact docs yet (instance missing or
+        just no settled runs): the spec treats both as "no fact docs yet" so the UI can
+        render an EmptyState without learning about the kernel's bookkeeping state.
+        """
+        body = await instance_memory(_state(request), instance_id)
+        if body.get("missing"):
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                content=body,
+            )
+        return JSONResponse(status_code=status.HTTP_200_OK, content=body)
 
     @app.get("/runs")
     async def get_runs(
