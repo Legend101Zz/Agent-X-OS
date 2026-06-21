@@ -545,6 +545,189 @@ def manual_queue(state: DashboardState) -> list[dict[str, Any]]:
     return [task.to_json() for task in state.manual_tasks.list_open()]
 
 
+# ---- Economy / P&L projections (BLUEPRINT §8 row 2) ----------------------------
+
+
+async def instance_economy(state: DashboardState, instance_id: str) -> dict[str, Any]:
+    """Per-instance P&L envelope for the Economy view + Home P&L tile.
+
+    Aggregates the kernel's two existing projections — ``billing_line`` (one doc per
+    settled run, written by ``BillingProjector`` from ``RunSettled.billing_amount``) and
+    ``resume`` (the per-instance trust score maintained by ``ResumeProjector`` from
+    ``RunSettled.trust_delta``) — into the shape the UI consumes:
+
+        {
+          "instance_id": "...",
+          "billing_total": 250.0,
+          "currency": "INR",
+          "settled_count": 1,
+          "trust_score": 1,
+          "settlements": [{"run_id": "...", "amount": 250.0, "ts": "ISO-8601"}, ...]
+        }
+
+    Returns the *missing* envelope ``{"missing": True, "instance_id": ...}`` when:
+      - the instance does not exist at all, OR
+      - the instance exists but has no ``billing_line`` docs yet (no settled runs).
+
+    Both are treated identically per the spec — a brand-new instance and a missing one
+    render the same EmptyState, and the UI distinguishes them via the `missing` flag.
+    The route layer translates this into HTTP 404.
+
+    READ-ONLY. The projectors remain the sole writers of ``billing_line`` and
+    ``resume`` (invariant #1 — no fact without a commit). This reader never writes.
+    """
+    instance = await state.get_doc(c.MANDATE_INSTANCE, instance_id)
+    billing_lines = await state.collection(c.BILLING_LINE, {"instance_id": instance_id})
+    if instance is None and not billing_lines:
+        return {"missing": True, "instance_id": instance_id}
+    if not billing_lines:
+        return {"missing": True, "instance_id": instance_id}
+
+    resume = await state.get_doc(c.RESUME, instance_id)
+    trust_score = _int(resume.get("trust_score"), 0) if isinstance(resume, dict) else 0
+
+    settlements: list[dict[str, Any]] = []
+    total = 0.0
+    currency = "INR"
+    for line in billing_lines:
+        amount = _float(line.get("amount"))
+        total += amount
+        # All billing lines minted by BillingProjector carry currency="INR"; keep the
+        # first observed value so a future multi-currency projector surfaces it.
+        cur_value = line.get("currency")
+        if isinstance(cur_value, str) and cur_value:
+            currency = cur_value
+        ts_value = line.get("ts")
+        run_id_value = line.get("run_id")
+        settlements.append(
+            {
+                "run_id": str(run_id_value) if run_id_value is not None else "",
+                "amount": amount,
+                "ts": str(ts_value) if ts_value is not None else "",
+            }
+        )
+    # Newest settlement first — the Economy view shows a transaction ledger.
+    settlements.sort(key=lambda s: s["ts"], reverse=True)
+    return {
+        "instance_id": instance_id,
+        "billing_total": total,
+        "currency": currency,
+        "settled_count": len(billing_lines),
+        "trust_score": trust_score,
+        "settlements": settlements,
+    }
+
+
+async def economy_units(state: DashboardState) -> dict[str, Any]:
+    """Per-business-unit rollup for the Economy view.
+
+    A "business unit" is the ``customer_id`` field on ``MandateInstance`` (the only
+    customer/tenant identifier on the contract — there is no separate
+    ``business_unit`` field). Multiple instances can belong to the same customer, and
+    their billing + trust score roll up into one unit. This matches the UI's
+    "per-customer P&L" view in the Economy section of the spec (§6 Economy).
+
+    The shape the UI consumes:
+
+        {
+          "units": [
+            {
+              "customer_id": "...",
+              "instance_count": 2,
+              "instance_ids": ["...", "..."],
+              "billing_total": 425.0,
+              "settled_count": 2,
+              "trust_score": 3,
+              "currency": "INR"
+            },
+            ...
+          ],
+          "totals": {"billing_total": ..., "settled_count": ..., "currency": "INR"}
+        }
+
+    Always returns 200 with ``units: []`` and zero totals when no instances exist
+    — a fresh boot is a real condition the UI renders as an EmptyState, not an error.
+
+    READ-ONLY. Aggregates from ``billing_line`` + ``resume`` + ``mandate_instance``;
+    never writes.
+    """
+    instances = await state.collection(c.MANDATE_INSTANCE)
+    # Pre-load every billing_line and resume doc once so the per-customer rollup is
+    # O(N) reads instead of O(N²). For a small Phase-1 fleet this is fine; if the
+    # billing volume grows past a few thousand docs, swap the inner loop for a Mongo
+    # aggregate ($group by instance_id) — the projection store abstracts that.
+    all_billing = await state.collection(c.BILLING_LINE)
+    all_resumes = await state.collection(c.RESUME)
+
+    billing_by_instance: dict[str, list[dict[str, Any]]] = {}
+    for line in all_billing:
+        key = str(line.get("instance_id", ""))
+        if key:
+            billing_by_instance.setdefault(key, []).append(line)
+
+    trust_by_instance: dict[str, int] = {}
+    for resume_doc in all_resumes:
+        instance_id_value = resume_doc.get("instance_id")
+        if isinstance(instance_id_value, str) and instance_id_value:
+            trust_by_instance[instance_id_value] = _int(
+                resume_doc.get("trust_score"), 0
+            )
+
+    # Bucket instances by customer_id. Preserve insertion order for stable UI tests.
+    by_customer: dict[str, list[dict[str, Any]]] = {}
+    for instance in instances:
+        customer_id = str(instance.get("customer_id", ""))
+        if not customer_id:
+            # A MandateInstance without a customer_id is malformed for the Economy view
+            # — skip rather than fabricate a bucket key. Logged via the journal's
+            # mandate_instance projection audit later if needed.
+            continue
+        by_customer.setdefault(customer_id, []).append(instance)
+
+    units: list[dict[str, Any]] = []
+    grand_total = 0.0
+    grand_count = 0
+    currency = "INR"
+    for customer_id, customer_instances in by_customer.items():
+        instance_ids = [
+            str(instance.get("id", ""))
+            for instance in customer_instances
+            if instance.get("id") is not None
+        ]
+        unit_billing_total = 0.0
+        unit_settled_count = 0
+        unit_trust = 0
+        for instance_id in instance_ids:
+            for line in billing_by_instance.get(instance_id, []):
+                unit_billing_total += _float(line.get("amount"))
+                unit_settled_count += 1
+                cur_value = line.get("currency")
+                if isinstance(cur_value, str) and cur_value:
+                    currency = cur_value
+            unit_trust += trust_by_instance.get(instance_id, 0)
+        units.append(
+            {
+                "customer_id": customer_id,
+                "instance_count": len(instance_ids),
+                "instance_ids": instance_ids,
+                "billing_total": unit_billing_total,
+                "settled_count": unit_settled_count,
+                "trust_score": unit_trust,
+                "currency": currency,
+            }
+        )
+        grand_total += unit_billing_total
+        grand_count += unit_settled_count
+    return {
+        "units": units,
+        "totals": {
+            "billing_total": grand_total,
+            "settled_count": grand_count,
+            "currency": currency,
+        },
+    }
+
+
 # ---- helpers ----------------------------------------------------------------------------
 
 
@@ -673,7 +856,9 @@ __all__ = [
     "approval_cards",
     "capability_rows",
     "create_state",
+    "economy_units",
     "instance_detail",
+    "instance_economy",
     "instance_rows",
     "manual_queue",
     "run_detail",
