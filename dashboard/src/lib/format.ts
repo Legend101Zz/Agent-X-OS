@@ -284,3 +284,56 @@ export function isJournalEvent(value: unknown): value is JournalEvent {
     typeof (value as { kind: unknown }).kind === "string"
   );
 }
+
+// ---------- Kernel / scheduler helpers (C14) ----------
+export type StatusTone = "good" | "warn" | "hot" | "info" | "neutral" | "muted";
+
+export function schedulerStatusTone(status: string | undefined): StatusTone {
+  switch (status) {
+    case "pending":
+      return "info";
+    case "claimed":
+      return "warn";
+    case "completed":
+      return "good";
+    case "failed":
+      return "hot";
+    default:
+      return "neutral";
+  }
+}
+
+export function schedulerStatusLabel(status: string | undefined): string {
+  if (!status) return "—";
+  return status.charAt(0).toUpperCase() + status.slice(1).replaceAll("_", " ");
+}
+
+export function schedulerKindTone(kind: string | undefined): StatusTone {
+  if (kind === "trigger") return "info";
+  if (kind === "approval") return "warn";
+  return "neutral";
+}
+
+export function formatAttempts(attempts: number | null | undefined): string {
+  if (attempts === null || attempts === undefined) return "—";
+  return `${attempts} ${attempts === 1 ? "attempt" : "attempts"}`;
+}
+
+export function healthStatusTone(status: string | undefined): StatusTone {
+  return healthTone(status);
+}
+
+export function backendTone(backend: string | undefined): StatusTone {
+  if (!backend) return "muted";
+  const b = backend.toLowerCase();
+  if (b === "memory" || b === "mongo") return "good";
+  return "neutral";
+}
+
+export function kernelHealthTone(input: { ok?: boolean; backend?: string; mode?: string } | undefined): StatusTone {
+  if (!input) return "neutral";
+  if (input.ok && input.backend) return "good";
+  if (input.mode === "disconnected" && input.backend) return "warn";
+  if (!input.backend) return "hot";
+  return input.ok ? "good" : "warn";
+}
