@@ -14,9 +14,9 @@ import type {
   MandateType,
   ScorecardView,
   SwarmTraceEvent,
-} from "../lib/types";
-import type { TimelineEntry } from "./ui/timeline";
-import type { PillTone } from "./ui/pill";
+} from "../../lib/types";
+import type { TimelineEntry } from "../ui/timeline";
+import type { PillTone } from "../ui/pill";
 
 /** Slug + version a mandate title+stage into the `type_ref` the API expects. */
 export function formatMandateRef(title: string, stage: string): string {
