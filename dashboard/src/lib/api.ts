@@ -10,10 +10,12 @@ import type {
   ApprovePayload,
   ApproveResult,
   Capability,
+  CapabilitiesWithHealth,
   CommandPayload,
   CommandResult,
   CoreGap,
   DashboardData,
+  EmailTransportDetails,
   EvalCase,
   Fact,
   HealthStatus,
@@ -24,6 +26,9 @@ import type {
   GateDecisionView,
   MandateType,
   ManualTask,
+  ModelRoutingEntry,
+  ModelRoutingStatus,
+  ProviderReachability,
   RejectPayload,
   RunSummary,
   RunSwarmPayload,
@@ -36,6 +41,7 @@ import type {
   SwarmTraceEvent,
   SystemOverview,
   TimelineEntry,
+  TransportStatus,
   TriggerRunPayload,
   TriggerRunResult,
 } from "./types";
@@ -614,6 +620,44 @@ export function fetchCapabilitiesWithHealth(
   return fetchCapabilities(options);
 }
 
+/**
+ * C12 — Providers / Connectors view. The C11 backend extends `GET /capabilities`
+ * with three new top-level fields (`providers`, `transport`, `model_routing`).
+ * This fetcher returns the full payload (base capabilities + health detail) so
+ * the Providers view can render adapters, transport, and model routing from a
+ * single round-trip. The mapper below splits the response into the four
+ * sections and is used by both the view and the tests.
+ */
+export function fetchCapabilitiesForProviders(
+  options: RequestOptions & { token?: string } = {},
+): Promise<ApiResult<CapabilitiesWithHealth>> {
+  const { token, ...rest } = options;
+  return fetchJson<unknown>(
+    "/capabilities",
+    {
+      capabilities: fixtureDashboardData.capabilities,
+      providers: [],
+      transport: { configured: false, name: null, live_gated: false, details: {} },
+      model_routing: {
+        faculty_model: { configured: false },
+        judge_model: { configured: false },
+        checked_at: new Date(0).toISOString(),
+      },
+    },
+    {
+      ...rest,
+      init: {
+        ...(rest.init ?? {}),
+        ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+      },
+    },
+  ).then((result) => ({
+    data: mapCapabilitiesWithHealth(result.data),
+    source: result.source,
+    error: result.error,
+  }));
+}
+
 /** Reject a parked approval (L0/L1 inbox). */
 export function rejectCommand(payload: Required<Pick<CommandPayload, "instance_id" | "run_id" | "actor">>) {
   return postCommand("/commands/reject", payload, "gap-edit-reject");
@@ -858,6 +902,106 @@ function mapCapabilities(raw: unknown): DashboardData["capabilities"] {
   });
 }
 
+/**
+ * Map the C11-extended `/capabilities` payload into the four-section view model
+ * the Providers / Connectors view consumes. Missing sections fall back to safe
+ * defaults so the view never crashes on a partial response (e.g. an older
+ * backend that predates C11).
+ */
+export function mapCapabilitiesWithHealth(raw: unknown): CapabilitiesWithHealth {
+  const value = asRecord(raw);
+  return {
+    capabilities: mapCapabilities(value),
+    providers: mapProviders(value.providers),
+    transport: mapTransport(value.transport),
+    model_routing: mapModelRouting(value.model_routing),
+  };
+}
+
+function mapProviders(raw: unknown): ProviderReachability[] {
+  return arrayValue(raw).map((item) => {
+    const value = asRecord(item);
+    // ``name`` is permissive on purpose: real backends occasionally return a
+    // number (e.g. an internal id) instead of a string. Coerce the obvious
+    // cases so the view never has to render a row whose name is the literal
+    // string "unknown" — the operator would have no clue what provider that is.
+    const name = coerceName(value.name);
+    const rawKind = stringValue(value.kind, "research");
+    const kind: ProviderReachability["kind"] = rawKind === "outbound" ? "outbound" : "research";
+    const liveGated =
+      typeof value.live_gated === "boolean"
+        ? value.live_gated
+        : typeof value.live_gated === "string"
+          ? value.live_gated === "1" || value.live_gated === "true"
+          : false;
+    const error =
+      typeof value.error === "string" && value.error.length > 0 ? value.error : null;
+    return {
+      name,
+      kind,
+      configured: value.configured === true,
+      reachable: value.reachable === true,
+      live_gated: kind === "outbound" ? liveGated : undefined,
+      error,
+    };
+  });
+}
+
+function mapTransport(raw: unknown): TransportStatus {
+  const value = asRecord(raw);
+  // ``configured`` is permissive (truthy counts) because the C11 backend
+  // can return the int ``1`` for a present-but-boolean transport; a strict
+  // ``=== true`` would mark the transport as missing on a healthy backend.
+  // ``live_gated`` stays strict — a non-boolean means "gate state unclear",
+  // and we'd rather show a "not live" pill than silently open the gate.
+  const configured = truthy(value.configured);
+  const name = typeof value.name === "string" && value.name ? value.name : null;
+  const liveGated = value.live_gated === true;
+  const details = mapTransportDetails(value.details);
+  return { configured, name, live_gated: liveGated, details };
+}
+
+function mapTransportDetails(raw: unknown): EmailTransportDetails {
+  const value = asRecord(raw);
+  const port = value.port;
+  return {
+    host: typeof value.host === "string" ? value.host : undefined,
+    port:
+      typeof port === "number"
+        ? port
+        : typeof port === "string" && port.length > 0
+          ? port
+          : undefined,
+    username: typeof value.username === "string" ? value.username : undefined,
+    default_from: typeof value.default_from === "string" ? value.default_from : undefined,
+    from_name: typeof value.from_name === "string" ? value.from_name : undefined,
+  };
+}
+
+function mapModelRouting(raw: unknown): ModelRoutingStatus {
+  const value = asRecord(raw);
+  const faculty = asRecord(value.faculty_model);
+  const judge = asRecord(value.judge_model);
+  return {
+    faculty_model: {
+      provider: typeof faculty.provider === "string" ? faculty.provider : undefined,
+      configured: faculty.configured === true,
+      base_url: typeof faculty.base_url === "string" ? faculty.base_url : undefined,
+      model_id: typeof faculty.model_id === "string" ? faculty.model_id : undefined,
+    },
+    judge_model: {
+      via: typeof judge.via === "string" ? judge.via : undefined,
+      configured: judge.configured === true,
+      base_url: typeof judge.base_url === "string" ? judge.base_url : undefined,
+      model_id: typeof judge.model_id === "string" ? judge.model_id : undefined,
+    },
+    checked_at:
+      typeof value.checked_at === "string" && value.checked_at
+        ? value.checked_at
+        : new Date(0).toISOString(),
+  };
+}
+
 function mapMaturity(level: number): DashboardData["capabilities"][number]["maturity"] {
   if (level >= 3) return "live";
   if (level >= 1) return "api";
@@ -1020,6 +1164,40 @@ function arrayValue(value: unknown): unknown[] {
 
 function stringValue(value: unknown, fallback: string): string {
   return typeof value === "string" && value.length > 0 ? value : fallback;
+}
+
+/**
+ * Permissive truthy coercion. Accepts:
+ *  - booleans (passthrough)
+ *  - numbers (any non-zero finite is true; 0 / NaN are false)
+ *  - strings ("1" / "true" / "yes" / "on" / any non-empty non-"0" string)
+ *  - null / undefined / everything else → false
+ *
+ * Used by the C12 transport mapper where the C11 backend historically
+ * returned an int ``1`` for a present-but-boolean transport. Strict
+ * ``=== true`` would mark the transport as missing on a healthy backend.
+ */
+function truthy(value: unknown): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return Number.isFinite(value) && value !== 0;
+  if (typeof value === "string") {
+    const lower = value.toLowerCase();
+    if (lower === "0" || lower === "false" || lower === "no" || lower === "off") return false;
+    return value.length > 0;
+  }
+  return false;
+}
+
+/**
+ * Coerce a provider ``name`` field into a displayable string. Most backends
+ * emit a string (e.g. ``"exa"``) but a few return a numeric id; we surface
+ * the original value as a string rather than masking it as ``"unknown"``.
+ * Empty strings and missing values still fall back to ``"unknown"``.
+ */
+function coerceName(value: unknown): string {
+  if (typeof value === "string") return value.length > 0 ? value : "unknown";
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return "unknown";
 }
 
 function numberValue(value: unknown, fallback = 0): number {

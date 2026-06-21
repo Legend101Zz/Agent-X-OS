@@ -309,3 +309,74 @@ samp,
     background-position: 200% 0;
   }
 }
+
+/* ===========================================================================
+ * Providers / Connectors view (C12, BLUEPRINT §5 row "Providers").
+ *
+ * Three sections — research adapters, outbound email transport, model routing.
+ * Uses small data-pair grids for the transport details + a two-column grid
+ * for the model routing entries. Pill tones come from the data layer
+ * (reachability / configured / live-gated) — no inline colors in TSX.
+ * ======================================================================== */
+
+.providers-card {
+  flex: 1 1 0;
+  min-width: 320px;
+}
+
+.providers-transport-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-3, 12px);
+}
+
+.providers-transport-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: var(--surface-1, rgba(255, 230, 203, 0.04));
+  border: 1px solid var(--line, rgba(255, 230, 203, 0.08));
+  border-radius: 8px;
+}
+
+.providers-transport-detail__label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.providers-transport-detail__value {
+  font-size: 14px;
+  color: var(--foreground, #fff);
+  overflow-wrap: anywhere;
+}
+
+.providers-routing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--space-3, 12px);
+}
+
+.providers-routing-entry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  padding: 14px 16px;
+  background: var(--surface-1, rgba(255, 230, 203, 0.04));
+  border: 1px solid var(--line, rgba(255, 230, 203, 0.08));
+  border-radius: 10px;
+}
+
+.providers-routing-entry[data-configured="false"] {
+  border-color: var(--destructive, #fb2c36);
+  border-style: dashed;
+}
+
+.providers-routing-entry__details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 1.5;
+}
