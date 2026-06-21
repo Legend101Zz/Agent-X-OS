@@ -1,13 +1,11 @@
-import StubPage from "../_components/stub-page";
+import { InstancesList } from "../../src/components/instances/instances-list";
 
+/**
+ * `/instances` — the entry point to the per-instance deep Inspector (C2).
+ * Click a row to navigate to `/instances/{id}` and see the Overview /
+ * Live Activity / Runs / Approvals / Trust tabs (Memory + Actions land in
+ * C4 once the C3 heap API ships).
+ */
 export default function InstancesPage() {
-  return (
-    <StubPage
-      title="Instances"
-      cardId="C2"
-      cardTitle="C2 — Instances list + Instance Inspector (Overview/Activity/Runs/Approvals/Trust)"
-      description="Every mandate instance in one place. Drill into the deep Inspector for live trace, memory, actions, runs, and trust."
-      blockedFeatures={[{ key: "heap_read", label: "Memory / Heap (needs C3)" }]}
-    />
-  );
+  return <InstancesList />;
 }
