@@ -61,6 +61,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from .capability_health import (
+    model_routing_status,
+    provider_reachability,
+    transport_status,
+)
 from .gaps import CORE_GAPS, gap_by_id
 from .state import (
     DashboardState,
@@ -522,7 +527,15 @@ def _install_routes(app: FastAPI) -> None:
 
     @app.get("/capabilities")
     async def get_capabilities(request: Request) -> dict[str, Any]:
-        return {"capabilities": await capability_rows(_state(request))}
+        # Spec §8 row 4 (C11): extend with provider reachability, transport configured, model
+        # routing. The three sections are read-only diagnostics over ``Settings`` + the email
+        # transport's own health probe — never surface credentials, never call effectful APIs.
+        return {
+            "capabilities": await capability_rows(_state(request)),
+            "providers": provider_reachability(),
+            "transport": transport_status(),
+            "model_routing": model_routing_status(),
+        }
 
     @app.get("/eval-cases")
     async def get_eval_cases(request: Request) -> dict[str, Any]:
