@@ -66,7 +66,7 @@ def transport_status(settings: Settings | None = None) -> dict[str, Any]:
     settings = settings or get_settings()
     live_gated = bool(settings.run_live_email)
 
-    transport_obj = _build_email_transport_safe()
+    transport_obj = _build_email_transport_safe(settings)
     if transport_obj is None:
         return {
             "configured": False,
@@ -182,7 +182,7 @@ def _email_provider_row(settings: Settings) -> list[dict[str, Any]]:
     endpoint). That kind of real reachability belongs to a separate liveness probe, not a config
     snapshot.
     """
-    transport_obj = _build_email_transport_safe()
+    transport_obj = _build_email_transport_safe(settings)
     configured = transport_obj is not None
     reachable = False
     error: str | None = None
@@ -239,18 +239,53 @@ def _build_research_providers_safe(settings: Settings) -> list[Any]:
         return []
 
 
-def _build_email_transport_safe() -> Any | None:
+def _build_email_transport_safe(settings: Settings | None = None) -> Any | None:
     """Lazy + dep-tolerant wrapper around ``build_configured_email_transport``.
 
     Returns the transport object or None. Never raises. Same contract the operator composition
     edge uses — but here we don't try to register it, just surface its config.
+
+    We pass an ``env`` mapping derived from ``Settings`` (rather than letting the constructor read
+    ``os.environ`` directly) so the diagnostic section reflects the SAME configuration the rest of
+    the api uses. Without this, tests that build a synthetic ``Settings`` would still see the
+    machine's actual env — which silently disagrees with the operator's view in
+    :func:`transport_status`.
     """
     try:
         from agentx_syscall.email_transports import build_configured_email_transport
 
-        return build_configured_email_transport()
+        settings = settings or get_settings()
+        env = _settings_to_env(settings)
+        return build_configured_email_transport(env=env)
     except Exception:  # noqa: BLE001
         return None
+
+
+def _settings_to_env(settings: Settings) -> dict[str, str]:
+    """Project ``Settings`` email fields into an ``env`` mapping for the transport constructor.
+
+    ``run_live_email`` is a boolean — serialised as ``"1"`` / ``"0"`` (the
+    :func:`_flag_enabled` contract in ``email_transports``). All other fields are str (or empty
+    str when unset). SecretStr is unwrapped to its value because the constructor only reads the
+    mapping — it does not retain the wrapper; invariant #2 is enforced by the fact that the
+    returned mapping never leaves this function (it is consumed immediately and discarded).
+
+    Note: Resend is not in the typed Settings today — the SMTP path is the only wired transport
+    (C6/C7 send-loop live proof). When Resend lands in ``Settings`` it should be appended here
+    alongside the SMTP fields; the constructor already prefers SMTP > Resend so the ordering is
+    preserved automatically.
+    """
+    return {
+        "RUN_LIVE_EMAIL": "1" if settings.run_live_email else "",
+        "SMTP_HOST": settings.smtp_host,
+        "SMTP_PORT": str(settings.smtp_port) if settings.smtp_port else "",
+        "SMTP_USERNAME": settings.smtp_username,
+        "SMTP_PASSWORD": (
+            settings.smtp_password.get_secret_value() if settings.smtp_password else ""
+        ),
+        "EMAIL_FROM": settings.email_from,
+        "EMAIL_FROM_NAME": settings.email_from_name,
+    }
 
 
 __all__ = [

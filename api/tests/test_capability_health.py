@@ -37,7 +37,6 @@ from agentx_api.capability_health import (
     transport_status,
 )
 
-
 TEST_TOKEN = "test-operator-token"
 
 
