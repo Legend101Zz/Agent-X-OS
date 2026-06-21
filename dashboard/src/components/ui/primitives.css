@@ -1853,7 +1853,10 @@
   border-radius: var(--radius);
   background: var(--surface-1);
   margin-bottom: var(--space-4);
-  overflow: hidden;
+  /* No overflow:hidden — InfoTip popovers inside the panel must escape it. */
+}
+.ax-help__head {
+  border-radius: var(--radius);
 }
 .ax-help__head {
   display: flex;

@@ -30,6 +30,8 @@ import {
   CardHeader,
   EmptyState,
   ErrorState,
+  HelpPanel,
+  InfoTip,
   RingPill,
   Row,
   Skeleton,
@@ -147,6 +149,14 @@ export function InstancesList({ initialInstances, initialRuns }: InstancesListPr
       refreshing={refreshing}
     >
       <div className="instances-page">
+        <HelpPanel id="instances">
+          <p>
+            Every running instance <InfoTip term="instance" /> across your blueprints. Each row shows
+            its ring <InfoTip term="ring" /> (how much it can do alone), trust{" "}
+            <InfoTip term="trust" />, and run state <InfoTip term="run_state" />. Click one to open
+            its deep Inspector.
+          </p>
+        </HelpPanel>
         <Card>
           <CardHeader
             eyebrow="Mandate instances"
