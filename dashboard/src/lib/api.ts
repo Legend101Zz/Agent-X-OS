@@ -22,6 +22,7 @@ import type {
   InstanceSummary,
   JournalEvent,
   GateDecisionView,
+  KernelSnapshot,
   MandateType,
   ManualTask,
   RejectPayload,
@@ -29,16 +30,20 @@ import type {
   RunSwarmPayload,
   ScoredLead,
   SchedulerWork,
+  SchedulerWorkItem,
   ScorecardView,
   SendPosture,
   SetRingPayload,
   SwarmRunReport,
   SwarmTraceEvent,
+  SystemInfo,
   SystemOverview,
   TimelineEntry,
   TriggerRunPayload,
   TriggerRunResult,
 } from "./types";
+
+export type { KernelSnapshot, SchedulerWorkItem, SystemInfo } from "./types";
 
 type QueryValue = string | number | boolean | null | undefined;
 
@@ -221,24 +226,36 @@ export function fetchSchedulerWork(
   options: RequestOptions = {},
 ): Promise<ApiResult<SchedulerWork>> {
   return fetchJson(`/scheduler-work/${encodeURIComponent(workId)}`, {} as SchedulerWork, options).then(
-    (result) => ({
-      ...result,
-      data: (result.data ?? ({} as SchedulerWork)) as SchedulerWork,
-    }),
+    (result) => {
+      const value = asRecord(result.data);
+      return {
+        ...result,
+        data: (value.work ?? result.data ?? ({} as SchedulerWork)) as SchedulerWork,
+      };
+    },
   );
+}
+
+export function mapSystemInfo(raw: unknown): SystemInfo {
+  const value = asRecord(raw);
+  return {
+    service: stringValue(value.service, "agentx-kernel-api"),
+    internalOnly: value.internal_only === true || value.internalOnly === true,
+    posture: stringValue(value.posture, "local-only"),
+    commandAuthConfigured:
+      value.command_auth_configured === true || value.commandAuthConfigured === true,
+    fixturesAllowed: value.fixtures_allowed === true || value.fixturesAllowed === true,
+    backend: stringValue(value.backend, "memory"),
+  };
 }
 
 export function fetchSystemInfo(
   options: RequestOptions = {},
-): Promise<ApiResult<{
-  service: string;
-  internal_only: boolean;
-  posture: string;
-  command_auth_configured: boolean;
-  fixtures_allowed: boolean;
-  backend: string;
-}>> {
-  return fetchJson("/system/info", {} as never, options);
+): Promise<ApiResult<SystemInfo>> {
+  return fetchJson("/system/info", {}, options).then((result) => ({
+    ...result,
+    data: mapSystemInfo(result.data),
+  }));
 }
 
 function mapApprovals(raw: unknown): ApprovalCard[] {
@@ -324,6 +341,13 @@ export function fetchJournal(
     ...result,
     data: mapJournal(result.data),
   }));
+}
+
+export function fetchSystemJournal(
+  query: { kind?: string; limit?: number } = {},
+  options: RequestOptions = {},
+): Promise<ApiResult<JournalEvent[]>> {
+  return fetchJournal(query, options);
 }
 
 async function postCommand(
@@ -588,6 +612,48 @@ export function fetchSchedulerWorkList(
   options: RequestOptions = {},
 ): Promise<ApiResult<unknown>> {
   return fetchJson("/scheduler-work", { items: [] }, { ...options, query });
+}
+
+export function mapSchedulerWorkList(raw: unknown): SchedulerWorkItem[] {
+  return unwrapArray(raw, "work").concat(unwrapArray(raw, "items")).map((item) => {
+    const value = asRecord(item);
+    return {
+      workId: stringValue(value.work_id, stringValue(value.workId, "")),
+      kind: stringValue(value.kind, "trigger") === "approval" ? "approval" : "trigger",
+      status: (["pending", "claimed", "completed", "failed"].includes(stringValue(value.status, ""))
+        ? stringValue(value.status, "pending")
+        : "pending") as SchedulerWorkItem["status"],
+      attempts: numberValue(value.attempts),
+      availableAt: stringValue(value.available_at, stringValue(value.availableAt, "")),
+      runId: stringValue(value.run_id, stringValue(value.runId, "")) || undefined,
+      instanceId: stringValue(value.instance_id, stringValue(value.instanceId, "")) || undefined,
+      typeRef: stringValue(value.type_ref, stringValue(value.typeRef, "")) || undefined,
+      updatedAt: stringValue(value.updated_at, stringValue(value.updatedAt, "")),
+    };
+  });
+}
+
+export async function fetchKernelSnapshot(options: RequestOptions = {}): Promise<ApiResult<KernelSnapshot>> {
+  const [overview, scheduler, coreGaps] = await Promise.all([
+    fetchSystemOverview(options),
+    fetchSchedulerWorkList({}, options),
+    fetchCoreGaps(options),
+  ]);
+  const source = overview.source === "api" || scheduler.source === "api" || coreGaps.source === "api" ? "api" : "fixture";
+  const error = [overview.error, scheduler.error, coreGaps.error].filter(Boolean).join("; ") || undefined;
+  return {
+    source,
+    error,
+    data: {
+      overview: overview.data,
+      schedulerWork: scheduler.source === "api" ? mapSchedulerWorkList(scheduler.data) : [],
+      coreGaps: coreGaps.source === "api" ? coreGaps.data : [],
+      overviewAvailable: overview.source === "api",
+      schedulerAvailable: scheduler.source === "api",
+      coreGapsAvailable: coreGaps.source === "api",
+      fetchedAt: new Date().toISOString(),
+    },
+  };
 }
 
 export function fetchEconomy(

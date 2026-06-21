@@ -300,6 +300,15 @@ export interface SchedulerWork {
   updated_at: string;
 }
 
+export interface SystemInfo {
+  service: string;
+  internalOnly: boolean;
+  posture: string;
+  commandAuthConfigured: boolean;
+  fixturesAllowed: boolean;
+  backend: string;
+}
+
 export interface DashboardData {
   health: HealthStatus;
   overview: SystemOverview;
@@ -424,17 +433,28 @@ export interface EconomySnapshot {
   units: BusinessUnitPnL[];
 }
 
-/** A scheduler work item (Kernel view, C13). */
+/** A scheduler work item (Kernel view, C13/C14). Dashboard-facing camelCase view model. */
 export interface SchedulerWorkItem {
-  work_id: string;
+  workId: string;
   kind: "trigger" | "approval";
   status: "pending" | "claimed" | "completed" | "failed";
   attempts: number;
-  available_at: string;
-  run_id?: string;
-  instance_id?: string;
-  type_ref?: string;
-  updated_at: string;
+  availableAt: string;
+  runId?: string;
+  instanceId?: string;
+  typeRef?: string;
+  updatedAt: string;
+}
+
+/** Aggregated Kernel / System view snapshot (C14). */
+export interface KernelSnapshot {
+  overview: SystemOverview;
+  schedulerWork: SchedulerWorkItem[];
+  coreGaps: CoreGap[];
+  overviewAvailable: boolean;
+  schedulerAvailable: boolean;
+  coreGapsAvailable: boolean;
+  fetchedAt: string;
 }
 
 /** Extended capability with health detail (C11). */
