@@ -313,3 +313,95 @@ Pushed to main as `724adef`.
 
 **NEXT (Phase 13):** the first LIVE `mandate-discovery` run against real community sources
 — implement F1/F4/F5 read syscall adapters in the syscall lane, set EXA + FIRECRAWL + FACULTY_MODEL_*, run the script, inspect the L1-parked portfolio in the approval inbox, approve, start the 14-day Rung 4 watch. That's the reality-check that proves the F1/F2/F3 pipeline produces a portfolio the team would actually build.
+
+## Session M Phase 13 (2026-06-22) — FIRST LIVE mandate-discovery run + diagnosis
+
+### Built (`f32d6c9`)
+- `packages/syscall/src/agentx_syscall/discovery_adapters.py` — 3 new read adapters:
+  `CommunitySourceSampleAdapter` (F1), `CompetitorSearchAdapter` (F4),
+  `BuyerChannelDiscoveryAdapter` (F5). All Firecrawl-backed, read-only, L0.
+- `packages/syscall/src/agentx_syscall/registry.py` — `build_phase1_registry()`
+  now accepts an optional `discovery_adapters` list.
+- `packages/syscall/tests/test_discovery_adapters.py` — 13 smoke tests
+  (no live API; monkeypatch the Firecrawl client). Pins the F1 charter
+  invariants (F1_MIN_POSTS=80, F1_HARD_CAP_POSTS=300, F1_MIN_DISTINCT_SOURCES=4).
+- `scripts/run_mandate_discovery.py` — passes the 3 adapters to the
+  registry when Firecrawl is configured.
+
+### Gate
+- mypy strict: 0 errors on all touched files
+- pytest packages/syscall/tests: 55 pass (42 baseline + 13 new)
+- ruff: clean on touched files
+- lint-imports: 3/3 kept
+
+### Live run (the trigger you asked for)
+
+```bash
+INSTANCE_ID=agentx_discovery_1782075713_default
+RUN_ID=agentx_discovery_1782075713_default:deadline:1782055916
+PARK_REASON=draft_email requires L2
+L1_STATE=parked
+LATENCY_SECONDS l1=165.24
+FACT_PREDICATES=
+HEAP_FACT_COUNT=0
+TRACE_ROW_COUNT=27
+SHORTLIST_COUNT=None
+```
+
+### Quality check — the run is **NOT good**
+
+30 journal events. Of the 27 syscall attempts, **ZERO are the F1/F4/F5
+syscalls I built** (`community_source_sample`, `competitor_search`,
+`buyer_channel_discovery`). Instead the LLM emitted 12× `lead_research_batch`
+and 14× `read_url` (lead-finder's vocabulary), then a final
+`draft_email` at L2 (lead-finder's draft) which parked the run.
+
+**Diagnosis:** the live Hermes harness doesn't have a mandate-type-aware
+system prompt — it treats every mandate as a generic research + draft
+flow. My F1/F4/F5 read intents are never emitted because the LLM
+doesn't know those names exist. The new `discovery_adapters` are
+registered correctly in the syscall lane; the LLM just doesn't call them.
+
+**No `mandate_portfolio` fact, no `pain_cluster_count`, no shortlist.**
+The run parked for a wrong reason (`draft_email` is lead-finder's
+syscall) before the F6 builder ran.
+
+### What's good
+- The kernel stack + scheduler worker + settlement worked end-to-end
+  (15-min watchdog not triggered; l1=165s; 30 events in the journal).
+- The skip-if-exists MandateType guard worked (`MandateType already
+  registered; skipping re-registration`).
+- Firecrawl WAS called (4 syscall_settled events with `status=ok`).
+- The mandate ran at L1 and parked (not crashed) — the kernel
+  invariants held.
+
+### What needs to change for the next live run to be useful
+
+The mandate-discovery mandate is structurally ready, but the **live
+LLM harness needs a mandate-type-aware system prompt** that tells
+Hermes which syscall names belong to which mandate. Without it, the LLM
+defaults to lead-finder's vocabulary and skips the new F1/F4/F5 calls.
+
+**The right fix is a harness-level change** (Phase 13.5): the `own`
+playbook harness needs a per-mandate-type `system_prompt` override so
+mandate-discovery's prompt includes the new syscall names + the
+`risk_class=read` constraint. That's a kernel/hermes change, not a
+mandate-package change. Until then, **the sim-mode fixtures in
+`test_mandate_discovery_playbook.py` are the only way to drive a
+mandate-discovery run end-to-end** — and they do work (62/62 unit +
+8/8 sim tests pass).
+
+### Evidence
+- `/tmp/agentx_discovery_evidence/mandate_discovery_run.log` — full run log
+- `/tmp/agentx_discovery_evidence/run.json` — JSON summary
+- `/tmp/agentx_discovery_evidence/journal.txt` — 30-row journal dump
+- MongoDB: `agentx_discovery_1782075713_default` instance + 30 journal events
+
+**Honest takeaway:** Phase 12 is shipped, but Phase 13 (live run +
+quality check) exposed that the mandate-discovery run produces 0
+portfolio facts in production today — not because of bad design but
+because the live LLM harness doesn't yet know about the new syscall
+names. Fix the harness prompt, re-run, and the F1/F4/F5 calls will
+fire. **The deterministic infrastructure (gates, faculty library,
+playbook, adapters, registry wiring) is correct** — only the LLM
+prompt is missing.
