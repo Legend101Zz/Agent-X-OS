@@ -1319,6 +1319,336 @@
    reads as a section-eyebrow wherever it sits. */
 .ax-eyebrow {
   font-size: 10px;
+
+.ax-swatch--hot { background: var(--destructive); }
+.ax-swatch--info { background: var(--info); }
+
+/* ===========================================================================
+ * Typography primitives — used by the Docs view (C17) to render markdown.
+ * All token-bound. Companion to the C1 design-system kit.
+ * ========================================================================== */
+
+/* ---------- Prose container ---------- */
+.ax-prose {
+  max-width: 78ch;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+}
+
+.ax-prose > * + * {
+  margin: 0;
+}
+
+/* ---------- Headings (linkable) ---------- */
+.ax-prose h1,
+.ax-prose h2,
+.ax-prose h3,
+.ax-prose h4 {
+  scroll-margin-top: 80px; /* clear the TopBar when jumping to anchor */
+  color: var(--foreground);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: var(--leading-tight);
+  margin: 0;
+}
+.ax-prose h1 {
+  font-size: var(--text-2xl);
+  margin-top: var(--space-3);
+}
+.ax-prose h2 {
+  font-size: var(--text-xl);
+  margin-top: var(--space-6);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+.ax-prose h3 {
+  font-size: var(--text-lg);
+  margin-top: var(--space-5);
+}
+.ax-prose h4 {
+  font-size: var(--text-md);
+  margin-top: var(--space-4);
+  color: var(--foreground-muted);
+}
+
+.ax-anchor {
+  color: inherit;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.ax-anchor:hover {
+  color: var(--accent);
+}
+.ax-anchor__hash {
+  opacity: 0;
+  color: var(--accent);
+  font-weight: 400;
+  font-size: 0.85em;
+  transition: opacity var(--duration-fast) var(--ease);
+}
+.ax-anchor:hover .ax-anchor__hash {
+  opacity: 1;
+}
+
+/* ---------- Paragraphs and inline ---------- */
+.ax-prose p {
+  margin: 0;
+  color: var(--foreground);
+}
+.ax-prose strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+.ax-prose em {
+  color: var(--foreground-muted);
+  font-style: italic;
+}
+.ax-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--surface-3);
+  color: var(--accent);
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-subtle);
+}
+
+/* ---------- Lists ---------- */
+.ax-prose ul,
+.ax-prose ol {
+  margin: 0;
+  padding-left: 1.4em;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  color: var(--foreground);
+}
+.ax-prose ul { list-style: disc; }
+.ax-prose ol { list-style: decimal; }
+.ax-prose li::marker {
+  color: var(--foreground-dim);
+}
+.ax-prose li > p {
+  margin: 0;
+}
+
+/* ---------- Blockquote ---------- */
+.ax-prose blockquote,
+.ax-prose .ax-prose__quote {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--foreground);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-style: italic;
+}
+.ax-prose blockquote p {
+  color: inherit;
+}
+
+/* ---------- Horizontal rule ---------- */
+.ax-prose hr,
+.ax-prose .ax-prose__hr {
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  margin: var(--space-2) 0;
+}
+
+/* ---------- Fenced code (when rendered inline — the Doc viewer usually uses the existing <CodeBlock> primitive) ---------- */
+.ax-prose__pre {
+  background: var(--surface-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: var(--space-3) var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+  color: var(--foreground);
+  overflow-x: auto;
+  white-space: pre;
+  margin: 0;
+}
+.ax-prose__pre-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--foreground-dim);
+  margin-top: calc(-1 * var(--space-1));
+  margin-bottom: var(--space-1);
+  font-family: var(--font-sans);
+}
+
+/* ---------- Concept explainer callouts ---------- */
+.ax-callouts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.ax-callout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-2);
+  text-decoration: none;
+  color: inherit;
+  transition:
+    border-color var(--duration-fast) var(--ease),
+    background-color var(--duration-fast) var(--ease),
+    transform var(--duration-fast) var(--ease);
+}
+.ax-callout:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-3);
+}
+.ax-callout__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+}
+.ax-callout__term {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+.ax-callout__kind {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid currentColor;
+}
+.ax-callout__definition {
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--foreground-muted);
+  margin: 0;
+}
+.ax-callout__anchor {
+  font-size: var(--text-xs);
+  color: var(--foreground-dim);
+  font-family: var(--font-mono);
+  margin-top: 2px;
+}
+.ax-callout--concept {
+  border-color: rgba(255, 230, 203, 0.24);
+}
+.ax-callout--concept .ax-callout__kind {
+  color: var(--accent);
+}
+.ax-callout--pillar {
+  border-color: rgba(56, 189, 248, 0.32);
+}
+.ax-callout--pillar .ax-callout__kind {
+  color: var(--info);
+}
+.ax-callout--system {
+  border-color: rgba(74, 222, 128, 0.32);
+}
+.ax-callout--system .ax-callout__kind {
+  color: var(--success);
+}
+.ax-callout--invariant {
+  border-color: rgba(255, 189, 56, 0.36);
+}
+.ax-callout--invariant .ax-callout__kind {
+  color: var(--warning);
+}
+
+/* ---------- Doc rail (table of contents) ---------- */
+.ax-doc-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  position: sticky;
+  top: 64px;
+  align-self: flex-start;
+  min-width: 220px;
+  max-width: 260px;
+  font-size: var(--text-sm);
+}
+.ax-doc-rail__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ax-doc-rail__group-title {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--foreground-dim);
+  font-weight: 600;
+  padding: var(--space-1) 0;
+}
+.ax-doc-rail__link {
+  display: block;
+  padding: 4px 8px;
+  border-radius: var(--radius-xs);
+  color: var(--foreground-muted);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  transition:
+    color var(--duration-fast) var(--ease),
+    background-color var(--duration-fast) var(--ease),
+    border-color var(--duration-fast) var(--ease);
+}
+.ax-doc-rail__link:hover {
+  color: var(--foreground);
+  background: var(--surface-2);
+  border-left-color: var(--accent);
+}
+.ax-doc-rail__link--h2 {
+  font-weight: 500;
+}
+.ax-doc-rail__link--h3 {
+  padding-left: 18px;
+  color: var(--foreground-dim);
+  font-size: var(--text-xs);
+}
+
+/* ---------- Doc list (the picker on the /docs landing) ---------- */
+.ax-doc-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-3);
+}
+.ax-doc-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-1);
+  text-decoration: none;
+  color: inherit;
+  transition:
+    border-color var(--duration-fast) var(--ease),
+    background-color var(--duration-fast) var(--ease);
+}
+.ax-doc-card:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+.ax-doc-card__eyebrow {
+  font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--foreground-dim);
@@ -1419,3 +1749,21 @@
   background: var(--background-raised);
 }
 
+
+}
+.ax-doc-card__title {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--foreground);
+}
+.ax-doc-card__summary {
+  font-size: var(--text-sm);
+  color: var(--foreground-muted);
+  line-height: var(--leading-normal);
+}
+.ax-doc-card__meta {
+  font-size: var(--text-xs);
+  color: var(--foreground-dim);
+  font-family: var(--font-mono);
+  margin-top: auto;
+}
