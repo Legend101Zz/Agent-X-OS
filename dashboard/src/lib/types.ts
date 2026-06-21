@@ -106,15 +106,126 @@ export interface TraceEvent {
   confidence?: number;
 }
 
+// --- Blueprints (C5) view models -------------------------------------------------------
+// DASHBOARD view models, not contracts. They mirror the seven organs of a
+// MandateType (BLUEPRINT §1) plus the faculty library the type binds to. The
+// `mapMandateTypes`/`mapMandateType` reducers tolerate the existing lean
+// shape (legacy rows with `commands[]` / `unit_economics`) AND the rich
+// kernel payload (charter / faculties / domain_pack / verification /
+// settlement / gym_ref / execution). When the kernel is unavailable we
+// fall back to the fixtures (which carry the rich shape so the UI is
+// scannable offline).
+
+/** Organ 1 — Charter (Design-by-Contract). */
+export interface CharterOrgan {
+  goal: string;
+  preconditions: string[];
+  pathconditions: string[];
+  postconditions: string[];
+  constraints: string[];
+  /** Typed-JSON goal schema (quantity / window / budget / ICP). */
+  target: Record<string, unknown>;
+}
+
+/** Organ 2 — Faculties: the reusable bricks a mandate binds. */
+export interface FacultyBindingView {
+  faculty_name: string;
+  faculty_version: string;
+  /** Per-faculty routing: harness × model × budget (Organ 7 surface). */
+  harness: string;
+  model: string;
+  budget: number | null;
+  /** Optional description shown in the inspector. */
+  description?: string;
+}
+
+/** Organ 3 — Domain pack reference (vertical playbook + cross-customer priors). */
+export interface DomainPackRefView {
+  name: string;
+  version: string;
+  /** Short label for the inspector (e.g. "B2B SaaS, India"). */
+  vertical?: string;
+}
+
+/** Organ 4 — Verification suite (commit-time type system). */
+export interface VerificationRungView {
+  rung: "rules" | "judge" | "human" | "reality";
+  present: boolean;
+}
+
+export interface VerificationOrgan {
+  ladder: VerificationRungView[];
+  rules: string[];
+  rubrics: string[];
+}
+
+/** Organ 5 — Settlement rules (what happens at commit). */
+export interface SettlementOrgan {
+  fact_commit_confidence: number;
+  trust_on_success: number;
+  trust_on_failure: number;
+  watch_window_hours: number;
+  spawn_rules: { on_condition: string; child_type_ref: string }[];
+  billing_per_run: number | null;
+}
+
+/** Organ 6 — Eval Gym reference (where this type's scorecards live). */
+export interface GymRefView {
+  name: string;
+  status: "active" | "dormant" | "blocked";
+  cases_count: number;
+}
+
+/** Organ 7 — Execution profile: faculty → harness × model × budget. */
+export interface ExecutionOrgan {
+  routing: { faculty_name: string; harness: string; model: string; budget: number | null }[];
+}
+
+/** A faculty library entry — the canonical, shared capability brick. */
+export interface FacultyLibraryEntry {
+  name: string;
+  version: string;
+  description: string;
+  category: "research" | "outreach" | "analysis" | "content" | "settlement" | "ops";
+  /** Mandate types that bind this faculty. */
+  used_by: string[];
+}
+
+/** A versioned line for a mandate type (semver, like software releases). */
+export interface MandateTypeVersion {
+  version: string;
+  released_at: string;
+  status: "live" | "canary" | "draft" | "deprecated";
+  changelog: string;
+}
+
 export interface MandateType {
   id: string;
   title: string;
+  /** e.g. "lead-finder@0.3.1" — the canonical ref. */
+  type_ref: string;
   stage: string;
   ring_floor: string;
+  /** One-line economics summary. Mirrors legacy `unit_economics` for back-compat. */
   unit_economics: string;
+  /** Legacy: faculty names as flat strings (still consumed by some views). */
   commands: string[];
-  status: "ready" | "gap" | "locked";
+  status: "ready" | "gap" | "locked" | "canary";
   gap_id?: string;
+  /** Optional short description rendered under the title. */
+  description?: string;
+  /** How many instances of this type are currently running (server-derived). */
+  instances_count?: number;
+  /** Live type_ref list (current + older versions). */
+  versions: MandateTypeVersion[];
+  charter: CharterOrgan;
+  faculties: FacultyBindingView[];
+  domain_pack: DomainPackRefView;
+  verification: VerificationOrgan;
+  settlement: SettlementOrgan;
+  gym_ref: GymRefView | null;
+  execution: ExecutionOrgan;
+  service_ports: string[];
 }
 
 export interface JournalEvent {
@@ -306,6 +417,7 @@ export interface DashboardData {
   instances: InstanceSummary[];
   runs: RunSummary[];
   mandateTypes: MandateType[];
+  facultyLibrary: FacultyLibraryEntry[];
   journal: JournalEvent[];
   capabilities: Capability[];
   evalCases: EvalCase[];
@@ -345,6 +457,8 @@ export interface InstantiatePayload {
   business_name: string;
   ring: string;
   target_override?: Record<string, unknown>;
+  /** Per-instance outbound sender identity (invariant #8: never share across instances). */
+  sender_identity?: string;
   actor: string;
 }
 

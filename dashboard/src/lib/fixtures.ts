@@ -1,4 +1,446 @@
-import type { DashboardData } from "./types";
+import type { DashboardData, MandateType, FacultyLibraryEntry } from "./types";
+
+const RICH_MANDATE_TYPES: MandateType[] = [
+  {
+    id: "lead-finder",
+    title: "Lead Finder",
+    type_ref: "lead-finder@0.3.1",
+    stage: "0.3.1",
+    ring_floor: "L1",
+    unit_economics:
+      "research_batch → approved draft → reply watch → settlement. ~₹180 per qualified lead at L1.",
+    commands: [
+      "research_batch",
+      "score_lead",
+      "draft_email",
+      "send_email",
+      "mark_outcome",
+    ],
+    status: "ready",
+    description:
+      "B2B lead-finder mandate — researches prospects, scores them against an ICP, drafts outreach, and (after approval) sends as the per-instance sender. The §1 reference implementation: every other mandate type reuses its faculty set.",
+    instances_count: 3,
+    versions: [
+      {
+        version: "0.3.1",
+        released_at: "2026-06-18T08:54:30+05:30",
+        status: "live",
+        changelog:
+          "L1 trust rung wired end-to-end; send_email live on SMTP; reply-watch maturation stub (awaiting 72h real reply data).",
+      },
+      {
+        version: "0.3.0",
+        released_at: "2026-06-10T12:00:00+05:30",
+        status: "live",
+        changelog: "L0 observe rung promoted from canary; Phase-1 reference build.",
+      },
+      {
+        version: "0.2.4",
+        released_at: "2026-05-28T09:15:00+05:30",
+        status: "deprecated",
+        changelog: "Pre-send-loop — research + draft only; superseded by 0.3.0.",
+      },
+    ],
+    charter: {
+      goal: "Deliver one qualified lead (name + ICP-fit evidence + drafted outreach) per run.",
+      preconditions: [
+        "Customer has set sender_identity (per-instance outbound address).",
+        "ICP target is non-empty (industry + location + count).",
+      ],
+      pathconditions: [
+        "Every fact carries provenance (run_id + evidence).",
+        "Drafts require approval before send_email rung (L0/L1).",
+      ],
+      postconditions: [
+        "Approved lead fact committed to heap at ≥0.6 confidence.",
+        "Trust +1 on success / −1 on failure (settlement).",
+      ],
+      constraints: [
+        "No raw fact crosses customers (invariant #3).",
+        "send_email uses the instance's sender identity, never a shared global (invariant #8).",
+      ],
+      target: { industry: "industrial_pumps", location: "india", count: 50 },
+    },
+    faculties: [
+      {
+        faculty_name: "research_batch",
+        faculty_version: "1.4.0",
+        harness: "exa_search",
+        model: "exa-pro",
+        budget: 0.04,
+        description:
+          "Pulls a batch of candidate companies + decision-makers from Exa. ICP-targeted, paginated.",
+      },
+      {
+        faculty_name: "score_lead",
+        faculty_version: "1.1.0",
+        harness: "judge",
+        model: "haiku-4",
+        budget: 0.005,
+        description: "Grades each candidate against the ICP target on the lead_quality rubric.",
+      },
+      {
+        faculty_name: "draft_email",
+        faculty_version: "0.9.2",
+        harness: "sim",
+        model: "sonnet-4",
+        budget: 0.02,
+        description: "Drafts a personalized first-touch email. Draft-only; never sends without approval.",
+      },
+      {
+        faculty_name: "send_email",
+        faculty_version: "2.1.0",
+        harness: "smtp",
+        model: "—",
+        budget: null,
+        description:
+          "SMTP transport (Gmail App Password). Idempotent on draft id; uses the per-instance sender_identity.",
+      },
+      {
+        faculty_name: "mark_outcome",
+        faculty_version: "0.6.0",
+        harness: "human_task",
+        model: "—",
+        budget: null,
+        description: "Owner confirms reply / meeting / no-response; trust deltas applied at settlement.",
+      },
+    ],
+    domain_pack: {
+      name: "b2b_saas_india",
+      version: "1.2.0",
+      vertical: "B2B SaaS, India",
+    },
+    verification: {
+      ladder: [
+        { rung: "rules", present: true },
+        { rung: "judge", present: true },
+        { rung: "human", present: true },
+        { rung: "reality", present: true },
+      ],
+      rules: ["icp_non_empty", "sender_identity_set", "evidence_link_present"],
+      rubrics: ["lead_quality"],
+    },
+    settlement: {
+      fact_commit_confidence: 0.6,
+      trust_on_success: 1,
+      trust_on_failure: -1,
+      watch_window_hours: 72,
+      spawn_rules: [
+        {
+          on_condition: "lead_qualified_and_approved",
+          child_type_ref: "followup-sequence@0.1.0",
+        },
+      ],
+      billing_per_run: 0.18,
+    },
+    gym_ref: {
+      name: "lead_finder_gym",
+      status: "active",
+      cases_count: 47,
+    },
+    execution: {
+      routing: [
+        { faculty_name: "research_batch", harness: "exa_search", model: "exa-pro", budget: 0.04 },
+        { faculty_name: "score_lead", harness: "judge", model: "haiku-4", budget: 0.005 },
+        { faculty_name: "draft_email", harness: "sim", model: "sonnet-4", budget: 0.02 },
+        { faculty_name: "send_email", harness: "smtp", model: "—", budget: null },
+        { faculty_name: "mark_outcome", harness: "human_task", model: "—", budget: null },
+      ],
+    },
+    service_ports: ["qualified_leads"],
+  },
+  {
+    id: "creator",
+    title: "Creator",
+    type_ref: "creator@0.1.0",
+    stage: "0.1.0",
+    ring_floor: "L0",
+    unit_economics:
+      "draft-only rung at canary → catalog write once promoted. Produces candidate MandateTypes, never runs them itself.",
+    commands: [
+      "draft_candidate_type",
+      "compile_candidate",
+      "promote_candidate",
+    ],
+    status: "canary",
+    description:
+      "Creator mandate — drafts new mandate types and gates them on the same PromotionGate as the swarm. Draft-only at canary rung (L0); promotion to write rung is C8 / Phase-8 work.",
+    instances_count: 1,
+    versions: [
+      {
+        version: "0.1.0",
+        released_at: "2026-06-15T08:00:00+05:30",
+        status: "canary",
+        changelog:
+          "Draft-only rung. Promotion to catalog write is gated on synthetic+human+real evidence per PromotionGate.",
+      },
+    ],
+    charter: {
+      goal: "Produce a candidate MandateType draft that survives PromotionGate.",
+      preconditions: ["Operator has set the target vertical + faculties to bind."],
+      pathconditions: ["Drafts are emitted only at L0 (canary) — never write to live catalog yet."],
+      postconditions: ["Candidate entry lands in catalog as `origin=creator` stamp."],
+      constraints: [
+        "No synthetic-only case may promote a customer-facing version (invariant #7).",
+      ],
+      target: { vertical: "ops_research", faculties: ["draft_candidate_type"] },
+    },
+    faculties: [
+      {
+        faculty_name: "draft_candidate_type",
+        faculty_version: "0.4.0",
+        harness: "sim",
+        model: "opus-4",
+        budget: 0.18,
+        description: "Emits a candidate MandateType draft from a target + faculty-set prompt.",
+      },
+      {
+        faculty_name: "compile_candidate",
+        faculty_version: "0.2.0",
+        harness: "judge",
+        model: "sonnet-4",
+        budget: 0.05,
+        description: "GEPA-style compile: refines a candidate against the gym corpus.",
+      },
+      {
+        faculty_name: "promote_candidate",
+        faculty_version: "0.1.0",
+        harness: "human_task",
+        model: "—",
+        budget: null,
+        description:
+          "Human-in-the-loop promotion gate; only fires when PromotionGate allows + human approves.",
+      },
+    ],
+    domain_pack: {
+      name: "ops_research",
+      version: "0.1.0",
+      vertical: "Meta-mandate authoring",
+    },
+    verification: {
+      ladder: [
+        { rung: "rules", present: true },
+        { rung: "judge", present: true },
+        { rung: "human", present: true },
+        { rung: "reality", present: false },
+      ],
+      rules: ["candidate_has_charter", "candidate_faculties_resolve"],
+      rubrics: ["candidate_quality"],
+    },
+    settlement: {
+      fact_commit_confidence: 0.7,
+      trust_on_success: 2,
+      trust_on_failure: -2,
+      watch_window_hours: 168,
+      spawn_rules: [],
+      billing_per_run: 0.0,
+    },
+    gym_ref: {
+      name: "creator_gym",
+      status: "dormant",
+      cases_count: 12,
+    },
+    execution: {
+      routing: [
+        { faculty_name: "draft_candidate_type", harness: "sim", model: "opus-4", budget: 0.18 },
+        { faculty_name: "compile_candidate", harness: "judge", model: "sonnet-4", budget: 0.05 },
+        { faculty_name: "promote_candidate", harness: "human_task", model: "—", budget: null },
+      ],
+    },
+    service_ports: [],
+  },
+  {
+    id: "invoice-reconciliation-desk",
+    title: "Invoice Reconciliation Desk",
+    type_ref: "invoice-reconciliation-desk@0.0.1",
+    stage: "0.0.1",
+    ring_floor: "manual",
+    unit_economics:
+      "Blocked by Phase-1 scope: money adapters are explicitly excluded (invariant #6). Stage as parked.",
+    commands: ["queue_manual_action"],
+    status: "gap",
+    gap_id: "gap-money-adapter",
+    description:
+      "Reconciles inbound invoices against ledger entries. Parked because money adapters are not part of Phase 1 (BLUEPRINT invariant #6 — money is API-only, idempotent, never LLM/browser).",
+    instances_count: 0,
+    versions: [
+      {
+        version: "0.0.1",
+        released_at: "2026-06-01T00:00:00+05:30",
+        status: "draft",
+        changelog: "Design draft. Money adapters out of Phase 1 scope; see invariant #6.",
+      },
+    ],
+    charter: {
+      goal: "Match inbound invoice lines to ledger entries; flag mismatches for human review.",
+      preconditions: [],
+      pathconditions: [],
+      postconditions: [],
+      constraints: ["Money adapters are not part of Phase 1 — invariant #6."],
+      target: {},
+    },
+    faculties: [
+      {
+        faculty_name: "queue_manual_action",
+        faculty_version: "0.1.0",
+        harness: "human_task",
+        model: "—",
+        budget: null,
+        description: "Parks an invoice reconciliation task for human owner review.",
+      },
+    ],
+    domain_pack: { name: "core", version: "0.1.0", vertical: "Finance ops" },
+    verification: {
+      ladder: [
+        { rung: "rules", present: false },
+        { rung: "judge", present: false },
+        { rung: "human", present: true },
+        { rung: "reality", present: false },
+      ],
+      rules: [],
+      rubrics: [],
+    },
+    settlement: {
+      fact_commit_confidence: 0.5,
+      trust_on_success: 0,
+      trust_on_failure: 0,
+      watch_window_hours: 24,
+      spawn_rules: [],
+      billing_per_run: null,
+    },
+    gym_ref: null,
+    execution: {
+      routing: [
+        {
+          faculty_name: "queue_manual_action",
+          harness: "human_task",
+          model: "—",
+          budget: null,
+        },
+      ],
+    },
+    service_ports: [],
+  },
+  {
+    id: "whatsapp-followup",
+    title: "WhatsApp Follow-up Agent",
+    type_ref: "whatsapp-followup@0.0.0",
+    stage: "0.0.0",
+    ring_floor: "locked",
+    unit_economics: "Locked — WhatsApp channel is Phase-2 (not Phase 1).",
+    commands: [],
+    status: "locked",
+    gap_id: "gap-whatsapp-adapter",
+    description:
+      "WhatsApp follow-up agent. Locked because the WhatsApp adapter is Phase-2 work; per-instance sender identity + idempotency required before unlock.",
+    instances_count: 0,
+    versions: [],
+    charter: {
+      goal: "Send a WhatsApp follow-up 48h after email open.",
+      preconditions: [],
+      pathconditions: [],
+      postconditions: [],
+      constraints: ["WhatsApp adapter not in Phase 1 scope."],
+      target: {},
+    },
+    faculties: [],
+    domain_pack: { name: "core", version: "0.1.0", vertical: "Outbound channels" },
+    verification: {
+      ladder: [
+        { rung: "rules", present: false },
+        { rung: "judge", present: false },
+        { rung: "human", present: false },
+        { rung: "reality", present: false },
+      ],
+      rules: [],
+      rubrics: [],
+    },
+    settlement: {
+      fact_commit_confidence: 0.6,
+      trust_on_success: 1,
+      trust_on_failure: -1,
+      watch_window_hours: 72,
+      spawn_rules: [],
+      billing_per_run: null,
+    },
+    gym_ref: null,
+    execution: { routing: [] },
+    service_ports: [],
+  },
+];
+
+const FIXTURE_FACULTY_LIBRARY: FacultyLibraryEntry[] = [
+  {
+    name: "research_batch",
+    version: "1.4.0",
+    description: "Pulls a batch of candidate companies + decision-makers from Exa.",
+    category: "research",
+    used_by: ["Lead Finder"],
+  },
+  {
+    name: "score_lead",
+    version: "1.1.0",
+    description: "Grades a candidate against an ICP target on the lead_quality rubric.",
+    category: "analysis",
+    used_by: ["Lead Finder"],
+  },
+  {
+    name: "draft_email",
+    version: "0.9.2",
+    description: "Drafts a personalized first-touch email. Draft-only by default.",
+    category: "content",
+    used_by: ["Lead Finder"],
+  },
+  {
+    name: "send_email",
+    version: "2.1.0",
+    description: "SMTP transport with per-instance sender identity + idempotency.",
+    category: "outreach",
+    used_by: ["Lead Finder"],
+  },
+  {
+    name: "mark_outcome",
+    version: "0.6.0",
+    description: "Owner confirms reply / meeting / no-response; trust deltas applied.",
+    category: "ops",
+    used_by: ["Lead Finder"],
+  },
+  {
+    name: "draft_candidate_type",
+    version: "0.4.0",
+    description: "Creator faculty — emits a candidate MandateType draft.",
+    category: "content",
+    used_by: ["Creator"],
+  },
+  {
+    name: "compile_candidate",
+    version: "0.2.0",
+    description: "GEPA-style compile: refines a candidate against the gym corpus.",
+    category: "analysis",
+    used_by: ["Creator"],
+  },
+  {
+    name: "promote_candidate",
+    version: "0.1.0",
+    description: "Human-in-the-loop promotion gate.",
+    category: "ops",
+    used_by: ["Creator"],
+  },
+  {
+    name: "queue_manual_action",
+    version: "0.1.0",
+    description: "Parks a task for human owner review (terminal tail fallback).",
+    category: "ops",
+    used_by: ["Invoice Reconciliation Desk"],
+  },
+  {
+    name: "watch_reply",
+    version: "0.3.0",
+    description: "Reply-watch maturation worker — promotes probation facts to verified.",
+    category: "analysis",
+    used_by: [],
+  },
+];
 
 export const fixtureDashboardData: DashboardData = {
   health: {
@@ -330,37 +772,8 @@ export const fixtureDashboardData: DashboardData = {
       ],
     },
   ],
-  mandateTypes: [
-    {
-      id: "indian_b2b_lead_finder",
-      title: "Indian B2B Lead Finder",
-      stage: "Phase 1 live",
-      ring_floor: "observe",
-      unit_economics: "research batch -> approved draft -> outcome mark",
-      commands: ["lead_research_batch", "read_url", "draft_email", "mark_outcome"],
-      status: "ready",
-    },
-    {
-      id: "invoice_reconciliation_desk",
-      title: "Invoice Reconciliation Desk",
-      stage: "parked",
-      ring_floor: "manual",
-      unit_economics: "blocked by money/workflow adapter scope",
-      commands: ["queue_manual_action"],
-      status: "gap",
-      gap_id: "gap-create-instance",
-    },
-    {
-      id: "whatsapp_followup",
-      title: "WhatsApp Follow-up Agent",
-      stage: "out of Phase 1",
-      ring_floor: "locked",
-      unit_economics: "not permitted in current adapter scope",
-      commands: [],
-      status: "locked",
-      gap_id: "gap-whatsapp",
-    },
-  ],
+  mandateTypes: RICH_MANDATE_TYPES,
+  facultyLibrary: FIXTURE_FACULTY_LIBRARY,
   journal: [
     {
       id: "j-9001",
