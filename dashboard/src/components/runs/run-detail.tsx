@@ -184,8 +184,12 @@ export function RunDetail({ runId, initialRun, initialRaw }: RunDetailProps) {
         ) : error ? (
           <ErrorState
             title="Couldn't load this run"
-            message={error}
-            onRetry={() => load("initial")}
+            detail={error}
+            action={
+              <AsyncButton onClick={() => load("initial")} size="sm">
+                Retry
+              </AsyncButton>
+            }
           />
         ) : (
           <>
@@ -228,10 +232,9 @@ export function RunDetail({ runId, initialRun, initialRaw }: RunDetailProps) {
                   </Row>
                 </Stack>
                 <Stack gap={1} align="end">
-                  <StatusPill
-                    label={runStateLabel(run.state)}
-                    tone={settlementTone(run.state)}
-                  />
+                  <StatusPill tone={settlementTone(run.state)}>
+                    {runStateLabel(run.state)}
+                  </StatusPill>
                   <span className="ax-eyebrow">
                     {run.ledger_commits} ledger commits
                   </span>
@@ -255,7 +258,7 @@ export function RunDetail({ runId, initialRun, initialRaw }: RunDetailProps) {
                   <EmptyState
                     icon={<TimerReset size={20} />}
                     title="No trace events yet"
-                    message="Once the run starts committing, each syscall + claim + adapter step lands here in order."
+                    detail="Once the run starts committing, each syscall + claim + adapter step lands here in order."
                   />
                 ) : (
                   <Timeline entries={timelineEntries} />
@@ -281,7 +284,7 @@ export function RunDetail({ runId, initialRun, initialRaw }: RunDetailProps) {
                   <EmptyState
                     icon={<Sigma size={20} />}
                     title="No facts claimed"
-                    message="Once the run verifies evidence and writes to the heap, the facts show up here with their subject/predicate/object and confidence."
+                    detail="Once the run verifies evidence and writes to the heap, the facts show up here with their subject/predicate/object and confidence."
                   />
                 ) : (
                   <Stack gap={2}>
@@ -369,7 +372,7 @@ function SettlementCard({ settlement }: SettlementCardProps) {
           <span className="ax-eyebrow">
             <CircleDollarSign size={11} aria-hidden /> Status
           </span>
-          <StatusPill label={runStateLabel(settlement.status)} tone={tone} />
+          <StatusPill tone={tone}>{runStateLabel(settlement.status)}</StatusPill>
           {settlement.settled_at ? (
             <span className="ax-eyebrow">
               settled {formatRelative(settlement.settled_at)}

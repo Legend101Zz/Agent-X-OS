@@ -293,14 +293,18 @@ export function RunsList({
             ) : error && filtered.length === 0 ? (
               <ErrorState
                 title="Couldn't load runs"
-                message={error}
-                onRetry={() => load("initial")}
+                detail={error}
+                action={
+                  <AsyncButton onClick={() => load("initial")} size="sm">
+                    Retry
+                  </AsyncButton>
+                }
               />
             ) : filtered.length === 0 ? (
               <EmptyState
                 icon={<Activity size={20} />}
                 title="No runs match these filters"
-                message={
+                detail={
                   summary.total === 0
                     ? "The kernel has no runs yet — once a mandate fires, it'll show up here."
                     : "Loosen the filters or clear them to see more."
@@ -347,10 +351,9 @@ export function RunsList({
                     key: "state",
                     header: "State",
                     render: (run) => (
-                      <StatusPill
-                        label={runStateLabel(run.state)}
-                        tone={runStateTone(run.state)}
-                      />
+                      <StatusPill tone={runStateTone(run.state)}>
+                        {runStateLabel(run.state)}
+                      </StatusPill>
                     ),
                   },
                   {
