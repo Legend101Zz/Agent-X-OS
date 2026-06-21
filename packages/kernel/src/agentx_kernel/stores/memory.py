@@ -150,35 +150,66 @@ class InMemorySchedulerStore:
         if work is None:
             return None
         status_value = self._status.get(work_id, "pending")
-        run_id: str | None = None
-        instance_id: str | None = None
-        type_ref: str | None = None
-        if work.kind == "trigger":
-            # mypy narrows ScheduledWork -> TriggerWork via the Literal discriminator on kind,
-            # so the cast is redundant for mypy but kept for clarity and to satisfy LSP type checkers.
-            trigger_work = cast("TriggerWork", work)  # type: ignore[redundant-cast]
-            run_id = (
-                f"{trigger_work.instance.instance_id}"
-                f":{trigger_work.trigger.kind}"
-                f":{int(trigger_work.available_at.timestamp())}"
-            )
-            instance_id = trigger_work.instance.instance_id
-            type_ref = trigger_work.mandate.id
-        else:
-            approval_work = cast("ApprovalWork", work)  # type: ignore[redundant-cast]
-            run_id = approval_work.approval.run_id
-            instance_id = approval_work.approval.instance_id
-        return SchedulerWorkStatus(
-            work_id=work.work_id,
-            kind=work.kind,
-            status=cast(Literal["pending", "claimed", "completed", "failed"], status_value),
-            attempts=1 if status_value == "completed" else 0,
-            available_at=work.available_at,
-            run_id=run_id,
-            instance_id=instance_id,
-            type_ref=type_ref,
-            updated_at=work.available_at,
+        return _build_scheduler_work_status(work, status_value)
+
+    async def list_statuses(
+        self, *, status: str | None = None, limit: int = 200
+    ) -> list[SchedulerWorkStatus]:
+        # Materialise the full mapping first so the sort sees a consistent snapshot — the
+        # underlying dict can be mutated concurrently by ``enqueue`` / ``complete`` and we
+        # don't want to surface a torn view. For the operator dashboard this is cheap; for
+        # production the Mongo store handles ordering server-side.
+        snapshot = list(self._work.items())
+        rows: list[SchedulerWorkStatus] = []
+        for work_id, work in snapshot:
+            status_value = self._status.get(work_id, "pending")
+            if status is not None and status_value != status:
+                continue
+            rows.append(_build_scheduler_work_status(work, status_value))
+        rows.sort(key=lambda row: (row.available_at, row.work_id))
+        return rows[:limit] if limit > 0 else rows
+
+
+def _build_scheduler_work_status(
+    work: ScheduledWork, status_value: str
+) -> SchedulerWorkStatus:
+    """Project one ``ScheduledWork`` + its current status string into the read-side row.
+
+    Shared by ``status()`` and ``list_statuses()`` so the detail endpoint and the list
+    endpoint always agree on the row shape (and any future field added here lands in both
+    at once). The kind-dispatch mirrors the contract: trigger rows expose their run_id /
+    instance_id / type_ref from the embedded mandate+instance, approval rows expose them
+    from the embedded ApprovalResolved.
+    """
+    run_id: str | None = None
+    instance_id: str | None = None
+    type_ref: str | None = None
+    if work.kind == "trigger":
+        # mypy narrows ScheduledWork -> TriggerWork via the Literal discriminator on kind,
+        # so the cast is redundant for mypy but kept for clarity and to satisfy LSP type checkers.
+        trigger_work = cast("TriggerWork", work)  # type: ignore[redundant-cast]
+        run_id = (
+            f"{trigger_work.instance.instance_id}"
+            f":{trigger_work.trigger.kind}"
+            f":{int(trigger_work.available_at.timestamp())}"
         )
+        instance_id = trigger_work.instance.instance_id
+        type_ref = trigger_work.mandate.id
+    else:
+        approval_work = cast("ApprovalWork", work)  # type: ignore[redundant-cast]
+        run_id = approval_work.approval.run_id
+        instance_id = approval_work.approval.instance_id
+    return SchedulerWorkStatus(
+        work_id=work.work_id,
+        kind=work.kind,
+        status=cast(Literal["pending", "claimed", "completed", "failed"], status_value),
+        attempts=1 if status_value == "completed" else 0,
+        available_at=work.available_at,
+        run_id=run_id,
+        instance_id=instance_id,
+        type_ref=type_ref,
+        updated_at=work.available_at,
+    )
 
 
 class InMemoryVault:

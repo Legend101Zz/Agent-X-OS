@@ -176,44 +176,74 @@ class MongoSchedulerStore:
         doc = await self._collection.find_one({"_id": work_id})
         if doc is None:
             return None
-        work = _parse_scheduled_work(doc)
-        raw_status = doc.get("status")
-        status_value: Literal["pending", "claimed", "completed", "failed"] = "pending"
-        if isinstance(raw_status, str) and raw_status in {"pending", "claimed", "completed", "failed"}:
-            status_value = cast(
-                Literal["pending", "claimed", "completed", "failed"], raw_status
-            )
-        attempts_value = doc.get("attempts")
-        attempts = attempts_value if isinstance(attempts_value, int) else 0
-        run_id: str | None = None
-        instance_id: str | None = None
-        type_ref: str | None = None
-        if work.kind == "trigger":
-            # mypy narrows ScheduledWork -> TriggerWork via the Literal discriminator on kind,
-            # so the cast is redundant for mypy but kept for clarity and to satisfy LSP type checkers.
-            trigger_work = cast("TriggerWork", work)  # type: ignore[redundant-cast]
-            run_id = (
-                f"{trigger_work.instance.instance_id}"
-                f":{trigger_work.trigger.kind}"
-                f":{int(trigger_work.available_at.timestamp())}"
-            )
-            instance_id = trigger_work.instance.instance_id
-            type_ref = trigger_work.mandate.id
-        else:
-            approval_work = cast("ApprovalWork", work)  # type: ignore[redundant-cast]
-            run_id = approval_work.approval.run_id
-            instance_id = approval_work.approval.instance_id
-        return SchedulerWorkStatus(
-            work_id=work.work_id,
-            kind=work.kind,
-            status=status_value,
-            attempts=attempts,
-            available_at=work.available_at,
-            run_id=run_id,
-            instance_id=instance_id,
-            type_ref=type_ref,
-            updated_at=work.available_at,
+        return _build_mongo_scheduler_work_status(doc)
+
+    async def list_statuses(
+        self, *, status: str | None = None, limit: int = 200
+    ) -> list[SchedulerWorkStatus]:
+        # ``find`` (not ``find_one``) so we can return the whole page in one round trip;
+        # the dashboard renders this as a list, not a detail row. We push the filter +
+        # sort + cap down to Mongo so a queue of tens of thousands of rows doesn't get
+        # pulled into the process only to be re-sorted. Order matches the in-memory store
+        # so the dashboard and worker agree on "what's next".
+        query: dict[str, Any] = {}
+        if status is not None:
+            query["status"] = status
+        cursor = (
+            self._collection.find(query)
+            .sort([("available_at", 1), ("_id", 1)])
+            .limit(limit if limit > 0 else 0)
         )
+        return [_build_mongo_scheduler_work_status(doc) async for doc in cursor]
+
+
+def _build_mongo_scheduler_work_status(doc: dict[str, Any]) -> SchedulerWorkStatus:
+    """Project one scheduler-work Mongo doc into the read-side ``SchedulerWorkStatus``.
+
+    Shared by ``status()`` and ``list_statuses()`` so the detail endpoint and the list
+    endpoint always agree on the row shape. The Mongo store tracks ``attempts`` as a
+    field on the doc (incremented by ``claim_next``), while the in-memory store
+    derives it from the status — this helper preserves that field faithfully so the
+    dashboard sees the real attempt count, not a re-derivation.
+    """
+    work = _parse_scheduled_work(doc)
+    raw_status = doc.get("status")
+    status_value: Literal["pending", "claimed", "completed", "failed"] = "pending"
+    if isinstance(raw_status, str) and raw_status in {"pending", "claimed", "completed", "failed"}:
+        status_value = cast(
+            Literal["pending", "claimed", "completed", "failed"], raw_status
+        )
+    attempts_value = doc.get("attempts")
+    attempts = attempts_value if isinstance(attempts_value, int) else 0
+    run_id: str | None = None
+    instance_id: str | None = None
+    type_ref: str | None = None
+    if work.kind == "trigger":
+        # mypy narrows ScheduledWork -> TriggerWork via the Literal discriminator on kind,
+        # so the cast is redundant for mypy but kept for clarity and to satisfy LSP type checkers.
+        trigger_work = cast("TriggerWork", work)  # type: ignore[redundant-cast]
+        run_id = (
+            f"{trigger_work.instance.instance_id}"
+            f":{trigger_work.trigger.kind}"
+            f":{int(trigger_work.available_at.timestamp())}"
+        )
+        instance_id = trigger_work.instance.instance_id
+        type_ref = trigger_work.mandate.id
+    else:
+        approval_work = cast("ApprovalWork", work)  # type: ignore[redundant-cast]
+        run_id = approval_work.approval.run_id
+        instance_id = approval_work.approval.instance_id
+    return SchedulerWorkStatus(
+        work_id=work.work_id,
+        kind=work.kind,
+        status=status_value,
+        attempts=attempts,
+        available_at=work.available_at,
+        run_id=run_id,
+        instance_id=instance_id,
+        type_ref=type_ref,
+        updated_at=work.available_at,
+    )
 
 
 class MongoVault:

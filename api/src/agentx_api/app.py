@@ -17,6 +17,7 @@ Endpoints (Phase 1 dashboard operability):
     GET  /capabilities
     GET  /eval-cases
     GET  /core-gaps
+    GET  /scheduler-work                              (C13 — Kernel Scheduler tab)
     GET  /scheduler-work/{work_id}
     GET  /system/info                             (auth: CORS + token visibility)
 
@@ -72,6 +73,7 @@ from .state import (
     manual_queue,
     run_detail,
     run_summaries,
+    scheduler_work_list,
     system_overview,
 )
 
@@ -535,6 +537,31 @@ def _install_routes(app: FastAPI) -> None:
     @app.get("/core-gaps")
     async def get_core_gaps() -> dict[str, Any]:
         return {"gaps": CORE_GAPS}
+
+    @app.get("/scheduler-work")
+    async def get_scheduler_work_list(
+        request: Request,
+        status: str | None = Query(default=None),
+        limit: int = Query(default=200, ge=1, le=1000),
+    ) -> dict[str, Any]:
+        """Kernel view's Scheduler tab list endpoint (BLUEPRINT §8 row 3).
+
+        READ-ONLY. Reads the scheduler store via ``state.py``'s ``scheduler_work_list``
+        reader and returns a UI-ready envelope. ``status`` is an optional filter
+        (``pending`` / ``claimed`` / ``completed`` / ``failed``); an unknown value is
+        a 400, not a silent empty list. ``limit`` caps the page size (default 200,
+        FastAPI enforces 1..1000 so a runaway client can't blow the response).
+
+        The reader never raises on an empty queue — the response is ``{"work": [],
+        "count": 0}`` so the Kernel view renders an EmptyState on a cold install
+        instead of a 500.
+        """
+        try:
+            return await scheduler_work_list(_state(request), status=status, limit=limit)
+        except ValueError as exc:
+            # Invalid ``status`` filter — surface as a 400 with the same string the
+            # reader produces, so the client can show a useful error without parsing.
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/scheduler-work/{work_id}")
     async def get_scheduler_work(work_id: str, request: Request) -> dict[str, Any]:
