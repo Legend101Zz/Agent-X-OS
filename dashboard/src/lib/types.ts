@@ -800,6 +800,7 @@ export function compilerStateLabel(state: CompilerScaffoldState): string {
     default:
       return state;
   }
+}
 
 // Providers / Connectors view (C12) — view models for the §5 Providers row.
 //

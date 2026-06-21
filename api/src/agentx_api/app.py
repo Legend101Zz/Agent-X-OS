@@ -71,7 +71,7 @@ from .capability_health import (
     provider_reachability,
     transport_status,
 )
-from .gaps import CORE_GAPS, gap_by_id
+from .gaps import CORE_GAPS
 from .state import (
     DashboardState,
     approval_cards,
@@ -79,8 +79,8 @@ from .state import (
     create_state,
     economy_units,
     instance_detail,
-    instance_memory,
     instance_economy,
+    instance_memory,
     instance_rows,
     manual_queue,
     run_detail,
