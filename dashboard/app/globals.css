@@ -286,6 +286,17 @@ samp,
   color: var(--foreground-faint);
 }
 
+/* ---------- Foundry gate banner (C10) ---------- */
+.foundry-gate-subtitle {
+  margin: 0 0 var(--space-3) 0;
+  color: var(--foreground-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.foundry-gate-reasons {
+  margin-top: var(--space-2);
+}
+
 /* ---------- Subtle live update pulse (no layout thrash) ---------- */
 @keyframes ax-pulse {
   0% {
