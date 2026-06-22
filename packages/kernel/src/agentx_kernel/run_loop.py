@@ -9,6 +9,7 @@ Claims for verification, and settles on Finish. The LLM proposes; deterministic 
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
@@ -174,7 +175,6 @@ class Phase1RunInvoker:
         claimed_facts: list[Fact] = []
 
         runner = self._runner(mandate)
-        run_log.event("thought", f"harness started: {type(runner).__name__}", {})
         session = runner.start(context=ctx, faculties=faculties, cursor=0, mandate=mandate)
         return await self._drive(
             mandate=mandate,
@@ -246,11 +246,11 @@ class Phase1RunInvoker:
         )
         claimed_facts = [fact.model_copy(deep=True) for fact in continuation.claimed_facts]
         session = self._runner(continuation.mandate).start(
-                    context=ctx,
-                    faculties=faculties,
-                    cursor=continuation.harness_cursor,
-                    mandate=continuation.mandate,
-                )
+            context=ctx,
+            faculties=faculties,
+            cursor=continuation.harness_cursor,
+            mandate=continuation.mandate,
+        )
         if continuation.harness_state:
             if not isinstance(session, StatefulHarnessSession):
                 raise RunNotResumable(run_id, "harness cannot restore persisted state")
@@ -662,24 +662,16 @@ class Phase1RunInvoker:
         return None, outcome.result
 
 
-def _apply_read_result(ctx: FacultyContext, request: SyscallRequest, output: JsonObject) -> None:
-    if request.name == "lead_research_batch":
-        normalized = _normalize_leads(output.get("leads"))
-        if normalized:
-            ctx.scratchpad["leads"] = normalized
-        return
-    if request.name == "ingest_document":
-        # Stash parsed transactions (accumulating across multiple ingested docs) for the categorizer.
-        raw = output.get("transactions")
-        if not isinstance(raw, list):
-            return
-        existing = ctx.scratchpad.get("transactions")
-        transactions: list[object] = existing if isinstance(existing, list) else []
-        transactions.extend(txn for txn in raw if isinstance(txn, dict))
-        ctx.scratchpad["transactions"] = transactions
-        return
-    if request.name != "read_url":
-        return
+ReadResultHandler = Callable[[FacultyContext, SyscallRequest, JsonObject], None]
+
+
+def _handle_lead_research_batch(ctx: FacultyContext, request: SyscallRequest, output: JsonObject) -> None:
+    normalized = _normalize_leads(output.get("leads"))
+    if normalized:
+        ctx.scratchpad["leads"] = normalized
+
+
+def _handle_read_url(ctx: FacultyContext, request: SyscallRequest, output: JsonObject) -> None:
     lead_id = request.args.get("lead_id")
     leads = ctx.scratchpad.get("leads")
     if not isinstance(lead_id, str) or not isinstance(leads, list):
@@ -730,6 +722,41 @@ def _apply_discovery_read_result(
     ctx.scratchpad[target_key] = payload
 
 
+def _handle_ingest_document(ctx: FacultyContext, request: SyscallRequest, output: JsonObject) -> None:
+    """Stash parsed transactions (accumulating across multiple ingested docs) for the categorizer."""
+    raw = output.get("transactions")
+    if not isinstance(raw, list):
+        return
+    existing = ctx.scratchpad.get("transactions")
+    transactions: list[object] = existing if isinstance(existing, list) else []
+    transactions.extend(txn for txn in raw if isinstance(txn, dict))
+    ctx.scratchpad["transactions"] = transactions
+    # Carry any unparsed/structural-error report forward so the playbook can route the doc to the queue.
+    unparsed = output.get("unparsed")
+    if isinstance(unparsed, list) and unparsed:
+        prior = ctx.scratchpad.get("unparsed")
+        merged: list[object] = prior if isinstance(prior, list) else []
+        merged.extend(unparsed)
+        ctx.scratchpad["unparsed"] = merged
+
+
+# Per-syscall read-result handlers. A read whose syscall is absent here falls to the default: its raw
+# output is stashed under ``scratchpad[syscall_name]`` so a playbook can react generically.
+_READ_RESULT_HANDLERS: dict[str, ReadResultHandler] = {
+    "lead_research_batch": _handle_lead_research_batch,
+    "read_url": _handle_read_url,
+    "ingest_document": _handle_ingest_document,
+}
+
+
+def _apply_read_result(ctx: FacultyContext, request: SyscallRequest, output: JsonObject) -> None:
+    handler = _READ_RESULT_HANDLERS.get(request.name)
+    if handler is not None:
+        handler(ctx, request, output)
+        return
+    ctx.scratchpad[request.name] = dict(output)
+
+
 def _fulfill_sim_native_read(ctx: FacultyContext, request: SyscallRequest, trace: Trace, ts: datetime) -> None:
     """Fulfil a READ-class intent natively in sim (off-gateway), then trace it.
 
@@ -752,6 +779,22 @@ def _fulfill_sim_native_read(ctx: FacultyContext, request: SyscallRequest, trace
             }
             _apply_read_result(ctx, request, page)
         _trace(trace, ts, "thought", "native read (sim): read_url", request.args)
+        return
+    if request.name == "ingest_document":
+        output = _synthetic_sim_transactions(ctx, request.args)
+        _apply_read_result(ctx, request, output)
+        transactions = output.get("transactions")
+        _trace(
+            trace,
+            ts,
+            "thought",
+            "native ingest (sim synthetic transactions)",
+            {
+                "doc_id": output.get("doc_id"),
+                "txn_count": len(transactions) if isinstance(transactions, list) else 0,
+                "source": "sim_native_read",
+            },
+        )
         return
     if request.name != "lead_research_batch":
         # books-prep sim: synthesize clearly-marked bank transactions for ingest_document.
@@ -869,7 +912,7 @@ def _synthetic_sim_transactions(ctx: FacultyContext, args: JsonObject) -> JsonOb
                 "origin": "synthetic",
             }
         )
-    return {"doc_id": doc_id, "transactions": transactions}
+    return {"transactions": transactions, "doc_id": doc_id, "unparsed": [], "status": "ok"}
 
 
 def _normalize_leads(value: object) -> list[JsonObject]:
