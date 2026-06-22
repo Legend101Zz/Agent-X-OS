@@ -61,7 +61,9 @@ from agentx_kernel.stores.mongo import (
 )
 from agentx_kernel.vault import ConfigVault
 from agentx_kernel.verifier import RulesVerifier
+from agentx_mandate.harness import OwnHarness
 from agentx_mandate.library.mandate_discovery import build_mandate_discovery_type
+from agentx_mandate.library.mandate_discovery_playbook import mandate_discovery_playbook
 from agentx_syscall.discovery_adapters import (
     BuyerChannelDiscoveryAdapter,
     CommunitySourceSampleAdapter,
@@ -279,6 +281,25 @@ DEFAULT_TARGET: JsonObject = {
 # 15-minute wall-clock watchdog per the multi-angle-dogfood doc (Pitfall 4).
 PER_RUN_TIMEOUT_SECONDS: float = 900.0
 
+# Which harness to drive the run with. Two options, controlled by the
+# MANDATE_DISCOVERY_HARNESS env var:
+#   "own"    — the deterministic OwnHarness running the
+#              mandate_discovery_playbook generator. The playbook's
+#              F2/F3 LLMs are stub-on-scratchpad (no LLM call); F1/F4/F5
+#              Calls are routed through the gateway, which calls the
+#              real Firecrawl-backed discovery_adapters. This is the
+#              default and the right path for "produce a real shortlist":
+#              the deterministic F3 anchors candidate_ids to real F1
+#              post URLs, the F4/F5 adapters get real IDs to look up,
+#              and the shortlist is non-zero. (Phase 14.)
+#   "hermes" — the live LLM HermesRunner with a per-mandate system
+#              prompt override. Useful for "let the LLM invent the
+#              mandate" mode (the v3 run before Phase 14) — the LLM
+#              runs the whole chain itself, but the LLM's
+#              candidate_id provenance is brittle (often empty,
+#              shortlist=0). Default for the prior v1-v3 runs.
+HARNESS_MODE_DEFAULT: str = "own"
+
 # Output directory for the JSON artifact + summary (per-run, durable).
 OUTPUT_ROOT = Path("/tmp/agentx_discovery_dogfood")
 
@@ -458,7 +479,6 @@ async def _approve_and_settle(
     This helper enqueues an ApprovalWork, runs the worker, and confirms
     the run settled. Returns a summary dict.
     """
-    inbox = await control.approval_inbox(instance_id=instance_id)
     approval_started = perf_counter()
     await control.approve(
         instance_id=instance_id,
@@ -537,6 +557,20 @@ async def main() -> int:
         )
         hydration = HydrationLoader(projection_store, journal)
         settlement = SettlementCommitter(journal=journal, projections=projections)
+        # Phase 14: pick the runner from MANDATE_DISCOVERY_HARNESS (own|hermes).
+        # Default is "own" — the deterministic mandate_discovery_playbook
+        # drives F1→F3→F4→F5 with real F1 post URLs as candidate_ids.
+        import os
+        harness_mode = os.environ.get("MANDATE_DISCOVERY_HARNESS", HARNESS_MODE_DEFAULT).strip().lower()
+        if harness_mode == "hermes":
+            chosen_runner: Any = HermesRunner(transport=HermesClient.from_settings(settings))
+        elif harness_mode == "own":
+            chosen_runner = OwnHarness(playbook=mandate_discovery_playbook)
+        else:
+            raise ValueError(
+                f"MANDATE_DISCOVERY_HARNESS must be 'own' or 'hermes', got {harness_mode!r}"
+            )
+        print(f"HARNESS_MODE={harness_mode}")
         invoker = Phase1RunInvoker(
             journal=journal,
             projections=projections,
@@ -545,7 +579,7 @@ async def main() -> int:
             settlement=settlement,
             verifier=RulesVerifier(),
             continuations=MongoRunContinuationStore(database),
-            runner=HermesRunner(transport=HermesClient.from_settings(settings)),
+            runner=chosen_runner,
         )
         control = KernelControl(
             journal=journal, projections=projections, projection_store=projection_store

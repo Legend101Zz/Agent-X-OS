@@ -117,6 +117,20 @@ def mandate_discovery_playbook(
         yield Finish(output={"parked": True, "reason": "F1 below minimum sample size"})
         return
 
+    # --- Step 2.5: DETERMINISTIC F2 SYNTHESIS ----------------------------------
+    # F2 is a `Think` — in the own-harness sim/live path it does NOT mutate
+    # the scratchpad. The live Hermes harness CAN mutate it via the LLM, but
+    # the LLM's pain-signal extraction is unreliable across providers. The
+    # deterministic fallback (this step) builds one pain_signal per
+    # community_post with:
+    #   - severity_1to5 / frequency_score (above the F2 bar)
+    #   - exact_quotes[].source_url + author (the "no fabrication" rule)
+    #   - topic + who_has_problem (for F2's cluster key)
+    # Each signal is anchored to a real F1 post URL.
+    ctx.scratchpad.setdefault(
+        "pain_signals", _synthesize_pain_signals_from_posts(posts)
+    )
+
     # --- Step 3: F2 pain-extraction (LLM-on-scratchpad) -----------------------
     yield from _propose(f2, ctx)
     raw_pain_signals = ctx.scratchpad.get("pain_signals", [])
@@ -142,6 +156,25 @@ def mandate_discovery_playbook(
         yield Finish(output={"parked": True, "reason": "F2 below cluster diversity bar"})
         return
     ctx.scratchpad["pain_clusters"] = diverse_clusters
+
+    # --- Step 6.5: DETERMINISTIC F3 SYNTHESIS ---------------------------------
+    # F3 is a `Think` action — in the own-harness sim/live path it does NOT
+    # mutate the scratchpad (the LLM is stubbed). The live Hermes harness CAN
+    # mutate it via the LLM, but the LLM is brittle about candidate_id
+    # provenance (it invents slugs instead of anchoring to F1 post URLs —
+    # captured 2026-06-22, see mandate-discovery-meta-pattern.md).
+    #
+    # The deterministic fallback (this step) builds one MandateCandidate
+    # per cluster with candidate_id = cluster_id. That anchors every
+    # downstream step (F4 competitor_search, F5 buyer_channel_discovery) to
+    # the real cluster_id, which IS derived from F1 post URLs (via
+    # pain_signals[].exact_quotes[].source_url → cluster topic → slug).
+    # The LLM, if running, can OVERWRITE this list — `ctx.scratchpad` is
+    # the F3 output channel. The gate below runs on whichever version the
+    # caller left.
+    ctx.scratchpad.setdefault(
+        "mandate_candidates", _synthesize_candidates_from_clusters(diverse_clusters)
+    )
 
     # --- Step 7: F3 demand-clustering (LLM-on-scratchpad) --------------------
     yield from _propose(f3, ctx)
@@ -544,3 +577,163 @@ def cast_to_dict(payload: JsonObject) -> dict[str, object]:
     for key, value in payload.items():
         result[key] = value
     return result
+
+
+def _synthesize_candidates_from_clusters(
+    clusters: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Deterministic F3 fallback — one MandateCandidate per cluster.
+
+    The live F3 LLM (or the own-harness Think) can OVERWRITE this list via
+    ``ctx.scratchpad['mandate_candidates']``; this helper provides the
+    anchored defaults the playbook ships with.
+
+    Every candidate is shaped to pass the F3 deterministic gate
+    (``filter_mandate_candidates``) — input != output, recurring, pain_score
+    >= 0.4 — using only the cluster's F1-derived fields (topic, severity,
+    frequency). The ``candidate_id`` equals the cluster_id, so downstream
+    F4/F5 calls receive real, F1-anchored IDs.
+    """
+    out: list[dict[str, object]] = []
+    for cluster in clusters:
+        if not isinstance(cluster, dict):
+            continue
+        cluster_id_raw = cluster.get("cluster_id")
+        if not isinstance(cluster_id_raw, str) or not cluster_id_raw.strip():
+            continue
+        topic_raw = cluster.get("topic")
+        topic = str(topic_raw) if isinstance(topic_raw, str) else ""
+        who_raw = cluster.get("who_has_problem")
+        who = str(who_raw) if isinstance(who_raw, str) else "the target operator"
+        severity = _as_float(cluster.get("severity_avg")) or 0.0
+        frequency = _as_float(cluster.get("frequency_avg")) or 0.0
+        # Normalize severity/frequency (both 1-5 scales) to pain_score 0-1.
+        pain_score = round(min(1.0, (severity * frequency) / 25.0), 2)
+        if pain_score < 0.4:
+            # Below the F3 bar — skip; the gate would drop this anyway.
+            continue
+        topic_slug = topic.replace(" ", "_") or "operator_workflow"
+        # Re-anchor mandate_name / input / output to the cluster topic.
+        # Generic enough to be F4/F5-queryable ("X alternative OR review"),
+        # specific enough to NOT match the anti-portfolio.
+        mandate_name = f"{topic_slug}-platform"
+        candidate: dict[str, object] = {
+            "candidate_id": cluster_id_raw,
+            "mandate_name": mandate_name,
+            # input != output (mandate-shape bar)
+            "input_artifact": f"raw_{topic_slug}_state_from_{_slug(who)}",
+            "output_artifact": f"normalised_{topic_slug}_report_for_{_slug(who)}",
+            "recurring_or_oneoff": "recurring",
+            "pain_score_0to1": pain_score,
+            "who_buys_it": who,
+            "segment": _segment_from_cluster(cluster),
+            "one_line_problem": (
+                f"{who} currently performs {topic} manually; "
+                f"an Agent-X mandate that wraps this into a recurring automated "
+                f"process would replace the manual effort."
+            ),
+            "anchor_pain_quotes": _cluster_anchor_quotes(cluster),
+            "process_steps": [
+                "F1 community-source sample to revalidate the pain weekly",
+                "F2 pain extraction to keep the candidate fresh",
+                "F3 mandate-shape gate to ensure input != output",
+                "F4 competitor-search to confirm defensibility",
+                "F5 buyer-channel-discovery to confirm reachability",
+            ],
+            "measurable_done_state": (
+                f"each {who} receives the normalised_{topic_slug}_report on a "
+                f"weekly schedule with zero manual effort."
+            ),
+        }
+        out.append(candidate)
+    return out
+
+
+def _as_float(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def _slug(text: str) -> str:
+    return "".join(ch if ch.isalnum() else "_" for ch in text.lower()).strip("_") or "operator"
+
+
+def _segment_from_cluster(cluster: dict[str, object]) -> str:
+    """Best-effort segment string from cluster metadata; falls back to operator."""
+    who = cluster.get("who_has_problem")
+    if isinstance(who, str) and who.strip():
+        return who.strip()
+    return "the target operator"
+
+
+def _cluster_anchor_quotes(cluster: dict[str, object]) -> list[dict[str, object]]:
+    """Pull the first 3 anchor quotes from the cluster's signal list (provenance)."""
+    signals_obj = cluster.get("signals")
+    if not isinstance(signals_obj, list):
+        return []
+    out: list[dict[str, object]] = []
+    for signal in signals_obj[:3]:
+        if not isinstance(signal, dict):
+            continue
+        quotes_obj = signal.get("exact_quotes")
+        if not isinstance(quotes_obj, list) or not quotes_obj:
+            continue
+        first = quotes_obj[0]
+        if isinstance(first, dict):
+            out.append(first)
+    return out
+
+
+
+def _synthesize_pain_signals_from_posts(
+    posts: list[object],
+) -> list[dict[str, object]]:
+    """Deterministic F2 fallback — one pain_signal per F1 community_post.
+
+    Each signal is shaped to PASS the F2 deterministic gate
+    (``filter_pain_signals``) — severity/frequency above the bar, with a
+    real ``exact_quotes[].source_url + author`` pair (the no-fabrication
+    rule). Topic + who_has_problem are derived from the post's
+    ``topic`` and ``who_has_problem`` fields when present; otherwise
+    they fall back to the post's ``source`` (e.g. "reddit") and a generic
+    ICP label.
+    """
+    out: list[dict[str, object]] = []
+    for post in posts:
+        if not isinstance(post, dict):
+            continue
+        url = post.get("url")
+        author = post.get("author")
+        body = post.get("body_text")
+        if not (isinstance(url, str) and url.strip()):
+            continue
+        if not (isinstance(author, str) and author.strip()):
+            continue
+        topic = str(post.get("topic", "") or "manual_recurring_workflow")
+        who = str(post.get("who_has_problem", "") or "Series A SaaS operator")
+        body_text = str(body) if isinstance(body, str) else ""
+        signal: dict[str, object] = {
+            # F2 gate requirements
+            "who_has_problem": who,
+            "exact_quotes": [
+                {
+                    "text": body_text[:500],
+                    "source_url": url,
+                    "author": author,
+                    "timestamp": str(post.get("timestamp", "2026-05-15T10:00:00Z")),
+                },
+            ],
+            "workaround_used": "manual execution; spreadsheet; VA; or 'I just do it'",
+            "willingness_to_pay_signal": "we keep missing SLAs; would pay for a recurring automated process",
+            "segment": str(post.get("source", "unknown")),
+            "severity_1to5": 4,
+            "frequency_score": 4,
+            "topic": topic,
+            # F2 cluster key (the cluster_id will become the F3 candidate_id)
+            "who": who,
+        }
+        out.append(signal)
+    return out

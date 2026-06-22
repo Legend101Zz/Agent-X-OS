@@ -542,6 +542,7 @@ class Phase1RunInvoker:
             return None, outcome.result
         if request.risk_class == "read" and outcome.result.status == "ok":
             _apply_read_result(ctx, request, outcome.result.output)
+            _apply_discovery_read_result(ctx, request, outcome.result.output)
         # Expose the most recent non-error SyscallResult on the scratchpad so playbooks (e.g. the
         # Creator's ``creator_playbook``) can react to a draft_candidate_type result without
         # the playbook needing to know the gateway's receipt-store shape. We only set this when
@@ -574,6 +575,43 @@ def _apply_read_result(ctx: FacultyContext, request: SyscallRequest, output: Jso
         if isinstance(lead, dict) and lead.get("id") == lead_id:
             leads[index] = enrich_lead(lead, output, ctx.target)
             return
+
+
+# Phase 14: mandate-discovery's three read syscalls each write a specific
+# scratchpad key the playbook reads (community_posts / moat_assessments /
+# buyer_channels). The kernel's _apply_read_result only handled
+# lead_research_batch + read_url before — extend it for the META mandate
+# without disturbing the lead-finder path.
+_MANDATE_DISCOVERY_SCRATCHPAD_KEYS: dict[str, str] = {
+    "community_source_sample": "community_posts",
+    "competitor_search": "moat_assessments",
+    "buyer_channel_discovery": "buyer_channels",
+}
+
+
+def _apply_discovery_read_result(
+    ctx: FacultyContext, request: SyscallRequest, output: JsonObject
+) -> None:
+    """Inject the result of a mandate-discovery read syscall into the
+    playbook's expected scratchpad key. The META-mandate F1/F4/F5 adapters
+    return payloads shaped exactly the way the playbook reads them; this
+    function does the side-effect for the kernel run-loop.
+
+    This is the **Phase 14 wiring fix**: without it, the kernel run-loop
+    stores the F1/F4/F5 results only in ``last_receipt`` (not in
+    ``community_posts`` / ``moat_assessments`` / ``buyer_channels``), and
+    the deterministic playbook sees an empty scratchpad and parks at the
+    F1 minimum-sample check. The kernel-side handler in
+    ``_drive._apply_read_result`` doesn't know about META-mandate syscall
+    names; this helper is the targeted addition.
+    """
+    target_key = _MANDATE_DISCOVERY_SCRATCHPAD_KEYS.get(request.name)
+    if target_key is None:
+        return
+    payload = output.get(target_key)
+    if payload is None:
+        return
+    ctx.scratchpad[target_key] = payload
 
 
 def _fulfill_sim_native_read(ctx: FacultyContext, request: SyscallRequest, trace: Trace, ts: datetime) -> None:
