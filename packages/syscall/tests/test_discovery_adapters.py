@@ -395,3 +395,71 @@ def test_f1_charter_pins_default_minimum_80_posts() -> None:
     assert F1_MIN_DISTINCT_SOURCES == 4, (
         f"charter pin: F1_MIN_DISTINCT_SOURCES must be 4; got {F1_MIN_DISTINCT_SOURCES}"
     )
+
+
+def test_f1_query_builder_extracts_top_keywords() -> None:
+    """The F1 query must quote top distinctive keywords, not the full segment.
+
+    Quoting the full segment (e.g. "Series A SaaS RevOps leaders in the US")
+    returns 0 Firecrawl results — community users don't write posts that
+    way. Quoting the longest non-stopword tokens ("RevOps" + "SaaS" with
+    Series/SaaS dropped as stopwords → just "RevOps" + the next useful
+    token) matches real Reddit threads. This test pins the parser.
+    """
+    from agentx_syscall.discovery_adapters import _build_f1_query, _extract_keywords
+
+    # Longest non-stopword tokens are picked first.
+    keywords = _extract_keywords("Series A SaaS RevOps leaders in the US")
+    assert keywords[0] == "RevOps", f"expected 'RevOps' as the longest keyword, got {keywords!r}"
+    # 'Series' and 'SaaS' are in the stopword list (too generic).
+    assert "Series" not in keywords, f"funding-stage word 'Series' should be a stopword, got {keywords!r}"
+    assert "SaaS" not in keywords, f"too-generic 'SaaS' should be a stopword, got {keywords!r}"
+
+    # The reddit query is short and quoted per-keyword, not per-segment.
+    query = _build_f1_query("Series A SaaS RevOps leaders in the US", "United States", "reddit")
+    # Quotes the top keywords, not the full segment.
+    assert '"RevOps"' in query, f"expected quoted 'RevOps' in query, got {query!r}"
+    assert '"Series A SaaS RevOps leaders in the US"' not in query, (
+        f"query should NOT contain the full quoted segment; got {query!r}"
+    )
+    # Source-specific Reddit terms still present.
+    assert "discussion" in query or "pain" in query, f"reddit terms missing: {query!r}"
+
+    # A segment with only RevOps as a useful keyword — that's fine, just quote it.
+    fallback = _build_f1_query("RevOps", "United States", "reddit")
+    assert '"RevOps"' in fallback
+
+
+def test_f1_query_builder_handles_two_distinctive_keywords() -> None:
+    """When the segment has 2+ distinctive keywords (e.g. 'lead routing',
+    'forecast accuracy'), the query quotes BOTH so Firecrawl matches posts
+    that contain either or both."""
+    from agentx_syscall.discovery_adapters import _build_f1_query, _extract_keywords
+
+    # Top 2 keywords are the longest non-stopword tokens.
+    keywords = _extract_keywords("Series A SaaS RevOps lead routing and forecast accuracy")
+    # "accuracy" and "forecast" are 8 chars — longest after stopwords drop Series/SaaS/lead.
+    # The parser returns them as the top-2.
+    assert keywords[:2] == ["accuracy", "forecast"], f"top-2 keywords: {keywords!r}"
+
+    query = _build_f1_query(
+        "Series A SaaS RevOps lead routing and forecast accuracy", "United States", "reddit"
+    )
+    # Both top-2 keywords are quoted.
+    assert '"accuracy"' in query, f"expected quoted 'accuracy' in query, got {query!r}"
+    assert '"forecast"' in query, f"expected quoted 'forecast' in query, got {query!r}"
+
+
+def test_f1_query_builder_drops_role_words() -> None:
+    """Role words (leaders, operators, founders) must NOT be quoted as keywords.
+
+    They're too generic; quoting them matches every job post in every
+    community and dilutes the search. Stopword list excludes them.
+    """
+    from agentx_syscall.discovery_adapters import _extract_keywords
+
+    keywords = _extract_keywords("Series A SaaS RevOps leaders in the US")
+    assert "leaders" not in keywords, f"role word 'leaders' should be a stopword, got {keywords!r}"
+    assert "leader" not in keywords
+    assert "operators" not in _extract_keywords("indie SaaS operators in EU")
+    assert "founders" not in _extract_keywords("Series A startup founders in NYC")

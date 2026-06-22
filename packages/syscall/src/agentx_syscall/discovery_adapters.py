@@ -556,13 +556,26 @@ class BuyerChannelDiscoveryAdapter(_AdapterBase):
 def _build_f1_query(segment: str, geography: str, source: str) -> str:
     """Build a Firecrawl search query for a single source.
 
+    Segment parsing:
+      - The full segment (e.g. "Series A SaaS RevOps leaders in the US")
+        is too narrow as a quoted string — community users don't write
+        posts that way. We extract the **2 most distinctive keywords**
+        (the longest two non-stopword tokens) and quote them
+        individually. E.g. "Series A SaaS RevOps leaders" → quoted
+        "RevOps" + "SaaS" — which actually matches real Reddit threads.
+
     Source-specific tweaks:
-      - reddit: include "site:reddit.com" hint + "discussion" / "pain" terms
+      - reddit: include "discussion OR pain OR complaint" terms
       - hackernews: include "Show HN" or "Ask HN" terms
       - x: include "tweet" / "thread" terms
       - others: just the segment + geography
     """
-    parts: list[str] = [f'"{segment}"']
+    keywords = _extract_keywords(segment)
+    # Build the quoted keyword phrase. We use 1-2 keywords (whichever
+    # produces a useful, specific query). Most Firecrawl searches return
+    # 0 results for 3+ quoted keywords — keep it to 2 max.
+    quoted = " ".join(f'"{kw}"' for kw in keywords[:2]) or f'"{segment}"'
+    parts: list[str] = [quoted]
     if geography:
         parts.append(geography)
     if source == "reddit":
@@ -578,6 +591,47 @@ def _build_f1_query(segment: str, geography: str, source: str) -> str:
     elif source == "g2_reviews":
         parts.append("review OR complaints OR pros-cons")
     return " ".join(parts)
+
+
+_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "has",
+        "have", "in", "into", "is", "it", "its", "of", "on", "or", "that", "the",
+        "to", "was", "were", "will", "with", "you", "your", "i", "we", "they",
+        "this", "these", "those", "their", "our", "us", "them", "any", "all",
+        # Role words — too generic to be useful as search keywords.
+        "leaders", "operator", "operators", "founder", "founders",
+        # Funding-stage words — appear in every job post, dilute the search.
+        "series", "startup", "startups", "company", "companies",
+        "based", "b2b", "b2c", "smb", "enterprise", "saas",  # 'saas' is too generic on its own
+        # Geography words.
+        "united", "states", "europe", "global", "world", "city",
+    }
+)
+
+
+def _extract_keywords(segment: str, *, max_keywords: int = 2) -> list[str]:
+    """Pull the longest non-stopword tokens from a segment string.
+
+    The segment "Series A SaaS RevOps leaders in the US" → ["RevOps", "SaaS"]
+    (longest first, stopwords dropped). Quoting these individually is
+    what makes Firecrawl return community content; quoting the full
+    segment returns 0.
+    """
+    tokens: list[str] = []
+    for raw in segment.split():
+        # Strip non-alphanumeric except hyphen/underscore
+        cleaned = "".join(ch if ch.isalnum() or ch in "-_" else " " for ch in raw).strip()
+        if not cleaned:
+            continue
+        if cleaned.lower() in _STOPWORDS:
+            continue
+        if len(cleaned) < 3:  # skip "us", "a", "b" etc
+            continue
+        tokens.append(cleaned)
+    # Sort by length desc, then alphabetical for determinism
+    tokens.sort(key=lambda t: (-len(t), t.lower()))
+    return tokens[:max_keywords]
 
 
 def _normalise_f1_post(raw: Mapping[str, Any], *, source: str, segment: str) -> dict[str, Any] | None:
