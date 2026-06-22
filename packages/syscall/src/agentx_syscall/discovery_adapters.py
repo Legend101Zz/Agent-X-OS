@@ -219,8 +219,11 @@ class CommunitySourceSampleAdapter(_AdapterBase):
         raw_geo = req.args.get("geography")
         geography = raw_geo if isinstance(raw_geo, str) and raw_geo.strip() else ""
         sources = _string_list(req.args.get("sources")) or list(_F1_SOURCE_ALLOWLIST.keys())
-        post_count = _int_arg(req.args, "post_count", default=80)
-        post_count = max(1, min(post_count, 300))
+        post_count = _int_arg(req.args, "post_count", default=30)
+        # Hard cap at 80 for live runs — 80 × 600-char posts = ~50KB, which
+        # fits in one LLM tool-message context window. The charter's
+        # F1_MIN_POSTS=80 is a sim-mode invariant; live runs use 30 by default.
+        post_count = max(1, min(post_count, 80))
         min_distinct_sources = _int_arg(req.args, "min_distinct_sources", default=4)
         min_post_age_months = _int_arg(req.args, "min_post_age_months", default=_F1_DEFAULT_RECENCY_MONTHS)
 
@@ -277,6 +280,43 @@ class CommunitySourceSampleAdapter(_AdapterBase):
                         break
         except Exception as exc:  # noqa: BLE001
             return _error_result(req, self.name, self.maturity_level, f"client error: {exc}")
+
+        # ---- Free-tier fallback ------------------------------------------
+        # If Firecrawl returned 0 posts (key expired, rate-limited, or
+        # query too narrow), fall back to the public-source providers so
+        # the mandate can still surface a portfolio. This is a Phase 14
+        # stopgap — the principled fix is a working Firecrawl key.
+        if not posts and sources:
+            from .discovery_free_providers import (
+                search_hackernews,
+                search_producthunt,
+                search_reddit,
+            )
+            for source in sources:
+                if source == "hackernews":
+                    raw_posts = search_hackernews(segment, limit=per_source)
+                elif source == "reddit":
+                    raw_posts = search_reddit(segment, limit=per_source)
+                elif source == "producthunt":
+                    raw_posts = search_producthunt(segment, limit=per_source)
+                else:
+                    continue
+                for raw in raw_posts:
+                    if "error" in raw:
+                        # Provider-level error; record and continue
+                        posts.append({"source": source, "error": raw["error"], "url": raw.get("url", "")})
+                        continue
+                    normalised = _normalise_f1_post(raw, source=source, segment=segment)
+                    if normalised is None:
+                        continue
+                    age_months = _post_age_months(normalised.get("timestamp", ""))
+                    if age_months is not None and age_months > min_post_age_months:
+                        if not normalised.get("structural_shift"):
+                            continue
+                    distinct_sources.add(source)
+                    posts.append(normalised)
+                    if len([p for p in posts if p.get("source") == source]) >= per_source:
+                        break
 
         # The output is a JsonObject; cast the posts list to satisfy the invariant.
         output_payload: JsonObject = cast(
@@ -369,12 +409,16 @@ class CompetitorSearchAdapter(_AdapterBase):
             return _error_result(req, self.name, self.maturity_level, "candidate_ids is empty")
         include_pricing = bool(req.args.get("include_pricing", True))
         include_weaknesses = bool(req.args.get("include_weaknesses", True))
+        candidate_queries = _candidate_queries_arg(req.args)
 
         client = _firecrawl_client(self._api_key)
         out: dict[str, Any] = {}
         try:
             for cid in candidate_ids:
-                query = f'"{cid}" alternative OR review'
+                terms = _candidate_query_terms(cid, candidate_queries)
+                # NOTE: no exact-match quotes — a de-slugged prose phrase finds
+                # real "X alternative / review" pages; a quoted slug finds zero.
+                query = f"{terms} alternative OR review OR competitor"
                 try:
                     response = client.search(query, limit=8, timeout=60_000)
                 except Exception as exc:  # noqa: BLE001
@@ -501,16 +545,20 @@ class BuyerChannelDiscoveryAdapter(_AdapterBase):
             return _error_result(req, self.name, self.maturity_level, "candidate_ids is empty")
         max_channels = _int_arg(req.args, "max_channels_per_candidate", default=5)
         max_channels = max(1, min(max_channels, 20))
+        candidate_queries = _candidate_queries_arg(req.args)
 
         client = _firecrawl_client(self._api_key)
         out: dict[str, Any] = {}
         try:
             for cid in candidate_ids:
+                terms = _candidate_query_terms(cid, candidate_queries)
                 channels: list[dict[str, Any]] = []
-                # Sub-reddit discovery: search for sub-reddits about the topic.
+                # Sub-reddit discovery: search reddit for communities about the
+                # topic. De-slugged prose (no exact-match quotes) is what surfaces
+                # real subreddits — a quoted slug returns nothing.
                 try:
                     sub_response = client.search(
-                        f'"{cid}" subreddit',
+                        f"{terms} community OR subreddit OR forum",
                         limit=max_channels,
                         include_domains=["reddit.com"],
                         timeout=60_000,
@@ -523,13 +571,13 @@ class BuyerChannelDiscoveryAdapter(_AdapterBase):
                         continue
                     if not re.search(r"/r/[A-Za-z0-9_]+", url):
                         continue
-                    channels.append(_channel_from_subreddit(cid, url, raw))
+                    channels.append(_channel_from_subreddit(terms, url, raw))
                 # If we don't have enough, also search Hacker News threads
                 # (where B2B buyers post ICP-fit discussions).
                 if len(channels) < max_channels:
                     try:
                         hn_response = client.search(
-                            f'"{cid}"',
+                            terms,
                             limit=max_channels - len(channels),
                             include_domains=["news.ycombinator.com"],
                             timeout=60_000,
@@ -540,7 +588,7 @@ class BuyerChannelDiscoveryAdapter(_AdapterBase):
                         url = str(raw.get("url") or "")
                         if not url:
                             continue
-                        channels.append(_channel_from_hn(cid, url, raw))
+                        channels.append(_channel_from_hn(terms, url, raw))
                 out[cid] = {"channels": channels[:max_channels]}
         except Exception as exc:  # noqa: BLE001
             return _error_result(req, self.name, self.maturity_level, f"client error: {exc}")
@@ -578,6 +626,58 @@ class BuyerChannelDiscoveryAdapter(_AdapterBase):
 # =============================================================================
 # Helpers
 # =============================================================================
+
+
+def _candidate_query_terms(cid: str, candidate_queries: Mapping[str, str] | None = None) -> str:
+    """Turn a candidate_id into a natural-language Firecrawl search phrase.
+
+    The F4/F5 adapters were quoting the raw candidate_id as an exact-match query
+    (``"revops_pipeline_hygiene_daily_auditor"``), which matches NOTHING on the
+    open web — that was the v1-v3 "shortlist=0" root cause. Real community
+    content uses prose, not snake_case slugs.
+
+    This de-slugifies the id into space-separated words (and strips bookkeeping
+    prefixes like ``cluster:``), so the candidate becomes a usable search phrase.
+    A caller may override per-candidate via ``candidate_queries`` (the LLM can
+    pass a crisp product-category phrase, e.g. "RevOps pipeline hygiene tool").
+    """
+    if candidate_queries:
+        override = candidate_queries.get(cid)
+        if isinstance(override, str) and override.strip():
+            return override.strip()
+    terms = cid.strip()
+    # Drop a leading bookkeeping namespace ("cluster:foo:bar" → "foo:bar").
+    if ":" in terms:
+        terms = terms.split(":", 1)[1] if terms.lower().startswith("cluster:") else terms
+    # Slug separators → spaces; collapse whitespace.
+    for sep in ("_", "-", ":", "/", "."):
+        terms = terms.replace(sep, " ")
+    terms = " ".join(terms.split())
+    return terms or cid
+
+
+def _candidate_queries_arg(args: Mapping[str, Any]) -> dict[str, str]:
+    """Parse the optional ``candidate_queries`` arg into a {candidate_id: phrase} map.
+
+    Accepts either a dict ``{cid: phrase}`` or a list of
+    ``{"candidate_id": cid, "query": phrase}`` objects (whichever the harness
+    finds easier to emit). Unknown shapes are ignored — the de-slug fallback
+    still applies.
+    """
+    raw = args.get("candidate_queries")
+    out: dict[str, str] = {}
+    if isinstance(raw, Mapping):
+        for k, v in raw.items():
+            if isinstance(k, str) and isinstance(v, str) and v.strip():
+                out[k] = v.strip()
+    elif isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, Mapping):
+                cid = item.get("candidate_id")
+                q = item.get("query")
+                if isinstance(cid, str) and isinstance(q, str) and q.strip():
+                    out[cid] = q.strip()
+    return out
 
 
 def _build_f1_query(segment: str, geography: str, source: str) -> str:

@@ -46,6 +46,7 @@ from .gateway import Gateway
 from .hydration import HydrationLoader
 from .ports import JournalStore, RunContinuationStore
 from .projections import Projections
+from .run_log import NULL_RUN_LOG, RunLog
 from .settlement import SettlementCommitter
 from .verifier import RulesVerifier
 
@@ -82,6 +83,22 @@ class Phase1RunInvoker:
     continuations: RunContinuationStore
     runner: HarnessRunner | None = None
     max_steps: int = 24
+    # Where per-run JSONL logs are written. None → enabled at the default dir
+    # (AGENTX_RUN_LOG_DIR or ./run_logs). Set to "" to disable run logging.
+    run_log_dir: str | None = None
+
+    def _open_run_log(self, *, run_id: str, instance_id: str, type_ref: str) -> RunLog:
+        if self.run_log_dir == "":
+            return NULL_RUN_LOG
+        try:
+            return RunLog(
+                run_id=run_id,
+                instance_id=instance_id,
+                type_ref=type_ref,
+                base_dir=self.run_log_dir,
+            )
+        except Exception:  # noqa: BLE001 — logging must never break a run
+            return NULL_RUN_LOG
 
     async def invoke(
         self,
@@ -93,6 +110,19 @@ class Phase1RunInvoker:
     ) -> RunResult:
         run_id = _run_id(instance, trigger)
         trace = Trace(run_id=run_id)
+        run_log = self._open_run_log(
+            run_id=run_id, instance_id=instance.instance_id, type_ref=instance.type_ref
+        )
+        run_log.event(
+            "thought",
+            "run invoked",
+            {
+                "mode": mode,
+                "trigger_kind": trigger.kind,
+                "target": dict(mandate.charter.target) if isinstance(mandate.charter.target, dict) else {},
+                "faculties": [b.faculty_name for b in mandate.faculties],
+            },
+        )
         created = cast(
             RunCreated,
             await self.journal.append(
@@ -142,6 +172,7 @@ class Phase1RunInvoker:
         claimed_facts: list[Fact] = []
 
         runner = self._runner()
+        run_log.event("thought", f"harness started: {type(runner).__name__}", {})
         session = runner.start(context=ctx, faculties=faculties, cursor=0)
         return await self._drive(
             mandate=mandate,
@@ -153,6 +184,7 @@ class Phase1RunInvoker:
             claimed_facts=claimed_facts,
             session=session,
             now=trigger.ts,
+            run_log=run_log,
         )
 
     async def resume(self, *, run_id: str, approval: ApprovalResolved) -> RunResult:
@@ -201,6 +233,12 @@ class Phase1RunInvoker:
             now=created.trigger.ts,
         )
         trace = continuation.trace.model_copy(deep=True)
+        run_log = self._open_run_log(
+            run_id=run_id,
+            instance_id=continuation.instance.instance_id,
+            type_ref=continuation.instance.type_ref,
+        )
+        run_log.event("resumed", "run resumed from continuation after approval", {"approval_event_id": approval.event_id})
         claimed_facts = [fact.model_copy(deep=True) for fact in continuation.claimed_facts]
         session = self._runner().start(
             context=ctx,
@@ -212,7 +250,8 @@ class Phase1RunInvoker:
                 raise RunNotResumable(run_id, "harness cannot restore persisted state")
             session.restore_state(continuation.harness_state)
 
-        _trace(
+        _emit(
+            run_log,
             trace,
             approval.ts,
             "resumed",
@@ -227,6 +266,7 @@ class Phase1RunInvoker:
             ctx=ctx,
             trace=trace,
             claimed_facts=claimed_facts,
+            run_log=run_log,
             gateway_ring=parked.required_ring,
         )
         if terminal is not None:
@@ -241,6 +281,7 @@ class Phase1RunInvoker:
                     session=session,
                     pending_call=continuation.pending_call,
                 )
+            run_log.terminal(terminal.state, {"via": "resume"})
             return terminal
         return await self._drive(
             mandate=continuation.mandate,
@@ -253,6 +294,7 @@ class Phase1RunInvoker:
             session=session,
             observation=observation,
             now=approval.ts,
+            run_log=run_log,
         )
 
     def _runner(self) -> HarnessRunner:
@@ -271,11 +313,33 @@ class Phase1RunInvoker:
         session: HarnessSession,
         now: datetime,
         observation: SyscallResult | None = None,
+        run_log: RunLog = NULL_RUN_LOG,
     ) -> RunResult:
         steps = 0
         while steps < self.max_steps:
             steps += 1
-            action = await session.step(observation)
+            try:
+                action = await session.step(observation)
+            except Exception as step_exc:  # noqa: BLE001
+                # Surface the real exception the harness (OwnHarness or live
+                # Hermes) raised — into the durable run log AND the trace, so
+                # the failure is visible in view_run.py, not just on stderr.
+                import traceback as _tb
+                tb_text = _tb.format_exc()
+                _emit(
+                    run_log,
+                    trace,
+                    now,
+                    "error",
+                    f"harness step {steps} raised {type(step_exc).__name__}: {step_exc}",
+                    cast(JsonObject, {"step": steps, "exception": repr(step_exc), "traceback": tb_text}),
+                )
+                run_log.terminal("crashed", {"reason": "harness_step_raised", "step": steps})
+                return RunResult(
+                    run_id=ctx.run_id, state="crashed", trace=trace, claimed_facts=claimed_facts
+                )
+            action_kind, action_summary, action_detail = _describe_action(action)
+            run_log.event(action_kind, f"step {steps}: {action_summary}", {"step": steps, **action_detail})
             observation = None
             if isinstance(action, Finish):
                 break
@@ -287,6 +351,7 @@ class Phase1RunInvoker:
                 ctx=ctx,
                 trace=trace,
                 claimed_facts=claimed_facts,
+                run_log=run_log,
             )
             if terminal is not None:
                 if terminal.state == "parked" and isinstance(action, Call):
@@ -300,9 +365,11 @@ class Phase1RunInvoker:
                         session=session,
                         pending_call=_bind_request(action.request, ctx),
                     )
+                run_log.terminal(terminal.state, {"park_reason": terminal.park.reason if terminal.park else None})
                 return terminal
         else:
-            _trace(trace, now, "error", "harness exceeded max steps", {"max_steps": self.max_steps})
+            _emit(run_log, trace, now, "error", "harness exceeded max steps", {"max_steps": self.max_steps})
+            run_log.terminal("crashed", {"reason": "max_steps_exceeded", "max_steps": self.max_steps})
             return RunResult(run_id=ctx.run_id, state="crashed", trace=trace, claimed_facts=claimed_facts)
 
         result = await self._verify_and_settle(
@@ -313,9 +380,14 @@ class Phase1RunInvoker:
             trace=trace,
             claimed_facts=claimed_facts,
             now=now,
+            run_log=run_log,
         )
         if result.state == "settled":
             await self.continuations.delete(ctx.run_id)
+        run_log.terminal(
+            result.state,
+            {"claimed_fact_count": len(claimed_facts), "fact_predicates": sorted({f.predicate for f in claimed_facts})},
+        )
         return result
 
     async def _verify_and_settle(
@@ -328,10 +400,12 @@ class Phase1RunInvoker:
         trace: Trace,
         claimed_facts: list[Fact],
         now: datetime,
+        run_log: RunLog = NULL_RUN_LOG,
     ) -> RunResult:
         verify = self.verifier.verify_postconditions(mandate, claimed_facts=claimed_facts)
         if not verify.passed:
-            _trace(
+            _emit(
+                run_log,
                 trace,
                 now,
                 "error",
@@ -339,6 +413,7 @@ class Phase1RunInvoker:
                 cast(JsonObject, {"reasons": verify.reasons}),
             )
             return RunResult(run_id=ctx.run_id, state="crashed", trace=trace, claimed_facts=claimed_facts)
+        run_log.event("verify", "postconditions passed", {"rungs_passed": list(verify.rungs_passed)})
 
         await self.journal.append(
             RunVerified(
@@ -369,7 +444,7 @@ class Phase1RunInvoker:
             now=now,
         )
         await self.settlement.commit(settlement)
-        _trace(trace, now, "verify", "settled", {"fact_count": len(settlement.facts)})
+        _emit(run_log, trace, now, "verify", "settled", {"fact_count": len(settlement.facts)})
         return RunResult(
             run_id=ctx.run_id,
             state="settled",
@@ -422,6 +497,7 @@ class Phase1RunInvoker:
         ctx: FacultyContext,
         trace: Trace,
         claimed_facts: list[Fact],
+        run_log: RunLog = NULL_RUN_LOG,
         gateway_ring: Ring | None = None,
     ) -> tuple[RunResult | None, SyscallResult | None]:
         """Dispose one harness action. Returns (terminal RunResult | None, observation to feed back | None)."""
@@ -432,6 +508,8 @@ class Phase1RunInvoker:
             claimed_facts.extend(action.facts)
             return None, None
         if isinstance(action, Escalate):
+            # _drive already logged this Escalate to the run_log as the harness
+            # action; here we only need it in the Trace (for the verifier/judge).
             _trace(trace, now, "error", action.reason, action.detail)
             return (
                 RunResult(run_id=ctx.run_id, state="crashed", trace=trace, claimed_facts=claimed_facts),
@@ -489,12 +567,13 @@ class Phase1RunInvoker:
         if outcome.settled is not None:
             await self.projections.apply(outcome.settled)
         if outcome.parked is not None:
-            _trace(
+            _emit(
+                run_log,
                 trace,
                 now,
                 "parked",
                 outcome.parked.reason,
-                {"required_ring": outcome.parked.required_ring},
+                cast(JsonObject, {"required_ring": outcome.parked.required_ring, "syscall": request.name}),
             )
             return (
                 RunResult(
@@ -529,10 +608,24 @@ class Phase1RunInvoker:
                 "maturity_used": outcome.result.maturity_used,
             },
         )
+        run_log.event(
+            "syscall_result",
+            f"{request.name} → {outcome.result.status}",
+            {
+                "syscall": request.name,
+                "status": outcome.result.status,
+                "fulfilled_by": outcome.result.fulfilled_by,
+                "maturity_used": outcome.result.maturity_used,
+                "output": _syscall_output_summary(request.name, outcome.result.output)
+                if outcome.result.status == "ok"
+                else {},
+            },
+        )
         if outcome.result.status == "error":
             # Agent-loop resilience: a failed syscall is FED BACK to the harness (an LLM can recover and
             # retry within max_steps), not crashed. Only Escalate + the max_steps bound terminate a run.
-            _trace(
+            _emit(
+                run_log,
                 trace,
                 now,
                 "error",
@@ -740,3 +833,97 @@ def _trace(trace: Trace, ts: datetime, kind: TraceKind, summary: str, detail: Js
             detail=detail,
         )
     )
+
+
+def _emit(
+    run_log: RunLog,
+    trace: Trace,
+    ts: datetime,
+    kind: TraceKind,
+    summary: str,
+    detail: JsonObject,
+) -> None:
+    """Record one event in BOTH the in-memory Trace and the durable per-run log.
+
+    Single chokepoint so the durable log can never silently drift from the trace
+    the verifier/judge see. ``run_log`` is a no-op sink when logging is disabled.
+    """
+    _trace(trace, ts, kind, summary, detail)
+    run_log.event(kind, summary, dict(detail))
+
+
+def _describe_action(action: HarnessAction) -> tuple[str, str, JsonObject]:
+    """Render a harness action as (kind, summary, detail) for the run log.
+
+    This is the "what did the harness decide this step" record — the single most
+    useful thing when debugging why a run escalated or claimed the wrong facts.
+    """
+    if isinstance(action, Think):
+        return "thought", action.summary, dict(action.detail)
+    if isinstance(action, Call):
+        return (
+            "syscall_attempt",
+            f"call {action.request.name}",
+            cast(JsonObject, {"syscall": action.request.name, "args": dict(action.request.args)}),
+        )
+    if isinstance(action, Claim):
+        facts = [
+            {
+                "subject": f.subject,
+                "predicate": f.predicate,
+                "object": f.object,
+                "confidence": f.confidence,
+                "evidence": list(f.evidence)[:3] if getattr(f, "evidence", None) else [],
+            }
+            for f in action.facts
+        ]
+        return "decision", f"claim {len(action.facts)} fact(s)", cast(JsonObject, {"facts": facts})
+    if isinstance(action, Escalate):
+        return "error", f"escalate: {action.reason}", dict(action.detail)
+    if isinstance(action, Finish):
+        output = getattr(action, "output", None)
+        return "decision", "finish", cast(JsonObject, dict(output) if isinstance(output, dict) else {})
+    return "decision", type(action).__name__, cast(JsonObject, {})
+
+
+def _syscall_output_summary(name: str, output: JsonObject) -> JsonObject:
+    """A compact, human-skimmable summary of a syscall's output for the run log.
+
+    The full payload lives in the receipt store; here we surface the counts that
+    explain a downstream gate decision (how many posts F1 returned, which
+    candidates F4/F5 covered, how many leads research found).
+    """
+    summary: dict[str, object] = {}
+    posts = output.get("community_posts")
+    if isinstance(posts, list):
+        summary["community_posts"] = len(posts)
+        stats = output.get("sample_stats")
+        if isinstance(stats, dict):
+            summary["sample_stats"] = dict(stats)
+        sources = sorted(
+            {str(p.get("source")) for p in posts if isinstance(p, dict) and p.get("source")}
+        )
+        if sources:
+            summary["distinct_sources"] = sources
+        errors = [
+            str(p.get("error"))
+            for p in posts
+            if isinstance(p, dict) and p.get("error")
+        ]
+        if errors:
+            summary["post_errors"] = errors[:5]
+    moat = output.get("moat_assessments")
+    if isinstance(moat, dict):
+        summary["moat_candidates"] = list(moat.keys())
+    channels = output.get("buyer_channels")
+    if isinstance(channels, dict):
+        summary["buyer_channels_per_candidate"] = {
+            str(k): (len(v.get("channels", [])) if isinstance(v, dict) else 0)
+            for k, v in channels.items()
+        }
+    leads = output.get("leads")
+    if isinstance(leads, list):
+        summary["leads"] = len(leads)
+    if not summary:
+        summary["keys"] = list(output.keys())
+    return cast(JsonObject, summary)

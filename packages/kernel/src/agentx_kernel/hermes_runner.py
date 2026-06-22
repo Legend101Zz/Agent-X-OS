@@ -342,7 +342,7 @@ class HermesSession:
                 {
                     "role": "tool",
                     "tool_call_id": self._pending_call_id,
-                    "content": json.dumps(
+                    "content": _bounded_tool_content(
                         {
                             "status": observation.status,
                             "fulfilled_by": observation.fulfilled_by,
@@ -547,6 +547,43 @@ def _tool_call_id(tool_call: JsonValue) -> str:
 
 def _json_obj(value: JsonValue | None) -> JsonObject:
     return value if isinstance(value, dict) else {}
+
+
+# A syscall result is fed back into the LLM's message history every step. Large
+# read payloads (an F1 community-source sample is dozens of posts × long
+# body_text) accumulate across steps until the request exceeds MiniMax's context
+# window and the API returns HTTP 400. The kernel's receipt store keeps the FULL
+# output; the LLM only needs a bounded, skimmable view to reason over.
+_TOOL_STR_CLIP = 320  # max chars per string field shown to the LLM
+_TOOL_LIST_CLIP = 25  # max items per list shown to the LLM
+_TOOL_CONTENT_MAX = 16_000  # hard cap on the serialized tool message (chars)
+
+
+def _shrink_for_context(value: object, *, depth: int = 0) -> object:
+    """Recursively clip strings/lists so a tool payload can't blow the context window."""
+    if isinstance(value, str):
+        return value if len(value) <= _TOOL_STR_CLIP else value[:_TOOL_STR_CLIP] + "…"
+    if isinstance(value, dict):
+        if depth >= 6:
+            return {"…": f"{len(value)} keys"}
+        return {str(k): _shrink_for_context(v, depth=depth + 1) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        if depth >= 6:
+            return f"[{len(value)} items]"
+        clipped = [_shrink_for_context(v, depth=depth + 1) for v in list(value)[:_TOOL_LIST_CLIP]]
+        if len(value) > _TOOL_LIST_CLIP:
+            clipped.append(f"…(+{len(value) - _TOOL_LIST_CLIP} more items omitted)")
+        return clipped
+    return value
+
+
+def _bounded_tool_content(payload: dict[str, object]) -> str:
+    """Serialize a tool result for the LLM, bounded in size (per-field + total)."""
+    shrunk = _shrink_for_context(payload)
+    text = json.dumps(shrunk, default=str)
+    if len(text) > _TOOL_CONTENT_MAX:
+        text = text[:_TOOL_CONTENT_MAX] + ' …"(truncated for context budget)"'
+    return text
 
 
 def _as_list(value: JsonValue | None) -> list[str]:

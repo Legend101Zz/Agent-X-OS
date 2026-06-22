@@ -84,6 +84,12 @@ class HermesClient:
         for _ in range(2):
             try:
                 return cast(JsonObject, await asyncio.to_thread(self._post, payload))
+            except urllib.error.HTTPError as exc:
+                # A 4xx is a malformed/oversized request — retrying sends the same
+                # bad body and wastes a call. Surface MiniMax's error body (which
+                # explains WHY: max-context exceeded, invalid param, etc.) and stop.
+                detail = _read_http_error_body(exc)
+                raise RuntimeError(f"Hermes chat call failed: HTTP {exc.code} {exc.reason}: {detail}") from exc
             except (TimeoutError, urllib.error.URLError, OSError) as exc:
                 last_exc = exc
         raise RuntimeError(f"Hermes chat call failed after retries: {last_exc}")
@@ -105,6 +111,20 @@ class HermesClient:
         if not isinstance(parsed, dict):
             raise RuntimeError("Hermes response was not a JSON object")
         return parsed
+
+
+def _read_http_error_body(exc: urllib.error.HTTPError) -> str:
+    """Read the response body off an HTTPError (MiniMax returns a JSON reason there).
+
+    ``urllib`` raises before the caller can read the body; the body is the single
+    most useful diagnostic for a 400 (it names the bad parameter or "context
+    length exceeded"). Best-effort, clipped so a giant body doesn't flood logs.
+    """
+    try:
+        raw = exc.read().decode("utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        return "(no response body)"
+    return raw[:800]
 
 
 def _extract_content(response: dict[str, object]) -> str:

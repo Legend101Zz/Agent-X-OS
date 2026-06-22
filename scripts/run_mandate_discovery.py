@@ -102,8 +102,9 @@ DEFAULT_TARGET: JsonObject = {
         "READ-ONLY. Sample community posts (Reddit / Hacker News / X / IndieHackers / ProductHunt / G2 / Discord) "
         "matching the target segment. Returns community_posts (each with url/author/timestamp/upvotes/body_text) "
         "and sample_stats. Use sources=[\"reddit\",\"hackernews\",\"x\",\"indiehackers\",\"producthunt\",\"g2_reviews\",\"discord\",\"forum\"] "
-        "for the diversity bar. post_count=80 by default, cap 300. Call this AT MOST ONCE PER SOURCE — if Reddit returns "
-        "20 posts, that's enough; don't call it 5 more times to get more. The playbook enforces the diversity bar.\n"
+        "for the diversity bar. post_count=30 by default (keep the response under ~50KB so the LLM can process it in "
+        "one tool call). The diversity bar is what matters; 30-40 posts across 4+ sources is plenty. Call this AT "
+        "MOST ONCE — if Reddit returns 5 posts, that's enough; don't call it 5 more times to get more.\n"
         "  - competitor_search(candidate_ids, include_pricing, include_weaknesses): "
         "READ-ONLY. For each candidate id, returns existing_solutions, saturation_score_0to1, "
         "defensibility_0to1, differentiation_axis, build_cost_estimate_story_points. The F4 moat gate "
@@ -179,7 +180,7 @@ DEFAULT_TARGET: JsonObject = {
                                 "which sources to sample (reddit/hackernews/x/indiehackers/producthunt/g2_reviews/discord/forum)"
                             ),
                         },
-                        "post_count": {"type": "integer", "description": "min posts (default 80, cap 300)"},
+                        "post_count": {"type": "integer", "description": "min posts (default 30, cap 80 for live runs)"},
                         "min_post_age_months": {"type": "integer", "description": "recency cutoff (default 12)"},
                     },
                     "required": ["segment"],
