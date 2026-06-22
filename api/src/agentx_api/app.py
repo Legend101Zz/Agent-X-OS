@@ -91,20 +91,34 @@ from .state import (
 
 
 async def _ensure_canonical_mandate_registered(state: DashboardState) -> None:
-    """Memory-mode helper: register the canonical lead-finder if the catalog is empty.
+    """Memory-mode helper: register the canonical lead-finder + books-prep if the catalog is empty.
 
     Live mode (Mongo) keeps whatever the operator has registered; we don't want to silently
     register types on first connect. The seed_demo flag still injects the legacy fixture; this
-    helper covers the test / sim path where we want one mandate present without the demo state.
+    helper covers the test / sim path where we want at least one mandate present without the demo
+    state. Both canonical types (lead-finder and books-prep@0.1.0) are seeded here so the
+    /commands/instantiate surface resolves both ``type_ref`` values out of the box.
     """
     if state.seed_demo:
         return
     existing = await state.collection(c.MANDATE_TYPE)
     if existing:
         return
+    # Register both canonical types so the dashboard's ``type_ref`` picker resolves either without
+    # requiring an operator to load fixtures first. Conflicts on a per-instance override id are
+    # handled by ``register_mandate_type``; the canonical ids are stable, so this is idempotent.
+    from agentx_mandate.library.books_prep import build_books_prep_type
     from agentx_mandate.library.lead_finder import build_lead_finder_type
 
-    await state.control.register_mandate_type(build_lead_finder_type())
+    for builder in (build_lead_finder_type, build_books_prep_type):
+        try:
+            await state.control.register_mandate_type(builder())
+        except Exception as exc:  # noqa: BLE001
+            # If a previous run already registered one of them we don't care — proceed.
+            from agentx_kernel.errors import MandateTypeConflict
+
+            if not isinstance(exc, MandateTypeConflict):
+                raise
 
 logger = logging.getLogger(__name__)
 
