@@ -1,6 +1,7 @@
 """Phase-1 syscall registry bootstrap."""
 
 from collections.abc import Sequence
+from pathlib import Path
 
 from agentx_contracts import Adapter, GatewayContext, SyscallRegistry, SyscallRequest
 
@@ -16,6 +17,7 @@ from agentx_syscall.adapters import (
     SendEmailAdapter,
     build_configured_research_providers,
 )
+from agentx_syscall.books import ExportLedgerAdapter, IngestDocumentAdapter
 from agentx_syscall.deep_research_adapter import DeepResearchAdapter
 
 
@@ -49,6 +51,8 @@ def build_phase1_registry(
     *,
     send_email_adapters: Sequence[SendEmailAdapter] = (),
     discovery_adapters: Sequence[Adapter] = (),
+    books_intake_dir: str | Path | None = None,
+    books_output_dir: str | Path | None = None,
 ) -> SyscallRegistry:
     """Build the live Phase-1 syscall ladder.
 
@@ -61,6 +65,10 @@ def build_phase1_registry(
     adapters (``community_source_sample``, ``competitor_search``, ``buyer_channel_discovery``).
     When omitted, the mandate-discovery run parks at L1 awaiting the F1/F4/F5 read fulfilment
     (the manual queue is the human-task fallback for un-implemented read intents).
+
+    ``books_intake_dir`` / ``books_output_dir`` wire the books-prep deterministic document I/O
+    adapters (no LLM, no network). ``ingest_document`` is READ (fulfilled natively in sim; via
+    ``IngestDocumentAdapter`` in live); ``export_ledger`` is REVERSIBLE_WRITE and parks at L1.
     """
     store = ManualTaskStore()
     providers = build_configured_research_providers()
@@ -84,4 +92,8 @@ def build_phase1_registry(
         registry.register(discovery_adapter)
     registry.register(QueueManualActionAdapter(store=store))
     registry.register(MarkOutcomeAdapter(store=store))
+    # books-prep deterministic document I/O (no LLM, no network). ingest_document is READ (fulfilled
+    # natively in sim; via this adapter in live); export_ledger is REVERSIBLE_WRITE and parks at L1.
+    registry.register(IngestDocumentAdapter(intake_dir=books_intake_dir))
+    registry.register(ExportLedgerAdapter(output_dir=books_output_dir))
     return registry

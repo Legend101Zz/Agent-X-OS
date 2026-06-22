@@ -6,6 +6,10 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "agentx-contracts",
     "firecrawl-py>=4.30,<5",
+    "openpyxl>=3.1,<4",          # books-prep ExportLedgerAdapter writes .xlsx
+    "pdfminer.six>=20221105",    # books-prep IngestDocumentAdapter fallback PDF text extraction
+    "pdfplumber>=0.10,<1",       # books-prep IngestDocumentAdapter primary PDF table extraction
+    "pypdf>=4,<5",               # books-prep IngestDocumentAdapter secondary fallback
     # --- Optional provider / protocol additions ---
     # "mcp>=1.27,<2",            # MCP client — wrap MCP servers BEHIND the gateway (never raw to harness)
     # "exa-py>=2.14,<3",         # lead_research_batch / read_url provider (EXA_API_KEY)

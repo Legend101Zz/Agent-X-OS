@@ -22,9 +22,12 @@ from typing import Protocol, cast, runtime_checkable
 from agentx_contracts.enums import HarnessKind, RiskClass
 from agentx_contracts.faculty import Faculty
 from agentx_contracts.jsontypes import JsonObject, JsonValue
+from agentx_contracts.mandate import MandateType
 from agentx_contracts.memory import Fact, Provenance
 from agentx_contracts.syscall import SyscallRequest, SyscallResult
+from agentx_contracts.toolschema import TOOL_SCHEMAS, ToolSchema
 from agentx_mandate.harness import Call, Claim, FacultyContext, Finish, HarnessAction, Think
+from agentx_mandate.skill_packs import skill_pack_fragment
 
 
 class HermesProtocolError(RuntimeError):
@@ -39,6 +42,22 @@ class ChatTransport(Protocol):
         self, *, messages: list[JsonObject], tools: list[JsonObject]
     ) -> JsonObject: ...
 
+
+# --- Control tools (harness-control, NOT syscalls) — defined here, not in the registry --------------
+# These three are the same for every mandate. The syscall tools between ``think`` and ``claim_facts``
+# are built per-mandate from the faculties' tool_manifests (see ``_build_tools``).
+_THINK_TOOL: JsonObject = {
+    "type": "function",
+    "function": {
+        "name": "think",
+        "description": "Record a brief private reasoning note. No real-world effect.",
+        "parameters": {
+            "type": "object",
+            "properties": {"summary": {"type": "string"}},
+            "required": ["summary"],
+        },
+    },
+}
 
 # Syscall risk classes mirror the gateway policy (the gateway re-stamps authoritatively; this lets the
 # run-loop route read vs effectful before the gateway call).
@@ -81,120 +100,172 @@ def _resolve_tool_risk_map(ctx: FacultyContext) -> dict[str, RiskClass]:
         return result
     return _RISK_BY_SYSCALL
 
-_TOOLS: list[JsonObject] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "think",
-            "description": "Record a brief private reasoning note. No real-world effect.",
-            "parameters": {
-                "type": "object",
-                "properties": {"summary": {"type": "string"}},
-                "required": ["summary"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_leads",
-            "description": (
-                "Web-search for candidate prospect ORGANISATIONS. Pass a SPECIFIC query targeting real "
-                "businesses' OWN websites — never articles, 'top 10' listicles, directories, or social media."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "the search query"},
-                    "icp": {"type": "string"},
-                    "location": {"type": "string"},
-                    "exclude_domains": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "hostnames to exclude, e.g. ['justdial.com','practo.com']",
-                    },
-                    "count": {"type": "integer"},
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "read_url",
-            "description": "Read ONE candidate's page. Copy lead_id and url verbatim from a search result.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "lead_id": {"type": "string", "description": "id of a lead from the last search result"},
-                    "url": {"type": "string", "description": "that lead's url"},
-                },
-                "required": ["lead_id", "url"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "draft_email",
-            "description": "DRAFT (never send) personalised outreach. Parks for human approval.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "to": {"type": "string"},
-                    "subject": {"type": "string"},
-                    "body": {"type": "string"},
-                    "lead_id": {"type": "string"},
-                },
-                "required": ["subject", "body", "lead_id"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "claim_facts",
-            "description": (
-                "Commit verified facts to memory. For the chosen lead claim predicate 'actionable_lead' "
-                "(object=company) and 'qualified_lead_score' (object=score 0..1). evidence MUST quote text "
-                "you actually read."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "facts": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "subject": {"type": "string"},
-                                "predicate": {"type": "string"},
-                                "object": {"type": "string"},
-                                "confidence": {"type": "number"},
-                                "evidence": {"type": "array", "items": {"type": "string"}},
-                            },
-                            "required": ["subject", "predicate", "object", "evidence"],
+_CLAIM_FACTS_TOOL: JsonObject = {
+    "type": "function",
+    "function": {
+        "name": "claim_facts",
+        "description": (
+            "Commit verified facts to memory. For the chosen lead claim predicate 'actionable_lead' "
+            "(object=company) and 'qualified_lead_score' (object=score 0..1). evidence MUST quote text "
+            "you actually read."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "facts": {
+                "type": "array",
+                "items": {
+                        "type": "object",
+                        "properties": {
+                            "subject": {"type": "string"},
+                            "predicate": {"type": "string"},
+                            "object": {"type": "string"},
+                            "confidence": {"type": "number"},
+                            "evidence": {"type": "array", "items": {"type": "string"}},
                         },
-                    }
+                        "required": ["subject", "predicate", "object", "evidence"],
                 },
-                "required": ["facts"],
+                }
             },
+            "required": ["facts"],
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "finish",
-            "description": "End the run. Provide a short summary of the outcome.",
-            "parameters": {
-                "type": "object",
-                "properties": {"summary": {"type": "string"}},
-                "required": ["summary"],
-            },
+}
+
+_FINISH_TOOL: JsonObject = {
+    "type": "function",
+    "function": {
+        "name": "finish",
+        "description": "End the run. Provide a short summary of the outcome.",
+        "parameters": {
+            "type": "object",
+            "properties": {"summary": {"type": "string"}},
+            "required": ["summary"],
         },
     },
-]
+}
+
+
+def _exposed_syscalls(faculties: list[Faculty]) -> list[str]:
+    """The ordered union of the faculties' tool_manifest syscalls that have a ToolSchema.
+
+    First-seen order across faculties (in binding order) is preserved, so the generated tool list is
+    deterministic. A manifest syscall with no ToolSchema (e.g. ``score_lead``, computed natively) is
+    deliberately omitted — it is not exposed to the LLM.
+    """
+    seen: list[str] = []
+    for faculty in faculties:
+        for syscall in faculty.tool_manifest:
+            if syscall in TOOL_SCHEMAS and syscall not in seen:
+                seen.append(syscall)
+    return seen
+
+
+def _build_tools(faculties: list[Faculty]) -> tuple[list[JsonObject], dict[str, ToolSchema]]:
+    """Build the OpenAI tool list + a tool_name→ToolSchema index FROM the mandate's faculties.
+
+    Layout: ``think`` first, then one function per exposed syscall (registry schema), then
+    ``claim_facts`` + ``finish``. For lead-finder this reproduces the legacy six tools byte-for-byte.
+    """
+    tools: list[JsonObject] = [_THINK_TOOL]
+    index: dict[str, ToolSchema] = {}
+    for syscall in _exposed_syscalls(faculties):
+        schema = TOOL_SCHEMAS[syscall]
+        tools.append(schema.as_tool())
+        index[schema.tool_name] = schema
+    tools.append(_CLAIM_FACTS_TOOL)
+    tools.append(_FINISH_TOOL)
+    return tools, index
+
+
+def _build_prompts(
+    mandate: MandateType | None, faculties: list[Faculty], ctx: FacultyContext
+) -> tuple[str, str]:
+    """Compose (system, user) prompts FROM the mandate.
+
+    Lead-finder (and the no-mandate back-compat default) use the LEGACY renderers verbatim, so the live
+    lead-finder prompt is byte-identical (regression-locked). Every other mandate uses the GENERIC
+    composer: ``charter.goal`` + the faculties' skill-pack fragments + constraints + tool list + target.
+    """
+    if mandate is None or mandate.name == "lead-finder":
+        return _system_prompt(ctx), _user_prompt(ctx)
+    return _compose_system_prompt(mandate, faculties, ctx), _compose_user_prompt(mandate)
+
+
+def _compose_system_prompt(mandate: MandateType, faculties: list[Faculty], ctx: FacultyContext) -> str:
+    charter = mandate.charter
+    lines: list[str] = [charter.goal.strip(), ""]
+    fragments = [skill_pack_fragment(f.skill_pack).strip() for f in faculties]
+    fragments = [frag for frag in fragments if frag]
+    if fragments:
+        lines.append("\n\n".join(fragments))
+        lines.append("")
+    if charter.constraints:
+        lines.append("Hard constraints:")
+        lines.extend(f"  - {constraint}" for constraint in charter.constraints)
+        lines.append("")
+    lines.append("Act ONE STEP AT A TIME — call exactly ONE tool per turn. Tools:")
+    lines.append("  - think(summary): a brief plan / reasoning note.")
+    for syscall in _exposed_syscalls(faculties):
+        schema = TOOL_SCHEMAS[syscall]
+        lines.append(f"  - {schema.tool_name}: {schema.description}")
+    lines.append(
+        "  - claim_facts(facts): commit verified facts (subject, predicate, object, confidence, evidence)."
+    )
+    lines.append("  - finish(summary): end the run.")
+    lines.append("")
+    lines.append(f"Target: {json.dumps(ctx.target, sort_keys=True)}")
+    return "\n".join(lines).strip()
+
+
+def _compose_user_prompt(mandate: MandateType) -> str:
+    return (
+        "Begin. Plan briefly with think, then take it one tool call at a time; I will return each "
+        "tool's result."
+    )
+
+
+def _normalize_args(ref: str | None, args: JsonObject) -> JsonObject:
+    """Apply the named kernel-side arg-normalizer (default identity).
+
+    The normalizers reproduce the legacy lead-finder arg shaping exactly so the generated syscall
+    requests are byte-identical. New syscalls use identity (tool args pass straight through).
+    """
+    if ref == "search_leads":
+        return _normalize_search_leads(args)
+    if ref == "read_url":
+        return _normalize_read_url(args)
+    if ref == "draft_email":
+        return _normalize_draft_email(args)
+    return dict(args)
+
+
+def _normalize_search_leads(args: JsonObject) -> JsonObject:
+    criteria: JsonObject = {}
+    for key in ("icp", "location", "query"):
+        value = args.get(key)
+        if isinstance(value, str) and value:
+            criteria[key] = value
+    excluded = args.get("exclude_domains")
+    if isinstance(excluded, list):
+        criteria["exclude_domains"] = [host for host in excluded if isinstance(host, str) and host]
+    raw_count = args.get("count")
+    count = raw_count if isinstance(raw_count, int) and raw_count > 0 else 5
+    return {"criteria": criteria, "count": count}
+
+
+def _normalize_read_url(args: JsonObject) -> JsonObject:
+    return {"lead_id": str(args.get("lead_id", "")), "url": str(args.get("url", ""))}
+
+
+def _normalize_draft_email(args: JsonObject) -> JsonObject:
+    return {
+        "to": str(args.get("to", "founder-review@agent-x.local")),
+        "subject": str(args.get("subject", "")),
+        "body": str(args.get("body", "")),
+        "lead_id": str(args.get("lead_id", "")),
+        "mode": "draft",
+    }
 
 
 def _system_prompt(ctx: FacultyContext) -> str:
@@ -280,7 +351,74 @@ def _resolve_tools(ctx: FacultyContext) -> list[JsonObject]:
     override = ctx.target.get("tools")
     if isinstance(override, list) and all(isinstance(item, dict) for item in override):
         return cast(list[JsonObject], override)
-    return _TOOLS
+    return _LEAD_FINDER_DEFAULT_TOOLS
+
+
+# Lead-finder default tool list — six OpenAI tools: think, search_leads, read_url,
+# draft_email, claim_facts, finish. Defined as a list (not a generator) so the bytes
+# match the pre-generalization runner and the regression-lock test holds.
+_LEAD_FINDER_DEFAULT_TOOLS: list[JsonObject] = [
+    _THINK_TOOL,
+    {
+        "type": "function",
+        "function": {
+            "name": "search_leads",
+            "description": (
+                "Web-search for candidate prospect ORGANISATIONS. Pass a SPECIFIC query targeting real "
+                "businesses' OWN websites — never articles, 'top 10' listicles, directories, or social media."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "the search query"},
+                    "icp": {"type": "string"},
+                    "location": {"type": "string"},
+                    "exclude_domains": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "hostnames to exclude, e.g. ['justdial.com','practo.com']",
+                    },
+                    "count": {"type": "integer"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_url",
+            "description": "Read ONE candidate's page. Copy lead_id and url verbatim from a search result.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "lead_id": {"type": "string", "description": "id of a lead from the last search result"},
+                    "url": {"type": "string", "description": "that lead's url"},
+                },
+                "required": ["lead_id", "url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "draft_email",
+            "description": "DRAFT (never send) personalised outreach. Parks for human approval.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "to": {"type": "string"},
+                    "subject": {"type": "string"},
+                    "body": {"type": "string"},
+                    "lead_id": {"type": "string"},
+                },
+                "required": ["subject", "body", "lead_id"],
+            },
+        },
+    },
+    _CLAIM_FACTS_TOOL,
+    _FINISH_TOOL,
+]
 
 
 def _user_prompt(ctx: FacultyContext) -> str:
@@ -302,6 +440,10 @@ class HermesSession:
 
     transport: ChatTransport
     ctx: FacultyContext
+    tools: list[JsonObject]
+    tool_index: dict[str, ToolSchema]
+    system_prompt: str
+    user_prompt: str
     cursor: int = 0
     _messages: list[JsonObject] = field(default_factory=list, init=False)
     _started: bool = field(default=False, init=False)
@@ -343,30 +485,28 @@ class HermesSession:
         if observation is not None and self._pending_call_id is not None:
             self._messages.append(
                 {
-                    "role": "tool",
-                    "tool_call_id": self._pending_call_id,
-                    "content": _bounded_tool_content(
+                "role": "tool",
+                "tool_call_id": self._pending_call_id,
+                "content": _bounded_tool_content(
                         {
                             "status": observation.status,
                             "fulfilled_by": observation.fulfilled_by,
                             "output": observation.output,
                             "error": observation.error,
                         }
-                    ),
+                ),
                 }
             )
             self._pending_call_id = None
 
         if not self._started:
             self._messages = [
-                {"role": "system", "content": _system_prompt(self.ctx)},
-                {"role": "user", "content": _user_prompt(self.ctx)},
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": self.user_prompt},
             ]
             self._started = True
 
-        response = await self.transport.complete_chat(
-            messages=self._messages, tools=_resolve_tools(self.ctx)
-        )
+        response = await self.transport.complete_chat(messages=self._messages, tools=self.tools)
         message = _sanitize_message_tool_calls(_first_message(response))
         self._messages.append(message)  # preserve the full assistant turn (incl. reasoning) — interleaved thinking
         self.cursor += 1
@@ -382,7 +522,7 @@ class HermesSession:
             extra_id = _tool_call_id(extra)
             if extra_id:
                 self._messages.append(
-                    {"role": "tool", "tool_call_id": extra_id, "content": "ignored: one action per turn"}
+                {"role": "tool", "tool_call_id": extra_id, "content": "ignored: one action per turn"}
                 )
 
         call_id, name, args = _parse_tool_call(tool_calls[0])
@@ -405,6 +545,8 @@ class HermesSession:
         if name == "claim_facts":
             raw = args.get("facts")
             return Claim(facts=self._to_facts(raw if isinstance(raw, list) else []))
+        # Lead-finder regression lock (main): explicit branches reproduce the byte-identical
+        # arg shaping for search_leads / read_url / draft_email so the legacy live LLM keeps working.
         if name == "search_leads":
             criteria: JsonObject = {}
             for key in ("icp", "location", "query"):
@@ -425,14 +567,14 @@ class HermesSession:
             return self._call(
                 "draft_email",
                 {
-                    "to": str(args.get("to", "founder-review@agent-x.local")),
-                    "subject": str(args.get("subject", "")),
-                    "body": str(args.get("body", "")),
-                    "lead_id": str(args.get("lead_id", "")),
-                    "mode": "draft",
+                "to": str(args.get("to", "founder-review@agent-x.local")),
+                "subject": str(args.get("subject", "")),
+                "body": str(args.get("body", "")),
+                "lead_id": str(args.get("lead_id", "")),
+                "mode": "draft",
                 },
             )
-        # Mandate-discovery tool names → same-name syscalls. The runner's per-mandate
+        # Mandate-discovery tool names → same-name syscalls (main). The runner's per-mandate
         # tool list (set via ``ctx.target['tools']``) declares these tools with the
         # EXACT names of the discovery_adapters' read syscalls, so a direct
         # name pass-through is the right routing here. The risk-class comes
@@ -440,12 +582,28 @@ class HermesSession:
         # ``tool_risk_map`` override.
         if name in _MANDATE_DISCOVERY_READ_TOOLS:
             return self._call(name, _json_obj(args))
+        # Generic fallback (books-prep design): if no explicit branch matched, look the tool up in
+        # the per-session index (built from the mandate's faculties' tool_manifests). This is how
+        # new syscalls (ingest_document, export_ledger, queue_manual_action, …) get routed without
+        # adding branches here. Default risk_class comes from TOOL_SCHEMAS[syscall].risk_class.
+        schema = self.tool_index.get(name)
+        if schema is not None:
+            return self._call(schema.syscall_name, _normalize_args(schema.arg_normalizer_ref, args))
         # defensive: an unrecognised tool name is recorded as a thought rather than crashing the run.
         return Think(summary=f"unrecognised tool: {name}", detail={"args": _json_obj(args)})
 
     def _call(self, syscall: str, args: JsonObject) -> Call:
         self._call_index += 1
+        # Per-mandate override (main) wins; otherwise TOOL_SCHEMAS is the source of truth (books-prep).
         risk_map = _resolve_tool_risk_map(self.ctx)
+        schema = TOOL_SCHEMAS.get(syscall)
+        if (
+            schema is not None
+            and schema.risk_class in {"read", "external_message", "reversible_write", "money", "irreversible"}
+        ):
+            risk_class: RiskClass = schema.risk_class
+        else:
+            risk_class = risk_map.get(syscall, "read")
         return Call(
             request=SyscallRequest(
                 name=syscall,
@@ -454,7 +612,7 @@ class HermesSession:
                 run_id=self.ctx.run_id,
                 idempotency_key=f"{self.ctx.run_id}:{syscall}:{self._call_index}",
                 ring=self.ctx.ring,
-                risk_class=risk_map.get(syscall, "read"),
+                risk_class=risk_class,
             )
         )
 
@@ -476,20 +634,20 @@ class HermesSession:
                 evidence = [f"hermes:{self.ctx.run_id}:{subject}:{predicate}"]
             facts.append(
                 Fact(
-                    id=f"{self.ctx.run_id}:{subject}:{predicate}",
-                    instance_id=self.ctx.instance_id,
-                    subject=subject,
-                    predicate=predicate,
-                    object=obj,
-                    confidence=conf,
-                    source="agent-inferred",
-                    provenance=Provenance(
+                id=f"{self.ctx.run_id}:{subject}:{predicate}",
+                instance_id=self.ctx.instance_id,
+                subject=subject,
+                predicate=predicate,
+                object=obj,
+                confidence=conf,
+                source="agent-inferred",
+                provenance=Provenance(
                         run_id=self.ctx.run_id,
                         evidence=evidence,
                         note=f"hermes claim: {predicate}",
-                    ),
-                    status="probation",
-                    created_at=self.ctx.now,
+                ),
+                status="probation",
+                created_at=self.ctx.now,
                 )
             )
         return facts
@@ -502,8 +660,59 @@ class HermesRunner:
     transport: ChatTransport
     name: HarnessKind = "hermes"
 
-    def start(self, *, context: FacultyContext, faculties: list[Faculty], cursor: int = 0) -> HermesSession:
-        return HermesSession(transport=self.transport, ctx=context, cursor=cursor)
+    def start(
+        self,
+        *,
+        context: FacultyContext,
+        faculties: list[Faculty],
+        cursor: int = 0,
+        mandate: MandateType | None = None,
+    ) -> HermesSession:
+        # Hybrid tool/prompt resolution (rebase of books-prep onto main, Phase 13.5):
+        #   1. If the operator set ``ctx.target['tools']`` (mandate-discovery pattern), use the
+        #      override list verbatim — main's per-mandate-type behaviour. We still build an index
+        #      so the generic fallback in ``_to_action`` can route any matching ToolSchema.
+        #   2. Else, use our faculty-based builder — books-prep's pattern.
+        override_tools = context.target.get("tools")
+        if isinstance(override_tools, list) and all(isinstance(t, dict) for t in override_tools):
+            tools = cast(list[JsonObject], override_tools)
+            tool_index = _build_tool_index_from_overrides(cast(list[JsonObject], override_tools))
+        else:
+            tools, tool_index = _build_tools(faculties)
+        system_prompt, user_prompt = _build_prompts(mandate, faculties, context)
+        return HermesSession(
+            transport=self.transport,
+            ctx=context,
+            tools=tools,
+            tool_index=tool_index,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            cursor=cursor,
+        )
+
+
+def _build_tool_index_from_overrides(override_tools: list[JsonObject]) -> dict[str, ToolSchema]:
+    """Build a tool_name → ToolSchema index from an operator-supplied tool list.
+
+    Only known ToolSchemas (from the contracts registry) end up in the index — the
+    generic fallback in ``_to_action`` uses it to route the LLM's tool call to the
+    correct syscall name. The function helps mypy narrow the JsonValue type at the
+    call sites.
+    """
+    override_names: set[str] = set()
+    for t in override_tools:
+        if not isinstance(t, dict):
+            continue
+        func = t.get("function")
+        if isinstance(func, dict):
+            name = func.get("name")
+            if isinstance(name, str):
+                override_names.add(name)
+    return {
+        schema.tool_name: schema
+        for schema in TOOL_SCHEMAS.values()
+        if schema.tool_name in override_names
+    }
 
 
 def _first_message(response: JsonObject) -> JsonObject:

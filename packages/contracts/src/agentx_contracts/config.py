@@ -42,6 +42,15 @@ class Settings(BaseSettings):
     # Optional: a direct GLM/Zhipu key, if you swap the faculty model off Minimax.
     zhipu_api_key: SecretStr | None = None
 
+    # --- Optional Gemini transport (OFF by default) ---
+    # Gemini exposes an OpenAI-compatible chat endpoint, and Hermes already drives an OpenAI-compatible
+    # transport, so flipping these is a transport SWAP at construction time (no runner rewrite). Default
+    # off → MiniMax → nothing changes. ``build_faculty_transport`` reads these (kernel bootstrap).
+    use_gemini: bool = False
+    gemini_api_key: SecretStr | None = None
+    gemini_model_id: str = "gemini-2.5-flash"
+    gemini_base_url: str = ""  # Gemini's OpenAI-compatible base, e.g. https://generativelanguage.googleapis.com/v1beta/openai/
+
     # --- Research provider (Codex lane) — set at least one ---
     exa_api_key: SecretStr | None = None  # semantic/neural search (good for discovery)
     brave_api_key: SecretStr | None = None  # Brave Search API (fast, cheap web search)

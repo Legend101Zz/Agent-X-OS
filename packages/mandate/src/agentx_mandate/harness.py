@@ -34,7 +34,7 @@ from agentx_contracts.base import AgentXModel
 from agentx_contracts.enums import HarnessKind, Ring
 from agentx_contracts.faculty import Faculty
 from agentx_contracts.jsontypes import JsonObject
-from agentx_contracts.mandate import HydrationSnapshot
+from agentx_contracts.mandate import HydrationSnapshot, MandateType
 from agentx_contracts.memory import Fact
 from agentx_contracts.syscall import SyscallRequest, SyscallResult
 from pydantic import Field
@@ -126,6 +126,7 @@ class HarnessRunner(Protocol):
         context: FacultyContext,
         faculties: list[Faculty],
         cursor: int = 0,
+        mandate: MandateType | None = None,
     ) -> HarnessSession: ...
 
 
@@ -210,7 +211,11 @@ class OwnHarness:
         context: FacultyContext,
         faculties: list[Faculty],
         cursor: int = 0,
+        mandate: MandateType | None = None,
     ) -> HarnessSession:
+        # ``mandate`` is accepted for Protocol parity with the Hermes runner (which derives its tools +
+        # prompt from it); the deterministic double follows its playbook and ignores it.
+        del mandate
         if self._recorded is not None:
             # recorded trajectory: reads are dropped (fulfilled by omission), replayed from a fixed list.
             return OwnHarnessSession(actions=_surface(self._recorded), cursor=cursor)

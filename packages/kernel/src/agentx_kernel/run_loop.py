@@ -34,9 +34,11 @@ from agentx_mandate.harness import (
     HarnessRunner,
     HarnessSession,
     OwnHarness,
+    Playbook,
     Think,
 )
 from agentx_mandate.lead_quality import enrich_lead
+from agentx_mandate.library.books_prep_playbook import books_prep_playbook
 from agentx_mandate.library.lead_finder_playbook import lead_finder_playbook
 from agentx_mandate.settlement import build_settlement
 
@@ -127,13 +129,13 @@ class Phase1RunInvoker:
             RunCreated,
             await self.journal.append(
                 RunCreated(
-                    event_id=f"{run_id}:created",
-                    seq=0,
-                    ts=trigger.ts,
-                    instance_id=instance.instance_id,
-                    run_id=run_id,
-                    type_ref=instance.type_ref,
-                    trigger=trigger,
+                event_id=f"{run_id}:created",
+                seq=0,
+                ts=trigger.ts,
+                instance_id=instance.instance_id,
+                run_id=run_id,
+                type_ref=instance.type_ref,
+                trigger=trigger,
                 )
             ),
         )
@@ -171,9 +173,9 @@ class Phase1RunInvoker:
         )
         claimed_facts: list[Fact] = []
 
-        runner = self._runner()
+        runner = self._runner(mandate)
         run_log.event("thought", f"harness started: {type(runner).__name__}", {})
-        session = runner.start(context=ctx, faculties=faculties, cursor=0)
+        session = runner.start(context=ctx, faculties=faculties, cursor=0, mandate=mandate)
         return await self._drive(
             mandate=mandate,
             instance=instance,
@@ -243,11 +245,12 @@ class Phase1RunInvoker:
             {"approval_event_id": approval.event_id},
         )
         claimed_facts = [fact.model_copy(deep=True) for fact in continuation.claimed_facts]
-        session = self._runner().start(
-            context=ctx,
-            faculties=faculties,
-            cursor=continuation.harness_cursor,
-        )
+        session = self._runner(continuation.mandate).start(
+                    context=ctx,
+                    faculties=faculties,
+                    cursor=continuation.harness_cursor,
+                    mandate=continuation.mandate,
+                )
         if continuation.harness_state:
             if not isinstance(session, StatefulHarnessSession):
                 raise RunNotResumable(run_id, "harness cannot restore persisted state")
@@ -275,14 +278,14 @@ class Phase1RunInvoker:
         if terminal is not None:
             if terminal.state == "parked":
                 await self._save_continuation(
-                    mandate=continuation.mandate,
-                    instance=continuation.instance,
-                    mode=continuation.mode,
-                    ctx=ctx,
-                    trace=trace,
-                    claimed_facts=claimed_facts,
-                    session=session,
-                    pending_call=continuation.pending_call,
+                mandate=continuation.mandate,
+                instance=continuation.instance,
+                mode=continuation.mode,
+                ctx=ctx,
+                trace=trace,
+                claimed_facts=claimed_facts,
+                session=session,
+                pending_call=continuation.pending_call,
                 )
             run_log.terminal(terminal.state, {"via": "resume"})
             return terminal
@@ -300,8 +303,12 @@ class Phase1RunInvoker:
             run_log=run_log,
         )
 
-    def _runner(self) -> HarnessRunner:
-        return self.runner if self.runner is not None else OwnHarness(playbook=lead_finder_playbook)
+    def _runner(self, mandate: MandateType) -> HarnessRunner:
+        # Live runs use the injected Hermes runner (mandate-driven tools/prompt). Sim runs use the
+        # deterministic ``own`` double following the mandate's playbook (lead-finder by default).
+        if self.runner is not None:
+            return self.runner
+        return OwnHarness(playbook=sim_playbook_for(mandate))
 
     async def _drive(
         self,
@@ -330,16 +337,16 @@ class Phase1RunInvoker:
                 import traceback as _tb
                 tb_text = _tb.format_exc()
                 _emit(
-                    run_log,
-                    trace,
-                    now,
-                    "error",
-                    f"harness step {steps} raised {type(step_exc).__name__}: {step_exc}",
-                    cast(JsonObject, {"step": steps, "exception": repr(step_exc), "traceback": tb_text}),
+                run_log,
+                trace,
+                now,
+                "error",
+                f"harness step {steps} raised {type(step_exc).__name__}: {step_exc}",
+                cast(JsonObject, {"step": steps, "exception": repr(step_exc), "traceback": tb_text}),
                 )
                 run_log.terminal("crashed", {"reason": "harness_step_raised", "step": steps})
                 return RunResult(
-                    run_id=ctx.run_id, state="crashed", trace=trace, claimed_facts=claimed_facts
+                run_id=ctx.run_id, state="crashed", trace=trace, claimed_facts=claimed_facts
                 )
             action_kind, action_summary, action_detail = _describe_action(action)
             run_log.event(action_kind, f"step {steps}: {action_summary}", {"step": steps, **action_detail})
@@ -367,7 +374,7 @@ class Phase1RunInvoker:
                         claimed_facts=claimed_facts,
                         session=session,
                         pending_call=_bind_request(action.request, ctx),
-                    )
+                )
                 run_log.terminal(terminal.state, {"park_reason": terminal.park.reason if terminal.park else None})
                 return terminal
         else:
@@ -580,11 +587,11 @@ class Phase1RunInvoker:
             )
             return (
                 RunResult(
-                    run_id=ctx.run_id,
-                    state="parked",
-                    trace=trace,
-                    claimed_facts=claimed_facts,
-                    park=ParkInfo(
+                run_id=ctx.run_id,
+                state="parked",
+                trace=trace,
+                claimed_facts=claimed_facts,
+                park=ParkInfo(
                         reason=outcome.parked.reason,
                         awaiting=outcome.parked.awaiting,
                         required_ring=outcome.parked.required_ring,
@@ -593,7 +600,7 @@ class Phase1RunInvoker:
                             "args": request.args,
                             "idempotency_key": request.idempotency_key,
                         },
-                    ),
+                ),
                 ),
                 None,
             )
@@ -661,6 +668,16 @@ def _apply_read_result(ctx: FacultyContext, request: SyscallRequest, output: Jso
         if normalized:
             ctx.scratchpad["leads"] = normalized
         return
+    if request.name == "ingest_document":
+        # Stash parsed transactions (accumulating across multiple ingested docs) for the categorizer.
+        raw = output.get("transactions")
+        if not isinstance(raw, list):
+            return
+        existing = ctx.scratchpad.get("transactions")
+        transactions: list[object] = existing if isinstance(existing, list) else []
+        transactions.extend(txn for txn in raw if isinstance(txn, dict))
+        ctx.scratchpad["transactions"] = transactions
+        return
     if request.name != "read_url":
         return
     lead_id = request.args.get("lead_id")
@@ -727,9 +744,9 @@ def _fulfill_sim_native_read(ctx: FacultyContext, request: SyscallRequest, trace
                 "url": url,
                 "title": f"[sim] {lead_id} Dental Clinic",
                 "markdown": (
-                    f"# [sim] {lead_id} Dental Clinic\n"
-                    "Dr. Sim Owner and the clinic team are accepting new patients.\n"
-                    "[Book an appointment](/contact)\n"
+                f"# [sim] {lead_id} Dental Clinic\n"
+                "Dr. Sim Owner and the clinic team are accepting new patients.\n"
+                "[Book an appointment](/contact)\n"
                 ),
                 "evidence": ["Dr. Sim Owner and the clinic team are accepting new patients."],
             }
@@ -737,6 +754,23 @@ def _fulfill_sim_native_read(ctx: FacultyContext, request: SyscallRequest, trace
         _trace(trace, ts, "thought", "native read (sim): read_url", request.args)
         return
     if request.name != "lead_research_batch":
+        # books-prep sim: synthesize clearly-marked bank transactions for ingest_document.
+        if request.name == "ingest_document":
+            output = _synthetic_sim_transactions(ctx, request.args)
+            _apply_read_result(ctx, request, output)
+            transactions = output.get("transactions")
+            _trace(
+                trace,
+                ts,
+                "thought",
+                "native ingest (sim synthetic transactions)",
+                {
+                    "doc_id": output.get("doc_id"),
+                    "txn_count": len(transactions) if isinstance(transactions, list) else 0,
+                    "source": "sim_native_read",
+                },
+            )
+            return
         _trace(trace, ts, "thought", f"native read (sim): {request.name}", request.args)
         return
     leads = _synthetic_sim_leads(ctx, request.args)
@@ -783,6 +817,59 @@ def _synthetic_sim_leads(ctx: FacultyContext, args: JsonObject) -> list[JsonObje
             }
         )
     return leads
+
+
+# --- sim-playbook resolver: type → deterministic playbook the ``own`` double follows in sim ---------
+# Defaults to lead-finder. books-prep registers its playbook here in step 5 (kernel→mandate import is
+# allowed; the reverse is forbidden, which is why the registry lives kernel-side).
+_SIM_PLAYBOOKS: dict[str, Playbook] = {
+    "lead-finder": lead_finder_playbook,
+    "books-prep": books_prep_playbook,
+}
+
+
+def sim_playbook_for(mandate: MandateType) -> Playbook:
+    """Resolve the deterministic sim playbook for a mandate (defaults to the lead-finder playbook)."""
+    return _SIM_PLAYBOOKS.get(mandate.name, lead_finder_playbook)
+
+
+def _synthetic_sim_transactions(ctx: FacultyContext, args: JsonObject) -> JsonObject:
+    """Deterministic, unmistakably-synthetic bank transactions for a books-prep sim ingest.
+
+    Mirrors the live ``IngestDocumentAdapter`` output shape (rows + per-row source citation + a
+    deterministic ``extraction_confidence``) but everything is flagged ``[sim]`` / ``origin:synthetic``
+    so it can never pose as a real statement. Running balance is continuous (so balance-continuity holds).
+    """
+    raw_doc = args.get("doc_id")
+    doc_id = raw_doc if isinstance(raw_doc, str) and raw_doc else "sim_doc_1"
+    account_id = "[sim] account XXXX1234"
+    period = "2026-04"
+    rows = [
+        ("2026-04-02", "[sim] NEFT ACME TRADERS PVT LTD inward payment", 0.0, 25000.0),
+        ("2026-04-05", "[sim] UPI/AMAZON/office stationery purchase", 1800.0, 0.0),
+        ("2026-04-09", "[sim] NEFT GST PAYMENT challan CPIN", 12000.0, 0.0),
+    ]
+    balance = 100000.0
+    transactions: list[JsonValue] = []
+    for index, (date, narration, debit, credit) in enumerate(rows, start=1):
+        balance = round(balance - debit + credit, 2)
+        transactions.append(
+            {
+                "date": date,
+                "narration": narration,
+                "debit": debit,
+                "credit": credit,
+                "balance": balance,
+                "ref": f"SIM{index:04d}",
+                "source": {"doc_id": doc_id, "page": 1, "line": index},
+                "account_id": account_id,
+                "statement_period": period,
+                "extraction_confidence": 1.0,
+                "extraction_suspect": False,
+                "origin": "synthetic",
+            }
+        )
+    return {"doc_id": doc_id, "transactions": transactions}
 
 
 def _normalize_leads(value: object) -> list[JsonObject]:

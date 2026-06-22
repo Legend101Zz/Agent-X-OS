@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 
 from agentx_contracts import HydrationSnapshot
 from agentx_contracts.enums import MaturityLevel, Ring, TenantAuth
-from agentx_contracts.faculty import FacultyBinding
+from agentx_contracts.faculty import Faculty, FacultyBinding
 from agentx_contracts.journal import ApprovalResolved, SyscallAttempted, SyscallSettled
 from agentx_contracts.jsontypes import JsonObject, JsonSchema
 from agentx_contracts.mandate import (
@@ -36,10 +36,23 @@ from agentx_contracts.syscall import (
 )
 from agentx_contracts.trigger import DeadlineTrigger
 from agentx_kernel.bootstrap import build_phase1_runinvoker
-from agentx_kernel.hermes_runner import HermesRunner
+from agentx_kernel.hermes_runner import (
+    HermesRunner,
+    _build_prompts,
+    _build_tools,
+    _system_prompt,
+    _user_prompt,
+)
+from agentx_mandate.faculties import get_faculty
 from agentx_mandate.harness import Call, Claim, FacultyContext, Finish, Think
+from agentx_mandate.library.lead_finder import build_lead_finder_type
 
 NOW = datetime(2026, 6, 17, tzinfo=UTC)
+
+
+def _lf_faculties() -> list[Faculty]:
+    """The lead-finder Faculty objects in binding order — the generalized runner builds tools from these."""
+    return [get_faculty(binding.faculty_name) for binding in build_lead_finder_type().faculties]
 
 
 def _ctx(target: JsonObject | None = None) -> FacultyContext:
@@ -99,14 +112,163 @@ def _runner(responses: list[JsonObject]) -> tuple[HermesRunner, FakeTransport]:
     return HermesRunner(transport=transport), transport
 
 
+# The legacy hard-coded lead-finder tool list (pre-generalization). The generalized runner must rebuild
+# THIS, byte-for-byte, from the lead-finder faculties — that is the regression lock (design §7).
+_LEGACY_LEAD_FINDER_TOOLS: list[JsonObject] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "think",
+            "description": "Record a brief private reasoning note. No real-world effect.",
+            "parameters": {
+                "type": "object",
+                "properties": {"summary": {"type": "string"}},
+                "required": ["summary"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_leads",
+            "description": (
+                "Web-search for candidate prospect ORGANISATIONS. Pass a SPECIFIC query targeting real "
+                "businesses' OWN websites — never articles, 'top 10' listicles, directories, or social media."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "the search query"},
+                    "icp": {"type": "string"},
+                    "location": {"type": "string"},
+                    "exclude_domains": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "hostnames to exclude, e.g. ['justdial.com','practo.com']",
+                    },
+                    "count": {"type": "integer"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_url",
+            "description": "Read ONE candidate's page. Copy lead_id and url verbatim from a search result.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "lead_id": {"type": "string", "description": "id of a lead from the last search result"},
+                    "url": {"type": "string", "description": "that lead's url"},
+                },
+                "required": ["lead_id", "url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "draft_email",
+            "description": "DRAFT (never send) personalised outreach. Parks for human approval.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "to": {"type": "string"},
+                    "subject": {"type": "string"},
+                    "body": {"type": "string"},
+                    "lead_id": {"type": "string"},
+                },
+                "required": ["subject", "body", "lead_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "claim_facts",
+            "description": (
+                "Commit verified facts to memory. For the chosen lead claim predicate 'actionable_lead' "
+                "(object=company) and 'qualified_lead_score' (object=score 0..1). evidence MUST quote text "
+                "you actually read."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "facts": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "subject": {"type": "string"},
+                                "predicate": {"type": "string"},
+                                "object": {"type": "string"},
+                                "confidence": {"type": "number"},
+                                "evidence": {"type": "array", "items": {"type": "string"}},
+                            },
+                            "required": ["subject", "predicate", "object", "evidence"],
+                        },
+                    }
+                },
+                "required": ["facts"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "finish",
+            "description": "End the run. Provide a short summary of the outcome.",
+            "parameters": {
+                "type": "object",
+                "properties": {"summary": {"type": "string"}},
+                "required": ["summary"],
+            },
+        },
+    },
+]
+
+
 async def test_runner_is_a_hermes_harness() -> None:
     runner, _ = _runner([])
     assert runner.name == "hermes"
 
 
+def test_generalized_runner_reproduces_lead_finder_tools_byte_for_byte() -> None:
+    """REGRESSION LOCK (design §7): tools built from the lead-finder faculties == the legacy hard list."""
+    tools, index = _build_tools(_lf_faculties())
+    assert tools == _LEGACY_LEAD_FINDER_TOOLS
+    # the syscall tools map to their kernel syscall names; score_lead (judgment) is NOT exposed.
+    assert index["search_leads"].syscall_name == "lead_research_batch"
+    assert index["read_url"].syscall_name == "read_url"
+    assert index["draft_email"].syscall_name == "draft_email"
+    tool_names: list[str] = []
+    for tool in tools:
+        function = tool["function"]
+        assert isinstance(function, dict)
+        tool_names.append(str(function["name"]))
+    assert tool_names == ["think", "search_leads", "read_url", "draft_email", "claim_facts", "finish"]
+    assert "score_lead" not in tool_names  # judgment's manifest entry stays native, never exposed
+
+
+def test_generalized_runner_reproduces_lead_finder_prompt_byte_for_byte() -> None:
+    """REGRESSION LOCK (design §7): the composed lead-finder prompt == the legacy renderer output."""
+    ctx = _ctx()
+    mandate = build_lead_finder_type()
+    system, user = _build_prompts(mandate, _lf_faculties(), ctx)
+    assert system == _system_prompt(ctx)
+    assert user == _user_prompt(ctx)
+    # and the same holds for the operator-supplied-lead branch of the prompt:
+    ctx2 = _ctx({"lead_company": "Acme", "lead_url": "https://acme.example", "task": "qualify"})
+    system2, user2 = _build_prompts(mandate, _lf_faculties(), ctx2)
+    assert system2 == _system_prompt(ctx2)
+    assert user2 == _user_prompt(ctx2)
+
+
 async def test_think_tool_call_becomes_a_think_action() -> None:
     runner, _ = _runner([_tool_response("think", {"summary": "the ICP is dental clinics in Pune"})])
-    session = runner.start(context=_ctx(), faculties=[])
+    session = runner.start(context=_ctx(), faculties=_lf_faculties())
     action = await session.step(None)
     assert isinstance(action, Think)
     assert "dental clinics" in action.summary
@@ -122,7 +284,7 @@ async def test_specific_lead_target_tells_hermes_to_read_that_url_without_replac
                 "task": "qualify the lead and draft a truthful email",
             }
         ),
-        faculties=[],
+        faculties=_lf_faculties(),
     )
 
     await session.step(None)
@@ -147,7 +309,7 @@ async def test_search_leads_tool_becomes_a_lead_research_batch_call_with_built_c
             )
         ]
     )
-    session = runner.start(context=_ctx(), faculties=[])
+    session = runner.start(context=_ctx(), faculties=_lf_faculties())
     action = await session.step(None)
     assert isinstance(action, Call)
     assert action.request.name == "lead_research_batch"  # mapped to the syscall name for the gateway
@@ -163,7 +325,7 @@ async def test_search_leads_tool_becomes_a_lead_research_batch_call_with_built_c
 
 async def test_read_url_tool_becomes_a_read_url_call() -> None:
     runner, _ = _runner([_tool_response("read_url", {"lead_id": "galaxy", "url": "https://galaxy.example"})])
-    session = runner.start(context=_ctx(), faculties=[])
+    session = runner.start(context=_ctx(), faculties=_lf_faculties())
     action = await session.step(None)
     assert isinstance(action, Call)
     assert action.request.name == "read_url"
@@ -175,7 +337,7 @@ async def test_draft_email_tool_is_classified_external_message_and_forces_draft_
     runner, _ = _runner(
         [_tool_response("draft_email", {"to": "x", "subject": "s", "body": "b", "lead_id": "galaxy"})]
     )
-    session = runner.start(context=_ctx(), faculties=[])
+    session = runner.start(context=_ctx(), faculties=_lf_faculties())
     action = await session.step(None)
     assert isinstance(action, Call)
     assert action.request.name == "draft_email"
@@ -202,7 +364,7 @@ async def test_claim_facts_become_a_claim_with_kernel_stamped_provenance() -> No
             )
         ]
     )
-    session = runner.start(context=_ctx(), faculties=[])
+    session = runner.start(context=_ctx(), faculties=_lf_faculties())
     action = await session.step(None)
     assert isinstance(action, Claim)
     assert len(action.facts) == 1
@@ -218,14 +380,14 @@ async def test_claim_facts_become_a_claim_with_kernel_stamped_provenance() -> No
 
 async def test_finish_tool_call_becomes_a_finish_action() -> None:
     runner, _ = _runner([_tool_response("finish", {"summary": "done"})])
-    session = runner.start(context=_ctx(), faculties=[])
+    session = runner.start(context=_ctx(), faculties=_lf_faculties())
     action = await session.step(None)
     assert isinstance(action, Finish)
 
 
 async def test_a_response_with_no_tool_call_is_treated_as_an_implicit_think() -> None:
     runner, _ = _runner([_text_response("I should search for dental clinics first.")])
-    session = runner.start(context=_ctx(), faculties=[])
+    session = runner.start(context=_ctx(), faculties=_lf_faculties())
     action = await session.step(None)
     assert isinstance(action, Think)
     assert "search for dental clinics" in action.summary
@@ -238,7 +400,7 @@ async def test_observation_is_fed_back_as_a_tool_message_and_reasoning_is_preser
             _tool_response("finish", {"summary": "done"}, "step2"),
         ]
     )
-    session = runner.start(context=_ctx(), faculties=[])
+    session = runner.start(context=_ctx(), faculties=_lf_faculties())
     call = await session.step(None)
     assert isinstance(call, Call)
     observation = SyscallResult(
@@ -266,13 +428,13 @@ async def test_session_state_round_trips_message_history_for_process_safe_resume
     before_runner, _ = _runner(
         [_tool_response("search_leads", {"query": "dental clinic Pune", "count": 1}, "persist me")]
     )
-    before = before_runner.start(context=_ctx(), faculties=[])
+    before = before_runner.start(context=_ctx(), faculties=_lf_faculties())
     call = await before.step(None)
     assert isinstance(call, Call)
     state = before.export_state()
 
     after_runner, after_transport = _runner([_tool_response("finish", {"summary": "done"}, "continued")])
-    after = after_runner.start(context=_ctx(), faculties=[], cursor=before.cursor)
+    after = after_runner.start(context=_ctx(), faculties=_lf_faculties(), cursor=before.cursor)
     after.restore_state(state)
     result = await after.step(
         SyscallResult(
@@ -360,7 +522,11 @@ def _live_mandate() -> MandateType:
             ],
             target={"icp": "independent dental clinics", "location": "Pune", "count": 1},
         ),
-        faculties=[FacultyBinding(faculty_name="research"), FacultyBinding(faculty_name="memory-craft")],
+        faculties=[
+            FacultyBinding(faculty_name="research"),
+            FacultyBinding(faculty_name="memory-craft"),
+            FacultyBinding(faculty_name="outreach"),  # exposes draft_email (the generalized tool seam)
+        ],
         domain_pack=DomainPackRef(name="indian-smb-leads", version="0.1.0"),
         verification=VerificationSuite(),
         settlement=SettlementRules(watch_window_hours=72),
