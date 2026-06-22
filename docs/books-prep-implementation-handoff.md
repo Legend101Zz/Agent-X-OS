@@ -126,8 +126,75 @@ Baseline on this branch: workspace pytest GREEN (confirmed before any edits).
       `confidence_ge_threshold`, `balance_continuity` (per (account_id, statement_period)),
       `unique ledger_transaction dedupe_key`. Cross-batch dedup via hydration snapshot. 205/205 + 1
       pre-existing baseline failure; mypy strict clean; lint-imports 3/0; ruff 0 new.
-      [committed]
-- [ ] Step 6  [ ] Step 7
+      [committed: 5d1af91, 1f465c2]
+- [x] Step 6 — catalog seeding + Gemini toggle: `_ensure_canonical_mandate_registered` now seeds
+      BOTH canonical types (lead-finder + books-prep@0.1.0) when the catalog is empty. The
+      books_prep catalog test was written by a prior Claude pass but asserted ids that never
+      existed (per-instance override registration is a silent no-op against a seeded canonical;
+      target_override flows to the worker via trigger_run instead). Rewrote the test to invoke
+      the seed helper directly + assert canonical ids + assert idempotency. Cleaned ruff warnings.
+      GREEN (6 tests in test_books_prep_catalog.py + 5 in test_hermes_client.py).
+      [committed: e101969, 4068df1]
+- [x] Step 7 — end-to-end test suite + P1 golden eval:
+      * tests/mandate/test_books_prep_playbook.py (8 tests): playbook shape, per-doc ingest intent,
+        categorizer emits all 9 fields (incl. GST sentinel + feed-forward), routes on low conf OR
+        extraction_suspect (P0-3), skips heap-resident dedupe keys (P0-2), builds clean-row Facts
+        with provenance, full Think→Claim→Call→Finish trajectory, dict/string document refs.
+      * tests/integration/test_books_prep_e2e.py (4 tests): drives books_prep through
+        Phase1RunInvoker in sim mode; asserts the real .xlsx artifact (Ledger / Review Queue /
+        Summary sheets) exists on disk, settlement produces ledger_transaction facts with
+        provenance, multi-doc fan-out works, threshold changes affect queue rate proportionally.
+      * tests/eval/test_books_prep_golden_eval.py (3 tests): the P1 cold-start eval. 12-row
+        hand-curated golden fixture, computes ledger_head top-1 accuracy, vendor-resolution
+        accuracy, queue_rate, false_confidence_rate, and a calibration table. Strictly
+        OBSERVATIONAL per caveats P1 'v0 honesty' — no CI gate, just measurements + JSON report.
+        Current numbers: 100% head accuracy, 0.0% false-confidence.
+      * tests/eval/test_books_prep_swarm.py (1 test): kernel-level swarm loop (run →
+        golden-eval judge → PromotionGate); proves invariant #7 (no synthetic-only promotion)
+        applies to books-prep. Full /commands/run-swarm API surface for books-prep deferred —
+        needs a books-shaped scenario pack + sim registry + judge rubric + promptfoo file.
+      GREEN: 218 passed workspace + 96 passed api + 3 kept lint-imports + ruff clean +
+      mypy --strict clean. [committed: 1e085d8]
+
+## Spec-vs-code facts worth recording for the next session
+
+1. **Per-instance mandate override against a seeded canonical is a no-op.** When the catalog is
+   pre-seeded (live mode or test mode), re-registering a per-instance variant with the same
+   ``(name, version)`` as the canonical raises ``MandateTypeConflict`` (silently swallowed in
+   app.py:instantiate). The target_override reaches the worker only via ``trigger_run``'s
+   per-trigger ``target`` merge (app.py:trigger_run). The ``mandate_id`` field returned from
+   ``/commands/instantiate`` now reflects the canonical id in that case (cleaner contract for
+   the dashboard). This is acceptable for v0 because the per-instance behavior is captured by
+   the canonical mandate's target override; the design's "approval cards are already generic"
+   promise holds. If we ever need TRUE per-instance mandate variants, the right fix is a
+   separate ``mandate_variant`` collection (not a contract change to ``MandateType``).
+
+2. **Confidence threshold default 0.8 is provisional.** Per caveats P1, the golden eval reports
+   metrics observationally; the safety-critical false_confidence_rate on the current 12-row
+   golden set is 0%. The real threshold bar is set AFTER the CA acceptance run (P2-1) with
+   real labelled rows. Until then, do NOT introduce a CI gate on golden-eval metrics.
+
+3. **books-prep mandator returned ``mandate_id`` previously pointed at an unregistered id.**
+   Fixed in step 6 (see point 1 above). If you see dashboard code referencing the old
+   ``type_inst_<safe>_<timestamp>`` shape, it predates the fix.
+
+## Files touched in steps 6 + 7
+
+Step 6: api/src/agentx_api/app.py, packages/kernel/src/agentx_kernel/hermes.py,
+        tests/kernel/test_hermes_client.py, api/tests/test_books_prep_catalog.py.
+Step 7: tests/mandate/test_books_prep_playbook.py (new),
+        tests/integration/test_books_prep_e2e.py (new),
+        tests/eval/test_books_prep_golden_eval.py (new),
+        tests/eval/test_books_prep_swarm.py (new).
+
+## Pre-existing baseline failures (NOT introduced by this build)
+
+- ``packages/syscall/tests/test_send_email_adapter.py::test_send_email_adapter_module_does_not_import_credential_roots``
+  — red on baseline ``main`` (adapters.py imports config/security).
+- ``api/tests/test_send_email_integration.py::test_runtime_does_not_register_send_email_adapter_when_transport_none``
+  + ``::test_lead_finder_send_email_without_transport_lands_in_manual_queue`` (×2) — local
+  ``.env`` has SMTP + RUN_LIVE_EMAIL set, so send_email registers; these "no transport"
+  tests fail by environment, not code. Confirmed I touched zero api/syscall files.
 
 ### Canonical transaction shape (shared: adapter out / sim-native / categorizer / export)
 date, narration, debit(float), credit(float), balance(float|None), ref, source{doc_id,page,line},
