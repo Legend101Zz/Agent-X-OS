@@ -364,7 +364,7 @@ class HermesSession:
         response = await self.transport.complete_chat(
             messages=self._messages, tools=_resolve_tools(self.ctx)
         )
-        message = _first_message(response)
+        message = _sanitize_message_tool_calls(_first_message(response))
         self._messages.append(message)  # preserve the full assistant turn (incl. reasoning) — interleaved thinking
         self.cursor += 1
 
@@ -513,6 +513,38 @@ def _first_message(response: JsonObject) -> JsonObject:
     message = first.get("message")
     if not isinstance(message, dict):
         raise HermesProtocolError("Hermes choice had no message object")
+    return message
+
+
+def _sanitize_message_tool_calls(message: JsonObject) -> JsonObject:
+    """Normalise every tool_call's ``function.arguments`` to a valid JSON string.
+
+    MiniMax truncates a tool_call's arguments when generation hits max_tokens,
+    producing an invalid JSON string. Re-submitting that assistant message makes
+    MiniMax reject the ENTIRE next request with HTTP 400 ("invalid function
+    arguments json string, tool_call_id: …"), crashing the run. We rewrite each
+    arguments field to canonical JSON (or ``{}`` if unparseable) so the
+    conversation history is always replayable. Mutates and returns ``message``.
+    """
+    tool_calls = message.get("tool_calls")
+    if not isinstance(tool_calls, list):
+        return message
+    for tc in tool_calls:
+        if not isinstance(tc, dict):
+            continue
+        fn = tc.get("function")
+        if not isinstance(fn, dict):
+            continue
+        raw = fn.get("arguments")
+        if isinstance(raw, str):
+            try:
+                fn["arguments"] = json.dumps(json.loads(raw))
+            except (json.JSONDecodeError, ValueError):
+                fn["arguments"] = "{}"
+        elif isinstance(raw, dict):
+            fn["arguments"] = json.dumps(raw)
+        elif raw is None:
+            fn["arguments"] = "{}"
     return message
 
 

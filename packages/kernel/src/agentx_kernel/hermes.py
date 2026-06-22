@@ -65,7 +65,10 @@ class HermesClient:
             "tool_choice": "auto",
             "temperature": 1.0,
             "top_p": 0.95,
-            "max_tokens": 4096,
+            # Headroom so a long tool-call (e.g. a full draft_email body) plus the
+            # model's interleaved reasoning don't truncate mid-arguments — a
+            # truncated arguments JSON makes the next turn fail with HTTP 400.
+            "max_tokens": 8192,
             "stream": False,
         }
 
