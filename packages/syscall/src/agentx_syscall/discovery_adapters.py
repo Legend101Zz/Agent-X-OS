@@ -82,23 +82,50 @@ def _extract_firecrawl_data(response: Any) -> list[dict[str, Any]]:
     Firecrawl's search returns either a ``SearchData`` dataclass with a
     ``web``/``news``/``images`` attribute, or a plain list (v1 compat).
     We pull ``web`` first, then fall back to iterating the response.
+
+    The list items may be Pydantic ``SearchResultWeb`` models (which are
+    NOT plain Mappings) — we call ``model_dump()`` on them to convert
+    to dicts so the downstream F1 normaliser can read fields by key.
+    Without this, the F1 normaliser sees ``{"raw": <pydantic>}`` and
+    returns None for every post, dropping the entire sample.
     """
     if response is None:
         return []
     if isinstance(response, Mapping):
         if "data" in response and isinstance(response["data"], list):
-            return [dict(item) if isinstance(item, Mapping) else {"raw": item} for item in response["data"]]
+            return [_pydantic_to_dict(item) for item in response["data"]]
         if "web" in response and isinstance(response["web"], list):
-            return [dict(item) if isinstance(item, Mapping) else {"raw": item} for item in response["web"]]
+            return [_pydantic_to_dict(item) for item in response["web"]]
         return [dict(response)]
     web = getattr(response, "web", None)
     if isinstance(web, list):
-        return [dict(item) if isinstance(item, Mapping) else {"raw": item} for item in web]
+        return [_pydantic_to_dict(item) for item in web]
     if isinstance(response, list):
-        return [dict(item) if isinstance(item, Mapping) else {"raw": item} for item in response]
+        return [_pydantic_to_dict(item) for item in response]
     if isinstance(response, str):
         return [{"raw": response}]
-    return [{"raw": str(response)}]
+    return [_pydantic_to_dict(response)]
+
+
+def _pydantic_to_dict(item: Any) -> dict[str, Any]:
+    """Convert a Firecrawl result item (possibly a Pydantic model) to a dict.
+
+    The v2 SDK returns Pydantic ``SearchResultWeb`` models whose
+    ``__iter__`` is NOT a Mapping (it iterates the model fields). Calling
+    ``dict(item)`` on a Pydantic model gives ``{field_name: field_value}``
+    for pydantic v2 in most cases — but the safer cross-version path
+    is ``model_dump()`` when the model supports it.
+    """
+    if isinstance(item, dict):
+        return item
+    if hasattr(item, "model_dump"):
+        try:
+            return dict(item.model_dump())
+        except Exception:  # noqa: BLE001 — fallback to dict() below
+            pass
+    if isinstance(item, Mapping):
+        return dict(item)
+    return {"raw": str(item)}
 
 
 def _post_age_months(timestamp: str) -> float | None:
