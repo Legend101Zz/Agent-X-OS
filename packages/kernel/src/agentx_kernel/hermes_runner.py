@@ -51,6 +51,33 @@ _RISK_BY_SYSCALL: dict[str, RiskClass] = {
     "draft_email": "external_message",
 }
 
+# The mandate-discovery mandate's three read syscalls — same names as the
+# discovery_adapters. The LLM is told these are its tools; the runner
+# passes the tool name through to the gateway as the syscall name.
+_MANDATE_DISCOVERY_READ_TOOLS: frozenset[str] = frozenset({
+    "community_source_sample",
+    "competitor_search",
+    "buyer_channel_discovery",
+})
+
+
+def _resolve_tool_risk_map(ctx: FacultyContext) -> dict[str, RiskClass]:
+    """Pick a per-mandate-type risk map when ``ctx.target['tool_risk_map']`` is set.
+
+    Mandate-discovery's read adapters (community_source_sample, competitor_search,
+    buyer_channel_discovery) are all read-class; the lead-finder defaults would
+    misclassify them as ``read`` only by accident. Per-mandate-type override is
+    the principled way.
+    """
+    override = ctx.target.get("tool_risk_map")
+    if isinstance(override, dict):
+        result: dict[str, RiskClass] = {}
+        for name, risk in override.items():
+            if isinstance(name, str) and isinstance(risk, str) and risk in {"read", "external_message", "reversible_write", "money", "irreversible"}:
+                result[name] = cast(RiskClass, risk)
+        return result
+    return _RISK_BY_SYSCALL
+
 _TOOLS: list[JsonObject] = [
     {
         "type": "function",
@@ -168,6 +195,27 @@ _TOOLS: list[JsonObject] = [
 
 
 def _system_prompt(ctx: FacultyContext) -> str:
+    """Build the live LLM's system prompt.
+
+    If ``ctx.target['system_prompt_override']`` is set (per-mandate-type), use
+    it. ``${segment}``, ``${geography}``, and ``${time_window}`` placeholders
+    in the override are substituted from the target — that's how a generic
+    mandate-discovery prompt template becomes per-run personalised.
+
+    This is the principled way for a new mandate type to teach the LLM its
+    own vocabulary: the lead-finder default below assumes the LLM is running
+    a research-and-draft loop, which is wrong for read-only mandates like
+    mandate-discovery.
+    """
+    override = ctx.target.get("system_prompt_override")
+    if isinstance(override, str) and override.strip():
+        target = ctx.target
+        return (
+            override
+            .replace("${segment}", str(target.get("segment", "")))
+            .replace("${geography}", str(target.get("geography", "")))
+            .replace("${time_window}", str(target.get("time_window", "")))
+        )
     target = ctx.target
     icp = str(target.get("icp", "qualified B2B prospects"))
     location = str(target.get("location", ""))
@@ -216,6 +264,20 @@ def _system_prompt(ctx: FacultyContext) -> str:
         "evidence quoted from what you actually read) BEFORE you call draft_email — drafting pauses the run for "
         "human approval, so the claims must be committed first."
     )
+
+
+def _resolve_tools(ctx: FacultyContext) -> list[JsonObject]:
+    """Pick per-mandate-type tool definitions when ``ctx.target['tools']`` is set.
+
+    The lead-finder defaults assume a research-and-draft flow; read-only
+    mandates like mandate-discovery need to declare their own tool list
+    (community_source_sample, competitor_search, buyer_channel_discovery)
+    so the LLM can call them.
+    """
+    override = ctx.target.get("tools")
+    if isinstance(override, list) and all(isinstance(item, dict) for item in override):
+        return cast(list[JsonObject], override)
+    return _TOOLS
 
 
 def _user_prompt(ctx: FacultyContext) -> str:
@@ -299,7 +361,9 @@ class HermesSession:
             ]
             self._started = True
 
-        response = await self.transport.complete_chat(messages=self._messages, tools=_TOOLS)
+        response = await self.transport.complete_chat(
+            messages=self._messages, tools=_resolve_tools(self.ctx)
+        )
         message = _first_message(response)
         self._messages.append(message)  # preserve the full assistant turn (incl. reasoning) — interleaved thinking
         self.cursor += 1
@@ -365,11 +429,20 @@ class HermesSession:
                     "mode": "draft",
                 },
             )
+        # Mandate-discovery tool names → same-name syscalls. The runner's per-mandate
+        # tool list (set via ``ctx.target['tools']``) declares these tools with the
+        # EXACT names of the discovery_adapters' read syscalls, so a direct
+        # name pass-through is the right routing here. The risk-class comes
+        # from ``_resolve_tool_risk_map`` (above) which honours the per-mandate
+        # ``tool_risk_map`` override.
+        if name in _MANDATE_DISCOVERY_READ_TOOLS:
+            return self._call(name, _json_obj(args))
         # defensive: an unrecognised tool name is recorded as a thought rather than crashing the run.
         return Think(summary=f"unrecognised tool: {name}", detail={"args": _json_obj(args)})
 
     def _call(self, syscall: str, args: JsonObject) -> Call:
         self._call_index += 1
+        risk_map = _resolve_tool_risk_map(self.ctx)
         return Call(
             request=SyscallRequest(
                 name=syscall,
@@ -378,7 +451,7 @@ class HermesSession:
                 run_id=self.ctx.run_id,
                 idempotency_key=f"{self.ctx.run_id}:{syscall}:{self._call_index}",
                 ring=self.ctx.ring,
-                risk_class=_RISK_BY_SYSCALL.get(syscall, "read"),
+                risk_class=risk_map.get(syscall, "read"),
             )
         )
 

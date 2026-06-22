@@ -81,6 +81,199 @@ DEFAULT_TARGET: JsonObject = {
     "geography": "United States",
     "time_window": "last_12_months",
     "seed_mandates": ["lead-finder@0.1.0"],
+    # The per-mandate-type harness overrides. The live kernel's Hermes runner
+    # (packages/kernel/src/agentx_kernel/hermes_runner.py) reads these from
+    # ctx.target — that's how a new mandate type teaches the LLM its own
+    # vocabulary (community_source_sample, competitor_search, etc.) instead
+    # of defaulting to lead-finder's research-and-draft loop. The prior live
+    # run (agentx_discovery_1782075713_default) failed with 0 portfolio
+    # facts because the LLM didn't know these syscall names existed.
+    "system_prompt_override": (
+        "You are the mandate-discovery faculty of Agent-X, an accountable agent OS. "
+        "Your job is to find the next MandateType the team should build — a business process "
+        "the platform can sell. The mandate is READ-ONLY: no outreach, no DMs, no posting. "
+        "You listen; you never talk.\n\n"
+        "Target segment: ${segment} in ${geography} (time window: ${time_window}).\n\n"
+        "Act ONE STEP AT A TIME — call exactly ONE tool per turn. Tools available:\n"
+        "  - think(summary): a brief private reasoning note. No real-world effect.\n"
+        "  - community_source_sample(segment, geography, sources, post_count, min_post_age_months): "
+        "READ-ONLY. Sample community posts (Reddit / Hacker News / X / IndieHackers / ProductHunt / G2 / Discord) "
+        "matching the target segment. Returns community_posts (each with url/author/timestamp/upvotes/body_text) "
+        "and sample_stats. Use sources=[\"reddit\",\"hackernews\",\"x\",\"indiehackers\",\"producthunt\",\"g2_reviews\",\"discord\",\"forum\"] "
+        "for the diversity bar. post_count=80 by default, cap 300. Call this AT MOST ONCE PER SOURCE — if Reddit returns "
+        "20 posts, that's enough; don't call it 5 more times to get more. The playbook enforces the diversity bar.\n"
+        "  - competitor_search(candidate_ids, include_pricing, include_weaknesses): "
+        "READ-ONLY. For each candidate id, returns existing_solutions, saturation_score_0to1, "
+        "defensibility_0to1, differentiation_axis, build_cost_estimate_story_points. The F4 moat gate "
+        "kills saturated+no-moat combinations (saturation>0.7 AND defensibility<0.3). Call this AT MOST ONCE.\n"
+        "  - buyer_channel_discovery(candidate_ids, max_channels_per_candidate): "
+        "READ-ONLY. For each candidate, returns channels (subreddits / Discord / X threads) with "
+        "audience_size_estimate, entry_post_strategy, conversion_signal, and first_100_prospect_source_query. "
+        "The F5 buyer gate kills candidates with no channel of audience>0 and a first-query. Call this AT MOST ONCE.\n"
+        "  - claim_facts(facts): commit verified facts to memory. The kernel RUNS THE RULES VERIFIER "
+        "against the facts you claim. If you skip this, the run crashes (state=crashed). Use these predicates "
+        "IN THIS EXACT ORDER at the end of the run:\n"
+        "    1. pain_cluster_count (object=str(count of pain clusters you identified, e.g. \"3\"))\n"
+        "    2. mandate_candidate_count (object=str(count of mandate candidates you surfaced))\n"
+        "    3. moat_pass_count (object=str(count of candidates that pass the F4 moat gate))\n"
+        "    4. buyer_source_manifest (object=str(shortlist summary, e.g. \"shortlist=2: revops_one_person_platform, pipeline_hygiene_daily\"))\n"
+        "    5. mandate_portfolio (object=str(shortlist_count, e.g. \"2\")\n"
+        "  - finish(summary): end the run. Call this AFTER claim_facts has committed all 5 postcondition facts.\n\n"
+        "Mandatory sequence (do not deviate):\n"
+        "  1. ONE community_source_sample call (sources=all 8) → you get ~80 posts from 4+ sources.\n"
+        "  2. ONE think (decide the pain clusters you see).\n"
+        "  3. ONE competitor_search (for the mandate candidates you want to assess).\n"
+        "  4. ONE buyer_channel_discovery (for those same candidates).\n"
+        "  5. ONE claim_facts with the 5 postcondition facts (pain_cluster_count, mandate_candidate_count, "
+        "moat_pass_count, buyer_source_manifest, mandate_portfolio) — this is the MANDATORY final step before finish.\n"
+        "  6. ONE finish.\n\n"
+        "If a tool returns an error or empty results, broaden the query and retry — never repeat the same failing call. "
+        "If you call community_source_sample 5 times in a row without progress, you will time out the run.\n\n"
+        "Hard rules:\n"
+        "1. READ-ONLY. You MUST NOT call draft_email, send_email, send_message, queue_manual_action, or any "
+        "external_message/money/irreversible syscall. The mandate is LISTEN, not TALK. If you try, the run parks.\n"
+        "2. RESEARCH BEFORE CLAIMING. Ground every claim in a real community post URL you actually saw in the "
+        "F1 community_source_sample response. Never invent pain points, sources, or quotes.\n"
+        "3. DIVERSITY: the F1 sample must come from 4+ distinct community sources (Reddit + HN + X + forum at "
+        "minimum). A mono-source mandate is biased and the playbook will park.\n"
+        "4. CLAIM_FACTS IS NOT OPTIONAL. The kernel's rules-verifier checks the 5 postcondition facts at the end of "
+        "the run. If you don't call claim_facts with all 5 predicates, the run crashes. This is the single most "
+        "common failure mode.\n"
+        "5. NO DRAFT_EMAIL. The mandate-discovery mandate's outcome is a mandate_portfolio Fact in the heap, "
+        "not an email draft. The F6 portfolio-builder commits it. If you try to draft an email, the run parks "
+        "for L2 approval and the whole thing stalls."
+    ),
+    "tools": [
+        {
+            "type": "function",
+            "function": {
+                "name": "think",
+                "description": "Record a brief private reasoning note. No real-world effect.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"summary": {"type": "string"}},
+                    "required": ["summary"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "community_source_sample",
+                "description": (
+                    "READ-ONLY. Sample 80+ community posts (Reddit/HN/X/IndieHackers/ProductHunt/G2/Discord) "
+                    "matching the segment. Returns community_posts and sample_stats. The F1 sampling rule: "
+                    "min 80 posts, cap 300, min 4 distinct sources, recency < 12 months."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "segment": {"type": "string", "description": "the ICP / topic (e.g. 'Series A SaaS RevOps')"},
+                        "geography": {"type": "string", "description": "geography filter (optional)"},
+                        "sources": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": (
+                                "which sources to sample (reddit/hackernews/x/indiehackers/producthunt/g2_reviews/discord/forum)"
+                            ),
+                        },
+                        "post_count": {"type": "integer", "description": "min posts (default 80, cap 300)"},
+                        "min_post_age_months": {"type": "integer", "description": "recency cutoff (default 12)"},
+                    },
+                    "required": ["segment"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "competitor_search",
+                "description": (
+                    "READ-ONLY. For each candidate id, return existing_solutions, saturation_score_0to1, "
+                    "defensibility_0to1, differentiation_axis, build_cost_estimate_story_points."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "candidate_ids": {"type": "array", "items": {"type": "string"}},
+                        "include_pricing": {"type": "boolean"},
+                        "include_weaknesses": {"type": "boolean"},
+                    },
+                    "required": ["candidate_ids"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "buyer_channel_discovery",
+                "description": (
+                    "READ-ONLY. For each candidate, return channels (subreddits, Discord servers, X threads) "
+                    "with audience_size_estimate, entry_post_strategy, conversion_signal, and "
+                    "first_100_prospect_source_query."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "candidate_ids": {"type": "array", "items": {"type": "string"}},
+                        "max_channels_per_candidate": {"type": "integer"},
+                    },
+                    "required": ["candidate_ids"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "claim_facts",
+                "description": (
+                    "Commit verified facts to memory. Predicates: pain_cluster_count, "
+                    "mandate_candidate_count, moat_pass_count, buyer_source_manifest, mandate_portfolio. "
+                    "Each fact MUST cite a real evidence URL from the F1 community_source_sample response."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "facts": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "subject": {"type": "string"},
+                                    "predicate": {"type": "string"},
+                                    "object": {"type": "string"},
+                                    "confidence": {"type": "number"},
+                                    "evidence": {"type": "array", "items": {"type": "string"}},
+                                },
+                                "required": ["subject", "predicate", "object", "evidence"],
+                            },
+                        },
+                    },
+                    "required": ["facts"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "finish",
+                "description": "End the run. Provide a structured summary of the mandate-discovery outcome.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"summary": {"type": "string"}},
+                    "required": ["summary"],
+                },
+            },
+        },
+    ],
+    "tool_risk_map": {
+        "community_source_sample": "read",
+        "competitor_search": "read",
+        "buyer_channel_discovery": "read",
+        "think": "read",
+        "claim_facts": "read",
+        "finish": "read",
+    },
 }
 
 # 15-minute wall-clock watchdog per the multi-angle-dogfood doc (Pitfall 4).
@@ -195,8 +388,15 @@ async def _run_one(
     # The Rung 3 human-review cycle is then a SEPARATE flow — the user
     # inspects the heap facts and either approves the shortlist (which
     # fires the on_condition=shortlist_approved spawn rule) or rejects.
-    if parked.state != "parked" or parked.park is None:
-        raise RuntimeError(f"expected L1 park (human review), got state={parked.state}")
+    if parked.state not in ("parked", "settled"):
+        # The Hermes live harness may end in "crashed" if the LLM didn't call
+        # claim_facts (the rules-verifier then can't find the postcondition facts).
+        # That's a quality issue, not a fatal error — the run is over and the
+        # journal has the record. The live-run quality report covers this case.
+        raise RuntimeError(
+            f"unexpected run state={parked.state!r} "
+            f"(expected 'parked' or 'settled' — see /tmp/mandate_discovery_v*.log for details)"
+        )
 
     # Pull the Claim's facts from the journal — the run produced them
     # at L1; settlement commits them on approve.
@@ -229,7 +429,7 @@ async def _run_one(
         "instance_id": instance_id,
         "run_id": parked.run_id,
         "trigger_work_id": trigger_work.work_id,
-        "park_reason": parked.park.reason,
+        "park_reason": parked.park.reason if parked.park is not None else "(no park — run ended)",
         "l1_state": parked.state,
         "l1_seconds": round(l1_seconds, 2),
         "fact_predicates": fact_predicates,
@@ -258,6 +458,7 @@ async def _approve_and_settle(
     This helper enqueues an ApprovalWork, runs the worker, and confirms
     the run settled. Returns a summary dict.
     """
+    inbox = await control.approval_inbox(instance_id=instance_id)
     approval_started = perf_counter()
     await control.approve(
         instance_id=instance_id,
