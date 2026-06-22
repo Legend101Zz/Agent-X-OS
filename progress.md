@@ -405,3 +405,62 @@ names. Fix the harness prompt, re-run, and the F1/F4/F5 calls will
 fire. **The deterministic infrastructure (gates, faculty library,
 playbook, adapters, registry wiring) is correct** — only the LLM
 prompt is missing.
+
+## Session M Phase 13.5 (2026-06-22) — Live run: SETTLED with 5 facts
+
+### Built (`0a77847`)
+- `packages/kernel/src/agentx_kernel/hermes_runner.py` — added per-mandate-type
+  harness overrides (system_prompt_override, tools, tool_risk_map) read from
+  ctx.target. The lead-finder default prompt is unchanged (backwards compatible).
+- `scripts/run_mandate_discovery.py` — DEFAULT_TARGET now includes the
+  mandate-discovery system prompt + 6-tool OpenAI schema + tool_risk_map.
+  State check relaxed to parked/settled.
+
+### Live run (the trigger you asked for — round 3)
+
+```bash
+INSTANCE_ID=agentx_discovery_1782102614_default
+L1_STATE=settled
+LATENCY_SECONDS l1=331.38
+FACT_PREDICATES=buyer_source_manifest,mandate_candidate_count,mandate_portfolio,moat_pass_count,pain_cluster_count
+HEAP_FACT_COUNT=5
+```
+
+The first **settled** mandate-discovery run. 5 charter postcondition facts
+in the heap, accepted by the rules-verifier. 14-day Rung 4 watch registered.
+
+### Quality check — works structurally, shortlist=0 (LLM-side)
+
+- ✅ F1 community_source_sample: 8 successful calls (the LLM used the right vocabulary)
+- ✅ F4 competitor_search: 1 successful call
+- ✅ F5 buyer_channel_discovery: 1 successful call
+- ✅ 5 charter postcondition facts in the heap
+- ✅ Rules-verifier passed; run settled (not crashed, not parked)
+- ✅ Read-only invariance held (no draft_email calls)
+- ❌ `pain_cluster_count=0` (the LLM couldn't extract quotes with real URLs)
+- ❌ `shortlist=0` (the LLM invented candidate_ids that didn't match the F1 posts)
+- ❌ `mandate_portfolio=0` (consequence of shortlist=0)
+
+The LLM-side gap is **candidate_id provenance**: when the LLM calls F4/F5,
+it uses invented slugs like `revops_pipeline_hygiene_daily_auditor` instead
+of anchoring to actual F1 post URLs. The deterministic own-harness playbook
+gets this right; the LLM-as-playbook doesn't.
+
+### What's good (the parts that work)
+- The LLM now uses mandate-discovery's vocabulary (zero lead-finder hallucinations)
+- The F1/F4/F5 read adapters are live, registered, and being called
+- All 9 Firecrawl calls returned `status=ok`
+- The kernel invariants held (idempotency, ring check, journal, rules-verifier)
+- The run **settled at L1** (not crashed, not parked) — first time
+
+### What needs Phase 14 (the next follow-up)
+- Either: tighten the LLM prompt to anchor candidate_ids to real F1 post URLs
+- Or: ship own-harness-as-default for mandate-discovery (the deterministic
+  playbook is the canonical F1→F6 implementation)
+- Either fix gets shortlist > 0 on the next run
+
+### Evidence
+- `/tmp/mandate_discovery_v3.log` — full v3 run log
+- `/tmp/agentx_discovery_dogfood/agentx_discovery_1782102614/default.json` — settled summary
+- MongoDB: `agentx_discovery_1782102614_default` instance + 21 journal events + 5 heap facts + 14-day watch entry
+- `docs/MANDATE_DISCOVERY_LIVE_RUN_QUALITY.md` — full v1→v2→v3 comparison report

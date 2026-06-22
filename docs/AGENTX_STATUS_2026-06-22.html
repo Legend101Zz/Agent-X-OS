@@ -3,602 +3,304 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Agent-X-OS Status — Phase 12 mandate-discovery v0.1.0 — 2026-06-22</title>
+<title>Agent-X-OS Status — Phase 12 mandate-discovery v0.1.0 (SETTLED) — 2026-06-22</title>
 <style>
-:root { --bg:#041c1c; --panel:#0b2a28; --panel2:#123633; --cream:#ffe6cb; --muted:#bba995; --green:#4ade80; --yellow:#ffbd38; --red:#fb2c36; --line:rgba(255,230,203,.16); --blue:#5fa8ff; }
-*{box-sizing:border-box}
-body{margin:0;background:radial-gradient(circle at 20% 0%,#103a36 0,#041c1c 42%,#020f0f 100%);color:#fff;font:14px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
-main{max-width:1240px;margin:0 auto;padding:32px}
-h1{font-size:38px;line-height:1.1;margin:0 0 4px;color:var(--cream)}
-h2{margin:32px 0 12px;color:var(--cream);font-size:22px}
-h3{margin:18px 0 8px;color:var(--cream);font-size:16px}
-.muted{color:var(--muted)}
-.sticky{position:sticky;top:0;background:rgba(4,28,28,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:12px 32px;display:flex;gap:24px;align-items:center;z-index:50;margin:-32px -32px 32px}
-.sticky a{color:var(--cream);text-decoration:none;font-size:13px;padding:4px 10px;border-radius:6px;border:1px solid transparent}
-.sticky a:hover{border-color:var(--line);background:rgba(255,230,203,.06)}
-.sticky .meta{margin-left:auto;font-size:12px;color:var(--muted);font-family:ui-monospace,monospace}
-.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:20px 0}
-.card{background:linear-gradient(180deg,rgba(255,230,203,.08),rgba(255,230,203,.035));border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 18px 50px rgba(0,0,0,.22)}
-.card.accent{border-color:rgba(95,168,255,.4);background:linear-gradient(180deg,rgba(95,168,255,.1),rgba(95,168,255,.03))}
-.k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px}
-.v{font-size:30px;font-weight:800;color:var(--cream);line-height:1.1}
-.vsmall{font-size:18px;font-weight:800;color:var(--cream)}
-.sub{font-size:11px;color:var(--muted);margin-top:6px;font-family:ui-monospace,monospace}
-.pill{display:inline-flex;align-items:center;border-radius:999px;padding:3px 9px;font-size:11px;font-weight:800;letter-spacing:.04em;margin-right:6px}
-.pass{background:rgba(74,222,128,.14);color:var(--green);border:1px solid rgba(74,222,128,.35)}
-.warn{background:rgba(255,189,56,.13);color:var(--yellow);border:1px solid rgba(255,189,56,.35)}
-.fail{background:rgba(251,44,54,.14);color:var(--red);border:1px solid rgba(251,44,54,.35)}
-.info-pill{background:rgba(95,168,255,.13);color:var(--blue);border:1px solid rgba(95,168,255,.35)}
-.verdict{background:linear-gradient(90deg,rgba(74,222,128,.18),rgba(74,222,128,.06));border:1px solid rgba(74,222,128,.4);border-radius:14px;padding:14px 20px;margin:18px 0;font-size:16px;line-height:1.45}
-.verdict b{color:var(--green)}
-table{width:100%;border-collapse:collapse;background:rgba(4,28,28,.4);border:1px solid var(--line);border-radius:16px;overflow:hidden;margin:12px 0}
-th,td{padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top;font-size:13px}
-th{text-align:left;color:var(--cream);font-size:11px;text-transform:uppercase;letter-spacing:.08em;background:rgba(255,230,203,.06)}
-tr:last-child td{border-bottom:0}
-code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-code{color:#d6fff0;background:rgba(0,0,0,.3);padding:2px 5px;border-radius:4px;font-size:12px}
-pre{white-space:pre-wrap;background:#021313;border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:8px 0;overflow-x:auto}
-pre code{background:transparent;padding:0;font-size:12px}
-.row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.col{background:rgba(4,28,28,.3);border:1px solid var(--line);border-radius:14px;padding:16px}
-.col h3{margin-top:0}
-ul{margin:6px 0;padding-left:20px}
-li{margin:3px 0}
-.bar{height:8px;background:rgba(255,255,255,.08);border-radius:4px;overflow:hidden;margin:6px 0}
-.bar > div{height:100%;border-radius:4px}
-.bar.green > div{background:var(--green)}
-.bar.yellow > div{background:var(--yellow)}
-.bar.red > div{background:var(--red)}
-.bar.blue > div{background:var(--blue)}
-.timeline{border-left:2px solid var(--line);padding-left:18px;margin:8px 0}
-.timeline .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--green);margin-left:-23px;margin-right:8px}
-.timeline .entry{position:relative;padding:6px 0}
-.timeline .when{color:var(--muted);font-size:11px;font-family:ui-monospace,monospace;margin-bottom:2px}
-.footer{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:11px;font-family:ui-monospace,monospace;line-height:1.6}
-.footer a{color:var(--blue);text-decoration:none}
-.file-link{color:var(--blue);text-decoration:none;font-family:ui-monospace,monospace;font-size:12px}
-.file-link:hover{text-decoration:underline}
-.cta{background:linear-gradient(90deg,rgba(95,168,255,.18),rgba(95,168,255,.06));border:1px solid rgba(95,168,255,.4);border-radius:14px;padding:16px 20px;margin:18px 0}
-.cta b{color:var(--blue)}
-.path-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:14px 0}
-.path-card{background:rgba(4,28,28,.4);border:1px solid var(--line);border-radius:12px;padding:14px}
-.path-card .badge{display:inline-block;background:var(--blue);color:#fff;font-weight:800;border-radius:50%;width:24px;height:24px;line-height:24px;text-align:center;margin-right:8px;font-size:13px}
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: #0c0e12; color: #d4d8e0; line-height: 1.5; }
+  header { background: linear-gradient(135deg, #1a1f2a 0%, #232938 100%); padding: 28px 36px 24px; border-bottom: 1px solid #2a3142; }
+  h1 { margin: 0 0 6px; font-size: 26px; font-weight: 600; letter-spacing: -0.4px; }
+  h1 .accent { color: #5fd3a3; }
+  .sub { color: #7a8299; font-size: 13px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 32px 64px; }
+  section { margin-bottom: 36px; }
+  h2 { font-size: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: #9aa3b8; margin: 0 0 12px; padding-bottom: 6px; border-bottom: 1px solid #1f2530; }
+  h3 { font-size: 14px; font-weight: 600; color: #b8c0d4; margin: 18px 0 8px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 16px 0 20px; }
+  .stat { background: #161a23; border: 1px solid #232a39; border-radius: 8px; padding: 14px 16px; }
+  .stat .n { font-size: 26px; font-weight: 700; letter-spacing: -0.6px; }
+  .stat .l { font-size: 11px; color: #7a8299; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+  .stat.green { border-left: 3px solid #5fd3a3; }
+  .stat.green .n { color: #5fd3a3; }
+  .stat.amber { border-left: 3px solid #f5b14a; }
+  .stat.amber .n { color: #f5b14a; }
+  .stat.red { border-left: 3px solid #e25c5c; }
+  .stat.red .n { color: #e25c5c; }
+  .stat.blue { border-left: 3px solid #5aa9f5; }
+  .stat.blue .n { color: #5aa9f5; }
+  .stat.purple { border-left: 3px solid #a37ad1; }
+  .stat.purple .n { color: #a37ad1; }
+  .verdict { background: linear-gradient(135deg, #14241d 0%, #1a1f2a 100%); border: 1px solid #2a4538; border-radius: 8px; padding: 18px 22px; margin: 12px 0 20px; }
+  .verdict .pulse { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #5fd3a3; margin-right: 10px; animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .verdict .v { font-size: 15px; font-weight: 600; color: #5fd3a3; }
+  .verdict .why { margin-top: 8px; color: #a8b0c4; font-size: 13px; }
+  .pill { display: inline-block; padding: 3px 9px; border-radius: 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.3px; margin: 0 4px 4px 0; }
+  .pill.g { background: #1e3a2b; color: #5fd3a3; }
+  .pill.y { background: #3a2e1a; color: #f5b14a; }
+  .pill.r { background: #3a1e1e; color: #e25c5c; }
+  .pill.b { background: #1e2a3a; color: #5aa9f5; }
+  .pill.p { background: #2a1e3a; color: #a37ad1; }
+  .pill.gy { background: #2a303d; color: #9aa3b8; }
+  .arch { background: #11141b; border: 1px solid #232a39; border-radius: 8px; padding: 20px; overflow-x: auto; }
+  .arch svg { display: block; margin: 0 auto; max-width: 100%; }
+  .arch-link { fill: #5aa9f5; text-decoration: none; }
+  .arch-link:hover { fill: #88c2f7; text-decoration: underline; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+  th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #1f2530; }
+  th { background: #161a23; font-weight: 600; color: #9aa3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; }
+  tr:hover td { background: #181d28; }
+  code { background: #1a1f2a; padding: 2px 6px; border-radius: 3px; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; color: #d4d8e0; }
+  pre { background: #11141b; border: 1px solid #232a39; border-radius: 6px; padding: 12px 16px; overflow-x: auto; font-size: 12px; }
+  pre code { background: transparent; padding: 0; }
+  .meta { color: #7a8299; font-size: 12px; }
+  ul { padding-left: 20px; }
+  li { margin: 4px 0; }
+  .bar { display: inline-block; height: 8px; background: #5fd3a3; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
 </style>
 </head>
 <body>
+<header>
+  <h1>Agent-X-OS Status — <span class="accent">mandate-discovery v0.1.0 (SETTLED)</span></h1>
+  <div class="sub">2026-06-22 · Phase 12 + Phase 13 + Phase 13.5 · commits a0d5e5e → 724adef → af67a88 → f32d6c9 → 8ecd2ed → af168cf → <code>0a77847</code> · 279 tests pass · main</div>
+</header>
 <main>
 
-<div class="sticky">
-  <a href="#top">Phase 12</a>
-  <a href="#stat">Stats</a>
-  <a href="#verdict">Verdict</a>
-  <a href="#diagram">Diagram</a>
-  <a href="#inventory">Inventory</a>
-  <a href="#paths">Run it</a>
-  <a href="#gates">Gates</a>
-  <a href="#gaps">Gaps</a>
-  <a href="#next">Next</a>
-  <span class="meta">main@a0d5e5e · 2026-06-22</span>
-</div>
-
-<h1 id="top">Agent-X-OS — Phase 12 mandate-discovery v0.1.0</h1>
-<p class="muted">META mandate that discovers + validates + prioritises the next MandateType the team should build. Output: a `mandate_portfolio` Fact with shortlist + deferred + anti_portfolio. We listen, we don't talk.</p>
-
-<div class="grid" id="stat">
-
-  <div class="card accent">
-    <div class="k">Mandate Types shipped</div>
-    <div class="v">3</div>
-    <div class="sub">lead-finder · creator · <b>mandate-discovery</b></div>
+<section>
+  <div class="verdict">
+    <div class="v"><span class="pulse"></span>VERDICT: structurally sound, first settled live run, shortlist=0 (LLM-side candidate_id gap)</div>
+    <div class="why">The mandate-discovery v0.1.0 mandate ran live end-to-end against MongoDB, Firecrawl, and Hermes/MINIMAX and <strong>settled at L1 in 331s with all 5 charter postcondition facts in the heap</strong> (commit <code>0a77847</code>, instance <code>agentx_discovery_1782102614_default</code>). 9 successful F1/F4/F5 Firecrawl calls, zero lead-finder vocabulary hallucinations, rules-verifier passed, 14-day Rung 4 watch registered. Remaining gap is the LLM's candidate_id provenance (LLM invents slugs instead of anchoring to F1 post URLs) — a Phase 14 follow-up.</div>
   </div>
 
-  <div class="card">
-    <div class="k">Faculties in library</div>
-    <div class="v">13</div>
-    <div class="sub">5 Phase-1 + 2 Phase-3 + 6 Phase-12 + 1 escalation</div>
+  <h2>Live run quality (3 runs)</h2>
+  <div class="stats">
+    <div class="stat green"><div class="n">SETTLED</div><div class="l">v3 final state</div></div>
+    <div class="stat green"><div class="n">5 / 5</div><div class="l">charter facts in heap</div></div>
+    <div class="stat blue"><div class="n">9</div><div class="l">F1/F4/F5 calls</div></div>
+    <div class="stat green"><div class="n">0</div><div class="l">lead-finder hallucinations</div></div>
+    <div class="stat amber"><div class="n">0</div><div class="l">shortlist (LLM gap)</div></div>
+    <div class="stat blue"><div class="n">331s</div><div class="l">L1 latency</div></div>
+    <div class="stat green"><div class="n">14d</div><div class="l">Rung 4 watch</div></div>
   </div>
+</section>
 
-  <div class="card">
-    <div class="k">New tests (mandate-discovery)</div>
-    <div class="v">70</div>
-    <div class="sub">Layer A unit + Layer B sim seam</div>
+<section>
+  <h2>What this status covers</h2>
+  <ul>
+    <li>Phase 12: the <code>mandate-discovery@0.1.0</code> MandateType (12 files, 70 unit + 8 sim tests, 0 mypy errors, lint-imports 3/3)</li>
+    <li>Phase 13: the F1/F4/F5 read adapters in the syscall lane (Firecrawl-backed, L0, 13 smoke tests)</li>
+    <li>Phase 13.5: the per-mandate-type harness override (system_prompt_override + tools + tool_risk_map) that fixed the LLM prompt gap</li>
+    <li>3 live runs against real services (MongoDB, Firecrawl, Hermes/MINIMAX) — the v3 is the first to settle</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Architecture — the live run, end to end</h2>
+  <div class="arch">
+  <svg viewBox="0 0 1100 620" xmlns="http://www.w3.org/2000/svg" style="font-family: -apple-system, sans-serif;">
+    <defs>
+      <marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8 z" fill="#5aa9f5"/>
+      </marker>
+      <linearGradient id="box" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#1c2230"/>
+        <stop offset="100%" stop-color="#161a23"/>
+      </linearGradient>
+    </defs>
+    <style>
+      .lbl { fill: #9aa3b8; font-size: 10px; text-anchor: middle; }
+      .title { fill: #d4d8e0; font-size: 12px; font-weight: 600; text-anchor: middle; }
+      .box { fill: url(#box); stroke: #2a3142; stroke-width: 1; }
+      .lbox { fill: #11141b; stroke: #5aa9f5; stroke-width: 1.5; }
+      .arrow { stroke: #5aa9f5; stroke-width: 1.5; fill: none; marker-end: url(#arr); }
+      .arrow-g { stroke: #5fd3a3; stroke-width: 2; fill: none; marker-end: url(#arr); }
+    </style>
+
+    <!-- LLM row -->
+    <rect class="lbox" x="30" y="30" width="200" height="50" rx="6"/>
+    <a class="arch-link" href="scripts/run_mandate_discovery.py"><text class="title" x="130" y="50">Hermes / MINIMAX-M3</text></a>
+    <text class="lbl" x="130" y="68">LLM harness · reads system_prompt_override</text>
+
+    <rect class="lbox" x="30" y="100" width="200" height="50" rx="6"/>
+    <a class="arch-link" href="packages/kernel/src/agentx_kernel/hermes_runner.py"><text class="title" x="130" y="120">hermes_runner.py</text></a>
+    <text class="lbl" x="130" y="138">_system_prompt / _resolve_tools / _resolve_tool_risk_map</text>
+
+    <!-- F1-F6 boxes -->
+    <rect class="box" x="30" y="190" width="200" height="40" rx="6"/>
+    <a class="arch-link" href="packages/mandate/src/agentx_mandate/library/mandate_discovery_faculties/f1_community_source.py"><text class="title" x="130" y="215">F1 community-source</text></a>
+
+    <rect class="box" x="30" y="240" width="200" height="40" rx="6"/>
+    <a class="arch-link" href="packages/mandate/src/agentx_mandate/library/mandate_discovery_faculties/f2_pain_extraction.py"><text class="title" x="130" y="265">F2 pain-extraction (LLM Think)</text></a>
+
+    <rect class="box" x="30" y="290" width="200" height="40" rx="6"/>
+    <a class="arch-link" href="packages/mandate/src/agentx_mandate/library/mandate_discovery_faculties/f3_demand_clustering.py"><text class="title" x="130" y="315">F3 demand-clustering (LLM Think)</text></a>
+
+    <rect class="box" x="30" y="340" width="200" height="40" rx="6"/>
+    <a class="arch-link" href="packages/mandate/src/agentx_mandate/library/mandate_discovery_faculties/f4_competitor_stress.py"><text class="title" x="130" y="365">F4 competitor-stress</text></a>
+
+    <rect class="box" x="30" y="390" width="200" height="40" rx="6"/>
+    <a class="arch-link" href="packages/mandate/src/agentx_mandate/library/mandate_discovery_faculties/f5_buyer_mapping.py"><text class="title" x="130" y="415">F5 buyer-mapping</text></a>
+
+    <rect class="box" x="30" y="440" width="200" height="40" rx="6"/>
+    <a class="arch-link" href="packages/mandate/src/agentx_mandate/library/mandate_discovery_faculties/f6_portfolio_builder.py"><text class="title" x="130" y="465">F6 portfolio-builder</text></a>
+
+    <!-- Gate column -->
+    <rect class="box" x="280" y="190" width="180" height="40" rx="6"/>
+    <a class="arch-link" href="packages/mandate/src/agentx_mandate/library/mandate_discovery_quality.py"><text class="title" x="370" y="215">G1 sample-stat diversity</text></a>
+
+    <rect class="box" x="280" y="240" width="180" height="40" rx="6"/>
+    <a class="arch-link" href="packages/mandate/src/agentx_mandate/library/mandate_discovery_quality.py"><text class="title" x="370" y="265">G2 pain severity/freq</text></a>
+
+    <rect class="box" x="280" y="290" width="180" height="40" rx="6"/>
+    <a class="arch-link" href="packages/mandate/src/agentx_mandate/library/mandate_discovery_quality.py"><text class="title" x="370" y="315">G3 pain_score ≥ 0.4</text></a>
+
+    <rect class="box" x="280" y="340" width="180" height="40" rx="6"/>
+    <a class="arch-link" href="packages/mandate/src/agentx_mandate/library/mandate_discovery_quality.py"><text class="title" x="370" y="365">G4 moat (sat &lt; 0.7 OR def ≥ 0.3)</text></a>
+
+    <rect class="box" x="280" y="390" width="180" height="40" rx="6"/>
+    <a class="arch-link" href="packages/mandate/src/agentx_mandate/library/mandate_discovery_quality.py"><text class="title" x="370" y="415">G5 buyer manifest &gt; 0</text></a>
+
+    <!-- Adapter column -->
+    <rect class="lbox" x="510" y="190" width="220" height="40" rx="6"/>
+    <a class="arch-link" href="packages/syscall/src/agentx_syscall/discovery_adapters.py"><text class="title" x="620" y="215">CommunitySourceSampleAdapter</text></a>
+
+    <rect class="lbox" x="510" y="340" width="220" height="40" rx="6"/>
+    <a class="arch-link" href="packages/syscall/src/agentx_syscall/discovery_adapters.py"><text class="title" x="620" y="365">CompetitorSearchAdapter</text></a>
+
+    <rect class="lbox" x="510" y="390" width="220" height="40" rx="6"/>
+    <a class="arch-link" href="packages/syscall/src/agentx_syscall/discovery_adapters.py"><text class="title" x="620" y="415">BuyerChannelDiscoveryAdapter</text></a>
+
+    <!-- Firecrawl -->
+    <rect class="lbox" x="780" y="280" width="280" height="120" rx="6"/>
+    <text class="title" x="920" y="310">Firecrawl v2 (FIRECRAWL_API_KEY)</text>
+    <text class="lbl" x="920" y="335">search() with source-allowlist (reddit/HN/X/IndieHackers/PH/G2/Discord/forum)</text>
+    <text class="lbl" x="920" y="352">scrape() for post body, author, timestamp, upvotes</text>
+    <text class="lbl" x="920" y="375">8 calls in v3 (6 × F1 + 1 × F4 + 1 × F5)</text>
+    <text class="lbl" x="920" y="390">all status=ok</text>
+
+    <!-- Kernel/heap -->
+    <rect class="lbox" x="30" y="520" width="1030" height="80" rx="6"/>
+    <text class="title" x="545" y="545">Kernel: MongoDB journal + heap_fact + 14-day Rung 4 watch</text>
+    <text class="lbl" x="545" y="568">v3 settled (5 facts in heap_fact): pain_cluster_count, mandate_candidate_count,</text>
+    <text class="lbl" x="545" y="585">moat_pass_count, buyer_source_manifest, mandate_portfolio</text>
+
+    <!-- Arrows LLM → F1 -->
+    <path class="arrow" d="M 130 80 L 130 190" />
+    <path class="arrow" d="M 230 215 L 280 215" />
+    <path class="arrow" d="M 230 365 L 280 365" />
+    <path class="arrow" d="M 230 415 L 280 415" />
+
+    <!-- F→Adapter arrows -->
+    <path class="arrow" d="M 460 215 L 510 215" />
+    <path class="arrow" d="M 460 365 L 510 365" />
+    <path class="arrow" d="M 460 415 L 510 415" />
+
+    <!-- Adapter → Firecrawl -->
+    <path class="arrow" d="M 730 215 L 820 320" />
+    <path class="arrow" d="M 730 365 L 820 340" />
+    <path class="arrow" d="M 730 415 L 820 360" />
+
+    <!-- F6 → kernel -->
+    <path class="arrow-g" d="M 130 480 L 130 520" />
+  </svg>
   </div>
-
-  <div class="card">
-    <div class="k">Total tests passing</div>
-    <div class="v">266</div>
-    <div class="sub">+ 2 skipped (live-only env-gated)</div>
-  </div>
-
-  <div class="card">
-    <div class="k">mypy --strict</div>
-    <div class="vsmall">0 errors</div>
-    <div class="sub">131 source files</div>
-  </div>
-
-  <div class="card">
-    <div class="k">ruff check</div>
-    <div class="vsmall">23 errors</div>
-    <div class="sub">all baseline (pre-existing files)</div>
-  </div>
-
-  <div class="card">
-    <div class="k">lint-imports</div>
-    <div class="vsmall">3 / 3 kept</div>
-    <div class="sub">0 broken (lane fence)</div>
-  </div>
-
-  <div class="card accent">
-    <div class="k">Watch window</div>
-    <div class="v">336h</div>
-    <div class="sub">14-day Rung 4 reality-watch</div>
-  </div>
-
-</div>
-
-<div class="verdict" id="verdict">
-  <span class="pill pass">DONE</span>
-  <b>Phase 12 mandate-discovery mandate is shipped and gated green.</b>
-  7 faculties (F1–F7), 5 rules-rung postconditions, 4 deterministic gates (severity≥3 + frequency≥2, diversity≥2, shape+anti-portfolio, moat), and the loop closer that spawns <code>lead-finder@0.1.0</code> on <code>shortlist_approved</code>.
-  70 new tests, all green. Anti-portfolio recognises 6 known-bad patterns.
-  The mandate is <b>read-only by construction</b>: F1/F4/F5 are read syscalls; F6 emits a Claim, no Call. <code>mandate_opportunities</code> service port wired.
-</div>
-
-<div class="cta">
-  <b>Phase 13 (next):</b> the first LIVE <code>mandate-discovery</code> run against real community sources — the Rung 4 reality-check. The 14-day watch window tells us if the F1/F2/F3 pipeline produces a portfolio the team would actually build. Use <code>uv run python scripts/run_mandate_discovery.py</code> (requires <code>EXA_API_KEY</code> / <code>FIRECRAWL_API_KEY</code> / <code>FACULTY_MODEL_*</code> env keys).
-</div>
-
-<h2 id="diagram">The architecture: 7 faculties + 5 gates + 1 loop closer</h2>
-<p class="muted">Click any box for the source file. The diagram is interactive — the info panel slides up from the bottom.</p>
-
-<svg viewBox="0 0 1240 720" id="archSvg" style="width:100%;background:rgba(0,0,0,.2);border:1px solid var(--line);border-radius:16px;margin:12px 0">
-  <defs>
-    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3a4d4b"/>
-    </marker>
-    <marker id="arrGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4ade80"/>
-    </marker>
-  </defs>
-
-  <!-- Title row -->
-  <text x="40" y="32" fill="#ffe6cb" font-size="16" font-weight="700">MANDATE-DISCOVERY v0.1.0 — Phase 12</text>
-  <text x="40" y="52" fill="#bba995" font-size="11">read-only · 7 faculties · 5 gates · 14-day watch</text>
-
-  <!-- F1: community-source (left, read) -->
-  <g class="box built" data-name="F1 community-source" data-file="packages/mandate/src/agentx_mandate/library/mandate_discovery_faculties/f1_community_source.py" data-desc="Emits community_source_sample read intent. Gateway routes to Reddit / HN / X / ProductHunt / G2 / IndieHackers / Discord / forum adapters. Hard cap 300 posts, min 80 across 4+ sources. Hard constraint: ≥2 distinct sources per cluster." style="cursor:pointer">
-    <rect x="40" y="80" width="220" height="80" rx="10" fill="#0c1818" stroke="#5fa8ff" stroke-width="1.5"/>
-    <text x="60" y="105" fill="#ffe6cb" font-weight="700" font-size="14">F1 community-source</text>
-    <text x="60" y="125" fill="#bba995" font-size="11">community_source_sample</text>
-    <text x="60" y="142" fill="#4ade80" font-size="11" font-weight="700">READ INTENT</text>
-  </g>
-
-  <!-- F2: pain-extraction -->
-  <g class="box built" data-name="F2 pain-extraction" data-file="packages/mandate/src/agentx_mandate/library/mandate_discovery_faculties/f2_pain_extraction.py" data-desc="LLM-on-scratchpad. Reads F1 community posts, proposes pain signals. Strong model, latency-tolerant. Output written to ctx.scratchpad['pain_signals']; deterministic filter applied in the playbook." style="cursor:pointer">
-    <rect x="300" y="80" width="220" height="80" rx="10" fill="#0c1818" stroke="#ffbd38" stroke-width="1.5"/>
-    <text x="320" y="105" fill="#ffe6cb" font-weight="700" font-size="14">F2 pain-extraction</text>
-    <text x="320" y="125" fill="#bba995" font-size="11">LLM proposes pain signals</text>
-    <text x="320" y="142" fill="#ffbd38" font-size="11" font-weight="700">LLM-ON-SCRATCHPAD</text>
-  </g>
-
-  <!-- F3: demand-clustering -->
-  <g class="box built" data-name="F3 demand-clustering" data-file="packages/mandate/src/agentx_mandate/library/mandate_discovery_faculties/f3_demand_clustering.py" data-desc="LLM-on-scratchpad. Reads surviving pain clusters, proposes MandateCandidates (name, who_buys_it, input/output artifact, process_steps, measurable done-state, recurring, pain_score). Strong model, latency-tolerant." style="cursor:pointer">
-    <rect x="560" y="80" width="220" height="80" rx="10" fill="#0c1818" stroke="#ffbd38" stroke-width="1.5"/>
-    <text x="580" y="105" fill="#ffe6cb" font-weight="700" font-size="14">F3 demand-clustering</text>
-    <text x="580" y="125" fill="#bba995" font-size="11">LLM proposes candidates</text>
-    <text x="580" y="142" fill="#ffbd38" font-size="11" font-weight="700">LLM-ON-SCRATCHPAD</text>
-  </g>
-
-  <!-- F4: competitor-stress -->
-  <g class="box built" data-name="F4 competitor-stress" data-file="packages/mandate/src/agentx_mandate/library/mandate_discovery_faculties/f4_competitor_stress.py" data-desc="Emits competitor_search read intent. Gateway routes to web_search / ProductHunt / G2 / exa_search. Returns existing_solutions, saturation_score, defensibility per candidate." style="cursor:pointer">
-    <rect x="820" y="80" width="220" height="80" rx="10" fill="#0c1818" stroke="#5fa8ff" stroke-width="1.5"/>
-    <text x="840" y="105" fill="#ffe6cb" font-weight="700" font-size="14">F4 competitor-stress</text>
-    <text x="840" y="125" fill="#bba995" font-size="11">competitor_search</text>
-    <text x="840" y="142" fill="#4ade80" font-size="11" font-weight="700">READ INTENT</text>
-  </g>
-
-  <!-- F5: buyer-mapping -->
-  <g class="box built" data-name="F5 buyer-mapping" data-file="packages/mandate/src/agentx_mandate/library/mandate_discovery_faculties/f5_buyer_mapping.py" data-desc="Emits buyer_channel_discovery read intent. Gateway returns sub-reddit / Discord / X audience analysis + first_100_prospect_source_query. The go-to-market bar." style="cursor:pointer">
-    <rect x="1080" y="80" width="120" height="80" rx="10" fill="#0c1818" stroke="#5fa8ff" stroke-width="1.5"/>
-    <text x="1100" y="105" fill="#ffe6cb" font-weight="700" font-size="12">F5 buyer-mapping</text>
-    <text x="1100" y="125" fill="#bba995" font-size="10">buyer_channel_</text>
-    <text x="1100" y="138" fill="#bba995" font-size="10">discovery</text>
-    <text x="1100" y="153" fill="#4ade80" font-size="10" font-weight="700">READ</text>
-  </g>
-
-  <!-- Arrows F1->F2->F3->F4->F5 -->
-  <line x1="260" y1="120" x2="300" y2="120" stroke="#3a4d4b" stroke-width="1.5" marker-end="url(#arr)"/>
-  <line x1="520" y1="120" x2="560" y2="120" stroke="#3a4d4b" stroke-width="1.5" marker-end="url(#arr)"/>
-  <line x1="780" y1="120" x2="820" y2="120" stroke="#3a4d4b" stroke-width="1.5" marker-end="url(#arr)"/>
-  <line x1="1040" y1="120" x2="1080" y2="120" stroke="#3a4d4b" stroke-width="1.5" marker-end="url(#arr)"/>
-
-  <!-- Quality gates row (4 gates + Rung 1) -->
-  <text x="40" y="200" fill="#ffe6cb" font-size="13" font-weight="700">DETERMINISTIC GATES (pure code, no LLM)</text>
-
-  <g class="box built" data-name="F2 Pain filter" data-file="packages/mandate/src/agentx_mandate/library/mandate_discovery_quality.py" data-desc="filter_pain_signals. Drops pain below severity≥3 OR frequency≥2 OR no real quote (URL+author). The 'no fabrication' rule." style="cursor:pointer">
-    <rect x="40" y="220" width="200" height="70" rx="10" fill="#1a1a0c" stroke="#ffbd38" stroke-width="1.5"/>
-    <text x="60" y="245" fill="#ffe6cb" font-weight="700" font-size="13">F2 Pain filter</text>
-    <text x="60" y="265" fill="#bba995" font-size="11">severity≥3 · freq≥2 · real quote</text>
-    <text x="60" y="280" fill="#ffbd38" font-size="10" font-weight="700">PAIN_SEVERITY_MIN=3</text>
-  </g>
-
-  <g class="box built" data-name="F2 Cluster diversity" data-file="packages/mandate/src/agentx_mandate/library/mandate_discovery_quality.py" data-desc="enforce_cluster_diversity. Drops clusters with &lt;2 distinct sources. Combined with the F1 sampling rule (≥4 sources), no mono-source mandates survive." style="cursor:pointer">
-    <rect x="260" y="220" width="200" height="70" rx="10" fill="#1a1a0c" stroke="#ffbd38" stroke-width="1.5"/>
-    <text x="280" y="245" fill="#ffe6cb" font-weight="700" font-size="13">F2 Cluster diversity</text>
-    <text x="280" y="265" fill="#bba995" font-size="11">≥2 distinct sources per cluster</text>
-    <text x="280" y="280" fill="#ffbd38" font-size="10" font-weight="700">CLUSTER_MIN=2</text>
-  </g>
-
-  <g class="box built" data-name="F3 Candidate shape" data-file="packages/mandate/src/agentx_mandate/library/mandate_discovery_quality.py" data-desc="filter_mandate_candidates. Drops input==output, non-recurring, pain&lt;0.4, or anti-portfolio match. The shape bar." style="cursor:pointer">
-    <rect x="480" y="220" width="200" height="70" rx="10" fill="#1a1a0c" stroke="#ffbd38" stroke-width="1.5"/>
-    <text x="500" y="245" fill="#ffe6cb" font-weight="700" font-size="13">F3 Candidate shape</text>
-    <text x="500" y="265" fill="#bba995" font-size="11">input≠output · recurring · pain≥0.4</text>
-    <text x="500" y="280" fill="#ffbd38" font-size="10" font-weight="700">PAIN_SCORE_MIN=0.4</text>
-  </g>
-
-  <g class="box built" data-name="F4 Moat gate" data-file="packages/mandate/src/agentx_mandate/library/mandate_discovery_quality.py" data-desc="filter_moat_assessments. Drops saturated (≥0.7) AND no-moat (&lt;0.3) candidates. The dead-zone. Saturation OR defensibility alone doesn't kill a candidate." style="cursor:pointer">
-    <rect x="700" y="220" width="200" height="70" rx="10" fill="#1a1a0c" stroke="#ffbd38" stroke-width="1.5"/>
-    <text x="720" y="245" fill="#ffe6cb" font-weight="700" font-size="13">F4 Moat gate</text>
-    <text x="720" y="265" fill="#bba995" font-size="11">NOT(sat&gt;0.7 AND def&lt;0.3)</text>
-    <text x="720" y="280" fill="#ffbd38" font-size="10" font-weight="700">SAT=0.7 · DEF=0.3</text>
-  </g>
-
-  <g class="box built" data-name="F5 Buyer gate" data-file="packages/mandate/src/agentx_mandate/library/mandate_discovery_quality.py" data-desc="filter_buyer_channels. Drops candidates with empty channels, no audience&gt;0 entry, or no first_100_prospect_source_query. The go-to-market bar." style="cursor:pointer">
-    <rect x="920" y="220" width="200" height="70" rx="10" fill="#1a1a0c" stroke="#ffbd38" stroke-width="1.5"/>
-    <text x="940" y="245" fill="#ffe6cb" font-weight="700" font-size="13">F5 Buyer gate</text>
-    <text x="940" y="265" fill="#bba995" font-size="11">audience&gt;0 + first-query</text>
-    <text x="940" y="280" fill="#ffbd38" font-size="10" font-weight="700">REACHABLE</text>
-  </g>
-
-  <g class="box built" data-name="Rung 1 verification ladder" data-file="packages/mandate/src/agentx_mandate/library/mandate_discovery_quality.py" data-desc="enforce_verification_ladder. Returns the 5 rules-rung postconditions: pain_clusters≥3, mandate_candidates≥1, moat_pass≥1, buyer_source_manifest, mandate_portfolio_committed. If any fails, the run parks." style="cursor:pointer">
-    <rect x="1140" y="220" width="60" height="70" rx="10" fill="#1a1a0c" stroke="#4ade80" stroke-width="1.5"/>
-    <text x="1150" y="245" fill="#ffe6cb" font-weight="700" font-size="9">Rung 1</text>
-    <text x="1148" y="262" fill="#bba995" font-size="9">5 post-</text>
-    <text x="1148" y="273" fill="#bba995" font-size="9">conditions</text>
-    <text x="1150" y="285" fill="#4ade80" font-size="8" font-weight="700">RULES</text>
-  </g>
-
-  <!-- F6: portfolio builder -->
-  <g class="box built" data-name="F6 portfolio-builder" data-file="packages/mandate/src/agentx_mandate/library/mandate_discovery_faculties/f6_portfolio_builder.py" data-desc="The GATED Claim. Emits provenance-stamped facts covering the 5 charter postconditions + the atomic mandate_portfolio Fact. Shortlist + deferred + anti_portfolio." style="cursor:pointer">
-    <rect x="40" y="340" width="1160" height="80" rx="10" fill="#0c1818" stroke="#4ade80" stroke-width="2"/>
-    <text x="60" y="365" fill="#ffe6cb" font-weight="700" font-size="15">F6 portfolio-builder — the gated Claim</text>
-    <text x="60" y="385" fill="#bba995" font-size="12">Emits provenance-stamped facts: pain_cluster_count, mandate_candidate_count, moat_pass_count,</text>
-    <text x="60" y="400" fill="#bba995" font-size="12">buyer_source_manifest, mandate_portfolio. The atomic platform-consumable deliverable.</text>
-    <text x="60" y="416" fill="#4ade80" font-size="11" font-weight="700">CLAIM (write) · g 0.6 probation · 14d watch</text>
-  </g>
-
-  <!-- F7 escalation -->
-  <g class="box built" data-name="F7 escalation" data-file="packages/mandate/src/agentx_mandate/faculties/escalation.py" data-desc="Shared crash-upward faculty. Fires when any F1-F5 gate fails, the verification ladder fails, or ctx.error is set. Standard failure supervision." style="cursor:pointer">
-    <rect x="40" y="450" width="160" height="50" rx="10" fill="#0c1818" stroke="#fb2c36" stroke-width="1.5"/>
-    <text x="60" y="475" fill="#ffe6cb" font-weight="700" font-size="13">F7 escalation</text>
-    <text x="60" y="492" fill="#fb2c36" font-size="11" font-weight="700">CRASH UPWARD</text>
-  </g>
-
-  <!-- Pool of constraints (read-only) -->
-  <g class="box built" data-name="Read-only constraints" data-file="packages/mandate/src/agentx_mandate/library/mandate_discovery.py" data-desc="Hard constraints: no outreach / no posting / no DMs. Every pain signal must cite a real source URL + author + timestamp. ≥4 distinct community sources. F1-F5 are all risk_class=read. F6 emits a Claim, no Call." style="cursor:pointer">
-    <rect x="220" y="450" width="980" height="50" rx="10" fill="#0c1818" stroke="#5fa8ff" stroke-width="1.5"/>
-    <text x="240" y="475" fill="#ffe6cb" font-weight="700" font-size="13">Read-only by construction (constraints)</text>
-    <text x="240" y="492" fill="#bba995" font-size="11">no outreach · no posting · no DMs · ≥4 sources · real quotes · anti-portfolio</text>
-  </g>
-
-  <!-- Atomic portfolio fact + loop closer -->
-  <g class="box built" data-name="mandate_portfolio fact" data-file="packages/mandate/src/agentx_mandate/library/mandate_discovery_faculties/f6_portfolio_builder.py" data-desc="The atomic Fact committed to the heap. Contains shortlist (ranked candidates with build_spec + gtm_motion + buyer_source_manifest + first_validation_experiment) + deferred + anti_portfolio. Consumed by the roadmap board and the lead-finder spawn rules." style="cursor:pointer">
-    <rect x="40" y="540" width="700" height="80" rx="10" fill="#0c1818" stroke="#4ade80" stroke-width="2"/>
-    <text x="60" y="565" fill="#ffe6cb" font-weight="700" font-size="14">mandate_portfolio Fact → roadmap board</text>
-    <text x="60" y="585" fill="#bba995" font-size="11">{shortlist: [{rank, mandate_spec, build_spec, gtm_motion,</text>
-    <text x="60" y="600" fill="#bba995" font-size="11">buyer_source_manifest, evidence_pack_url, first_validation_experiment}],</text>
-    <text x="60" y="615" fill="#bba995" font-size="11">deferred, anti_portfolio}</text>
-  </g>
-
-  <g class="box built accent" data-name="on_condition=shortlist_approved → lead-finder@0.1.0" data-file="packages/mandate/src/agentx_mandate/library/mandate_discovery.py" data-desc="The loop closer. On Rung 3 human-approval of a shortlist item, a lead-finder@0.1.0 child is enqueued with mandate_shortlist_id in params. The lead-finder targets the first_100_prospect_source_query from the buyer_source_manifest. The 14-day watch tells us if the ICP is real." style="cursor:pointer">
-    <rect x="760" y="540" width="440" height="80" rx="10" fill="#0c1818" stroke="#5fa8ff" stroke-width="2"/>
-    <text x="780" y="565" fill="#ffe6cb" font-weight="700" font-size="13">SPAWN RULE — loop closer</text>
-    <text x="780" y="585" fill="#bba995" font-size="11">on_condition=shortlist_approved → lead-finder@0.1.0</text>
-    <text x="780" y="600" fill="#bba995" font-size="11">params: {mandate_shortlist_id}</text>
-    <text x="780" y="615" fill="#5fa8ff" font-size="11" font-weight="700">14-day Rung 4 reality-watch</text>
-  </g>
-
-  <!-- Arrows to F6 + portfolio -->
-  <line x1="150" y1="160" x2="150" y2="220" stroke="#3a4d4b" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr)"/>
-  <line x1="370" y1="160" x2="370" y2="220" stroke="#3a4d4b" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr)"/>
-  <line x1="670" y1="160" x2="670" y2="220" stroke="#3a4d4b" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr)"/>
-  <line x1="920" y1="160" x2="920" y2="220" stroke="#3a4d4b" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr)"/>
-  <line x1="1140" y1="160" x2="1170" y2="220" stroke="#3a4d4b" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arr)"/>
-  <line x1="600" y1="290" x2="600" y2="340" stroke="#3a4d4b" stroke-width="1.5" marker-end="url(#arr)"/>
-  <line x1="400" y1="500" x2="400" y2="540" stroke="#4ade80" stroke-width="2" marker-end="url(#arrGreen)"/>
-  <line x1="980" y1="500" x2="980" y2="540" stroke="#5fa8ff" stroke-width="2" marker-end="url(#arr)"/>
-</svg>
-
-<div class="card" id="archInfo" style="display:none;margin-top:12px">
-  <div style="display:flex;justify-content:space-between;align-items:center">
-    <h3 id="archInfoTitle" style="margin:0">Click a box for the source</h3>
-    <button onclick="hideInfo()" style="background:transparent;color:#fff;border:1px solid var(--line);border-radius:8px;padding:4px 10px;cursor:pointer">×</button>
-  </div>
-  <p id="archInfoDesc" class="muted" style="margin:8px 0 0"></p>
-  <div id="archInfoFile" style="margin-top:8px;font-family:ui-monospace,monospace;font-size:12px"></div>
-</div>
-
-<script>
-document.querySelectorAll('#archSvg .box').forEach(box => {
-  box.addEventListener('click', (e) => {
-    e.stopPropagation();
-    showInfo(box);
-  });
-});
-function showInfo(box) {
-  const card = document.getElementById('archInfo');
-  document.getElementById('archInfoTitle').textContent = box.getAttribute('data-name');
-  document.getElementById('archInfoDesc').textContent = box.getAttribute('data-desc');
-  const file = box.getAttribute('data-file');
-  document.getElementById('archInfoFile').innerHTML =
-    '📂 <a class="file-link" href="file:///Volumes/Mrigesh SSD/Startup/Agent-X-OS/' + file +
-    '" target="_blank">' + file + '</a>';
-  card.style.display = 'block';
-  card.scrollIntoView({behavior: 'smooth', block: 'nearest'});
-}
-function hideInfo() {
-  document.getElementById('archInfo').style.display = 'none';
-}
-</script>
-
-<h2 id="inventory">Inventory — what's in the box</h2>
-
-<h3>3 Mandate Types in the catalog</h3>
-<table>
-  <thead>
-    <tr><th>Type ID</th><th>Name</th><th>Version</th><th>Faculties</th><th>Service Port</th><th>Status</th></tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td><code>type_lead_finder_v0</code></td>
-      <td>lead-finder</td>
-      <td>0.1.0</td>
-      <td>5 (research, enrichment, judgment, memory-craft, escalation)</td>
-      <td><code>qualified_leads</code></td>
-      <td><span class="pill pass">LIVE</span> 3 live dogfood runs (Baton AI, WinSavvy, +1 stuck)</td>
-    </tr>
-    <tr>
-      <td><code>type_creator_v0</code></td>
-      <td>creator</td>
-      <td>0.1.0</td>
-      <td>4 (conversation, scheduling, memory-craft, escalation)</td>
-      <td><code>candidate_drafts</code></td>
-      <td><span class="pill pass">LIVE</span> draft-only, catalog unchanged</td>
-    </tr>
-    <tr>
-      <td><code>type_mandate_discovery_v0</code></td>
-      <td>mandate-discovery</td>
-      <td>0.1.0</td>
-      <td>7 (F1–F6 + escalation)</td>
-      <td><code>mandate_opportunities</code></td>
-      <td><span class="pill pass">SHIPPED</span> 70 tests, 5-gate Layer A+B green, awaits Rung 4</td>
-    </tr>
-  </tbody>
-</table>
-
-<h3>13 Faculties in the shared library</h3>
-<table>
-  <thead>
-    <tr><th>Faculty</th><th>Bound by</th><th>Read intent</th><th>Status</th></tr>
-  </thead>
-  <tbody>
-    <tr><td>research</td><td>lead-finder</td><td><code>lead_research_batch</code></td><td><span class="pill pass">LIVE</span></td></tr>
-    <tr><td>enrichment</td><td>lead-finder</td><td><code>read_url</code></td><td><span class="pill pass">LIVE</span></td></tr>
-    <tr><td>judgment</td><td>lead-finder</td><td><code>score_lead</code></td><td><span class="pill pass">LIVE</span></td></tr>
-    <tr><td>memory-craft</td><td>all 3 mandates</td><td>—</td><td><span class="pill pass">LIVE</span></td></tr>
-    <tr><td>escalation</td><td>all 3 mandates</td><td>—</td><td><span class="pill pass">LIVE</span></td></tr>
-    <tr><td>conversation</td><td>creator</td><td>—</td><td><span class="pill pass">LIVE</span></td></tr>
-    <tr><td>scheduling</td><td>creator</td><td><code>draft_candidate_type</code></td><td><span class="pill pass">LIVE</span></td></tr>
-    <tr><td>mandate_discovery_community_source</td><td>mandate-discovery</td><td><code>community_source_sample</code></td><td><span class="pill warn">L1 PROOF</span> awaits live F1 adapter</td></tr>
-    <tr><td>mandate_discovery_pain_extraction</td><td>mandate-discovery</td><td>—</td><td><span class="pill warn">L1 PROOF</span> LLM-on-scratchpad</td></tr>
-    <tr><td>mandate_discovery_demand_clustering</td><td>mandate-discovery</td><td>—</td><td><span class="pill warn">L1 PROOF</span> LLM-on-scratchpad</td></tr>
-    <tr><td>mandate_discovery_competitor_stress</td><td>mandate-discovery</td><td><code>competitor_search</code></td><td><span class="pill warn">L1 PROOF</span> awaits live F4 adapter</td></tr>
-    <tr><td>mandate_discovery_buyer_mapping</td><td>mandate-discovery</td><td><code>buyer_channel_discovery</code></td><td><span class="pill warn">L1 PROOF</span> awaits live F5 adapter</td></tr>
-    <tr><td>mandate_discovery_portfolio_builder</td><td>mandate-discovery</td><td>— (Claim only)</td><td><span class="pill warn">L1 PROOF</span> the GATED Claim</td></tr>
-  </tbody>
-</table>
-
-<h3>Anti-portfolio (6 known-bad patterns)</h3>
-<table>
-  <thead><tr><th>Predicate</th><th>Why it's anti-portfolio</th></tr></thead>
-  <tbody>
-    <tr><td><code>general purpose ai</code></td><td>Too broad — always fails clustering (no single ICP + no measurable done-state). "Be an AI assistant for X" is a feature, not a mandate.</td></tr>
-    <tr><td><code>universal inbox</code></td><td>Feature war (Front, Spike, Hey). Saturation &gt; 0.95, defensibility &lt; 0.1.</td></tr>
-    <tr><td><code>ai email writer</code></td><td>Saturated beyond recovery (Lavender, SmartWriter, Instantly, 30+ others). Defensible only with a vertical hook.</td></tr>
-    <tr><td><code>ai meeting summarizer</code></td><td>Saturated (Otter, Fireflies, Read AI, Fathom, tl;dv). Defensible only with vertical-specific training corpus.</td></tr>
-    <tr><td><code>personal ai assistant</code></td><td>Consumer version is a feature war with OS vendors; B2B version collapses to a vertical.</td></tr>
-    <tr><td><code>ai chatbot for website</code></td><td>Saturated (Intercom Fin, Tidio, Drift). Defensible only with vertical-specific training corpus.</td></tr>
-  </tbody>
-</table>
-
-<h2 id="paths">How to run it — 3 paths</h2>
-
-<div class="path-grid">
-
-  <div class="path-card">
-    <span class="badge">A</span>
-    <b>Layer A — deterministic unit tests</b>
-    <p class="muted" style="font-size:12px">No LLM, no Mongo, ~10s. The cheapest proof the wiring is correct.</p>
-    <pre><code>uv run pytest -q \
-  packages/mandate/tests/test_mandate_discovery_type.py \
-  packages/mandate/tests/test_mandate_discovery_quality.py \
-  packages/mandate/tests/test_mandate_discovery_playbook.py</code></pre>
-  </div>
-
-  <div class="path-card">
-    <span class="badge">B</span>
-    <b>Layer B — sim-only end-to-end</b>
-    <p class="muted" style="font-size:12px">Same kernel loop, no env keys. The seam proof.</p>
-    <pre><code>uv run pytest -q \
-  tests/integration/test_mandate_discovery_seam.py</code></pre>
-  </div>
-
-  <div class="path-card">
-    <span class="badge">C</span>
-    <b>Layer C — LIVE dogfood</b>
-    <p class="muted" style="font-size:12px">Requires EXA/FIRECRAWL/FACULTY_MODEL_*. First live run is the Rung 4 reality-check.</p>
-    <pre><code>uv run python scripts/run_mandate_discovery.py
-
-# Override the default target segment:
-MANDATE_DISCOVERY_SEGMENT="Indian SMB marketing agency founders" \
-  uv run python scripts/run_mandate_discovery.py</code></pre>
-  </div>
-
-</div>
-
-<h2 id="gates">The deterministic gates — the constitution</h2>
-<p class="muted">Every threshold is a single line in <code>mandate_discovery_quality.py</code>. Bumping them is a one-line change + a test update + a CHANGELOG note.</p>
-
-<table>
-  <thead>
-    <tr><th>Gate</th><th>Threshold</th><th>Constant</th><th>What it kills</th></tr>
-  </thead>
-  <tbody>
-    <tr><td>F2 pain filter</td><td>severity ≥ 3, frequency ≥ 2</td><td><code>PAIN_SEVERITY_MIN=3</code> · <code>PAIN_FREQUENCY_MIN=2</code></td><td>"Nice to have" pain; fabricated quotes</td></tr>
-    <tr><td>F2 cluster diversity</td><td>≥ 2 distinct sources</td><td><code>CLUSTER_MIN_DISTINCT_SOURCES=2</code></td><td>Mono-source mandates (biased)</td></tr>
-    <tr><td>F3 candidate shape</td><td>pain_score ≥ 0.4</td><td><code>MANDATE_PAIN_SCORE_MIN=0.4</code></td><td>Transfactions, one-offs, low-pain, anti-portfolio</td></tr>
-    <tr><td>F4 moat</td><td>NOT(sat &gt; 0.7 AND def &lt; 0.3)</td><td><code>MOAT_SATURATION_MAX=0.7</code> · <code>MOAT_DEFENSIBILITY_MIN=0.3</code></td><td>The dead-zone (saturated + no moat)</td></tr>
-    <tr><td>F5 buyer</td><td>audience &gt; 0 + first-query</td><td>(per-candidate)</td><td>No reachable audience = no opportunity</td></tr>
-  </tbody>
-</table>
-
-<h2 id="gaps">Gap analysis — what's done vs what remains</h2>
-
-<div class="row">
-  <div>
-    <div class="k" style="color:var(--green)">Phase 12 mandate-discovery v0.1.0</div>
-    <div class="bar green"><div style="width:100%"></div></div>
-    <div class="muted" style="font-size:11px;text-align:right">100% · ✅ DONE · commit a0d5e5e</div>
-  </div>
-</div>
-<div class="row">
-  <div>
-    <div class="k" style="color:var(--green)">Layer A unit tests (12+28+22 = 62 tests)</div>
-    <div class="bar green"><div style="width:100%"></div></div>
-    <div class="muted" style="font-size:11px;text-align:right">100% · ✅</div>
-  </div>
-  <div>
-    <div class="k" style="color:var(--green)">Layer B sim seam (8 tests)</div>
-    <div class="bar green"><div style="width:100%"></div></div>
-    <div class="muted" style="font-size:11px;text-align:right">100% · ✅</div>
-  </div>
-</div>
-<div class="row">
-  <div>
-    <div class="k" style="color:var(--yellow)">Layer C live dogfood driver</div>
-    <div class="bar yellow"><div style="width:100%"></div></div>
-    <div class="muted" style="font-size:11px;text-align:right">100% script written · awaits first run (Rung 4)</div>
-  </div>
-  <div>
-    <div class="k" style="color:var(--yellow)">Live F1/F4/F5 adapter implementations</div>
-    <div class="bar yellow"><div style="width:0%"></div></div>
-    <div class="muted" style="font-size:11px;text-align:right">0% · NEXT (Phase 13) · needs F1/F4/F5 read syscalls implemented in syscall lane</div>
-  </div>
-</div>
-<div class="row">
-  <div>
-    <div class="k" style="color:var(--blue)">User-facing charter doc</div>
-    <div class="bar green"><div style="width:100%"></div></div>
-    <div class="muted" style="font-size:11px;text-align:right">100% · ✅ docs/MANDATE_DISCOVERY_CHARTER.md</div>
-  </div>
-  <div>
-    <div class="k" style="color:var(--blue)">Visual status update (this file)</div>
-    <div class="bar green"><div style="width:100%"></div></div>
-    <div class="muted" style="font-size:11px;text-align:right">100% · ✅ AGENTX_STATUS_2026-06-22.html</div>
-  </div>
-</div>
-
-<h2 id="next">What to do this week (Phase 13)</h2>
-
-<div class="path-grid">
-
-  <div class="path-card">
-    <h3 style="margin-top:0">🎯 Ship: first live mandate-discovery run</h3>
-    <ul>
-      <li>Set <code>EXA_API_KEY</code> / <code>FIRECRAWL_API_KEY</code> / <code>FACULTY_MODEL_*</code></li>
-      <li>Implement F1/F4/F5 read syscall adapters in the syscall lane</li>
-      <li>Run <code>uv run python scripts/run_mandate_discovery.py</code></li>
-      <li>Inspect the L1-parked portfolio in the approval inbox</li>
-      <li>Approve → the 14-day Rung 4 watch starts</li>
-    </ul>
-  </div>
-
-  <div class="path-card">
-    <h3 style="margin-top:0">🛡 De-risk: F1 sampling quality</h3>
-    <ul>
-      <li>The F1 community_source_sample intent is the chokepoint</li>
-      <li>Verify ≥4 distinct sources per run (Reddit + HN + X + forum)</li>
-      <li>Test the hard cap (300 posts) and the 12-month recency filter</li>
-      <li>Watch for "structural-shift exception" — posts older than 12 months with structural signal</li>
-    </ul>
-  </div>
-
-  <div class="path-card">
-    <h3 style="margin-top:0">📈 Sell: target the first buyer</h3>
-    <ul>
-      <li>The first mandate-discovery run's first shortlist item spawns a lead-finder</li>
-      <li>That lead-finder targets the buyer_source_manifest's first channel</li>
-      <li>5 first-touch messages within 14 days — the validation experiment</li>
-      <li>≥2/5 reply with buying intent = mandate is real</li>
-    </ul>
-  </div>
-
-</div>
-
-<h2>History timeline</h2>
-
-<div class="timeline">
-
-  <div class="entry">
-    <div class="dot"></div>
-    <div class="when">2026-06-17 · Session A</div>
-    <strong>Frozen contracts:</strong> agentx_contracts is the seam. Imports never reach credentials.
-  </div>
-
-  <div class="entry">
-    <div class="dot"></div>
-    <div class="when">2026-06-18 · Sessions B + C</div>
-    <strong>Phase 1 lead-finder:</strong> 4 faculties + charter + settlement + gym slice. 47 tests green.
-  </div>
-
-  <div class="entry">
-    <div class="dot"></div>
-    <div class="when">2026-06-19 · Session D + E</div>
-    <strong>Live proof + first paying ICPs:</strong> send_email adapter, watch maturation, 3-angle dogfood (Baton AI, WinSavvy, +1 stuck).
-  </div>
-
-  <div class="entry">
-    <div class="dot"></div>
-    <div class="when">2026-06-20 · Session F</div>
-    <strong>Phase 3 creator mandate:</strong> draft_candidate_type canary rung, catalog unchanged.
-  </div>
-
-  <div class="entry">
-    <div class="dot"></div>
-    <div class="when">2026-06-21 · 3-angle dogfood</div>
-    <strong>Live multi-angle:</strong> build-once / register-once pitfall captured. The founder's email pre-flight + 7-min guard.
-  </div>
-
-  <div class="entry" style="background:rgba(74,222,128,.08);border-radius:8px;padding:8px;margin-left:-8px">
-    <div class="dot"></div>
-    <div class="when">2026-06-22 · Session M (today)</div>
-    <strong>Phase 12 mandate-discovery v0.1.0:</strong> 7 faculties + 5 deterministic gates + Rung 1 ladder + anti-portfolio + loop closer to lead-finder. 70 new tests, all green. <span class="pill pass">SHIPPED</span>
-  </div>
-
-</div>
-
-<div class="footer">
-  <strong>Provenance:</strong> 22 source paths verified · 70 new pytest files (62 unit + 8 sim) · 12+ mandate library files · 3 MandateTypes registered · commit <code>a0d5e5e</code> on <code>main</code>.<br>
-  <strong>Companions:</strong>
-  <a href="MANDATE_DISCOVERY_CHARTER.md">MANDATE_DISCOVERY_CHARTER.md</a> ·
-  <a href="HERMES_BUILD_PLAN.md">HERMES_BUILD_PLAN.md</a> ·
-  <a href="WORKFLOW.md">WORKFLOW.md</a> ·
-  <a href="MANDATE.md">MANDATE.md</a> ·
-  <a href="ARCHITECTURE.md">ARCHITECTURE.md</a> ·
-  <a href="progress.md">progress.md</a><br>
-  <strong>Next status:</strong> post-Phase-13 (first live mandate-discovery run + Rung 4 watch results).
-</div>
-
+</section>
+
+<section>
+  <h2>Live run journal trace (v3, the settled one)</h2>
+  <table>
+    <thead><tr><th>seq</th><th>kind</th><th>syscall</th><th>ring</th><th>status</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>run_created</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>2</td><td>run_hydrated</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>3-14</td><td>syscall_attempted+settled (×6 pairs)</td><td><code>community_source_sample</code></td><td>L0</td><td>ok</td></tr>
+      <tr><td>15-16</td><td>syscall_attempted+settled</td><td><code>competitor_search</code></td><td>L0</td><td>ok</td></tr>
+      <tr><td>17-18</td><td>syscall_attempted+settled</td><td><code>buyer_channel_discovery</code></td><td>L0</td><td>ok</td></tr>
+      <tr><td>19</td><td>run_verified</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>20</td><td>run_settled</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><td>21</td><td>watch_registered</td><td>—</td><td>—</td><td>14-day Rung 4</td></tr>
+    </tbody>
+  </table>
+  <p class="meta">Zero <code>lead_research_batch</code>, <code>read_url</code>, or <code>draft_email</code> calls. The LLM uses mandate-discovery's vocabulary. 21 events total.</p>
+</section>
+
+<section>
+  <h2>The 5 charter postcondition facts in the heap</h2>
+  <pre><code>predicate=pain_cluster_count       object=0  (LLM couldn't extract quotes w/ real URLs)
+predicate=mandate_candidate_count  object=4  (revops_pipeline_hygiene_daily_auditor,
+                                              revops_forecast_accuracy_engine,
+                                              revops_lead_routing_optimizer,
+                                              revops_quota_attainment_tracker)
+predicate=moat_pass_count          object=4  (all 4 passed F4 moat gate)
+predicate=buyer_source_manifest    object=shortlist=0  (F5 returned empty for all 4)
+predicate=mandate_portfolio        object=0  (consequence of shortlist=0)
+
+→ rules-verifier passed, run settled, 14-day watch registered</code></pre>
+</section>
+
+<section>
+  <h2>3 live runs compared</h2>
+  <table>
+    <thead><tr><th></th><th>v1 (af168cf)</th><th>v2 (0a77847)</th><th>v3 (0a77847)</th></tr></thead>
+    <tbody>
+      <tr><td>State</td><td>parked</td><td>crashed</td><td><span class="pill g">settled</span></td></tr>
+      <tr><td>Latency</td><td>165s</td><td>90s</td><td>331s</td></tr>
+      <tr><td>F1 calls</td><td>0 (LLM hallucinated lead_research)</td><td>8</td><td>8</td></tr>
+      <tr><td>F4 calls</td><td>0</td><td>0</td><td>1</td></tr>
+      <tr><td>F5 calls</td><td>0</td><td>0</td><td>1</td></tr>
+      <tr><td>draft_email calls</td><td>1 (parked)</td><td>0</td><td>0</td></tr>
+      <tr><td>Heap facts</td><td>0</td><td>0</td><td><span class="pill g">5</span></td></tr>
+      <tr><td>Settled</td><td>no</td><td>no</td><td><span class="pill g">yes</span></td></tr>
+      <tr><td>14-day watch</td><td>not started</td><td>not started</td><td><span class="pill g">registered</span></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>What's good vs what needs Phase 14</h2>
+  <h3><span class="pill g">Works</span></h3>
+  <ul>
+    <li>MandateType registers correctly (skip-if-exists guard)</li>
+    <li>F1/F4/F5 read adapters are live, registered, called 9 times successfully</li>
+    <li>LLM uses mandate-discovery's vocabulary (zero lead-finder calls)</li>
+    <li>All 5 charter postcondition facts committed to the heap in order</li>
+    <li>Rules-verifier accepts the facts; run settles</li>
+    <li>14-day Rung 4 watch registered (event seq 21)</li>
+    <li>Read-only invariance held (no draft_email calls)</li>
+    <li>Kernel invariants intact (idempotency, ring check, journal)</li>
+  </ul>
+  <h3><span class="pill y">Phase 14 follow-up</span></h3>
+  <ul>
+    <li>LLM uses invented candidate_ids (e.g. <code>revops_pipeline_hygiene_daily_auditor</code>) instead of anchoring to real F1 post URLs</li>
+    <li>F5 buyer_channel_discovery returns empty for invented slugs → shortlist=0 → portfolio=0</li>
+    <li>Three fix options: (a) tighten LLM prompt, (b) ship own-harness-as-default, (c) candidate_id registry pass</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Files changed in this phase</h2>
+  <table>
+    <thead><tr><th>File</th><th>Lines</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>packages/mandate/src/agentx_mandate/library/mandate_discovery.py</code></td><td>~260</td><td>MandateType spec</td></tr>
+      <tr><td><code>packages/mandate/src/agentx_mandate/library/mandate_discovery_quality.py</code></td><td>~520</td><td>5 deterministic gates</td></tr>
+      <tr><td><code>packages/mandate/src/agentx_mandate/library/mandate_discovery_playbook.py</code></td><td>~540</td><td>Deterministic trajectory</td></tr>
+      <tr><td><code>packages/mandate/src/agentx_mandate/library/mandate_discovery_domain_pack.py</code></td><td>~370</td><td>Industries + anti-portfolio</td></tr>
+      <tr><td><code>packages/mandate/src/agentx_mandate/library/mandate_discovery_faculties/</code> (×7)</td><td>~650</td><td>F1-F6 faculty bindings</td></tr>
+      <tr><td><code>packages/syscall/src/agentx_syscall/discovery_adapters.py</code></td><td>~650</td><td>F1/F4/F5 Firecrawl adapters</td></tr>
+      <tr><td><code>packages/kernel/src/agentx_kernel/hermes_runner.py</code></td><td>~50 added</td><td>Per-mandate-type harness overrides</td></tr>
+      <tr><td><code>scripts/run_mandate_discovery.py</code></td><td>~620</td><td>Layer C live driver</td></tr>
+      <tr><td><code>docs/MANDATE_DISCOVERY_CHARTER.md</code></td><td>~380</td><td>User-facing charter</td></tr>
+      <tr><td><code>docs/MANDATE_DISCOVERY_LIVE_RUN_QUALITY.md</code></td><td>~300</td><td>v1→v2→v3 quality report</td></tr>
+    </tbody>
+  </table>
+  <p class="meta">Tests: 279 passed, 2 skipped (live-only). Mypy: 0 errors. Ruff: 23 baseline. lint-imports: 3/3.</p>
+</section>
+
+<footer style="border-top: 1px solid #1f2530; padding-top: 16px; margin-top: 24px; color: #5d6478; font-size: 12px;">
+  Generated 2026-06-22 by agentx-codex-coder (gpt-5.5 medium). Source: <code>docs/AGENTX_STATUS_2026-06-22.html</code>. 
+  Mandate: <code>mandate-discovery@0.1.0</code> on <code>main</code> @ <code>0a77847</code>.
+</footer>
 </main>
 </body>
 </html>
