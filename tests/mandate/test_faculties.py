@@ -41,6 +41,9 @@ def test_faculty_library_contains_phase1_phase3_and_phase12_faculties() -> None:
         "memory-craft",
         "escalation",
         "outreach",
+        # books-prep thin faculties (document prep)
+        "extraction",
+        "ledger-export",
         "conversation",
         "scheduling",
         "deep_research",

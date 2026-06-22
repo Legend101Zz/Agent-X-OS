@@ -27,7 +27,7 @@ from agentx_contracts.memory import Fact, Provenance
 from agentx_contracts.syscall import SyscallRequest, SyscallResult
 from agentx_contracts.toolschema import TOOL_SCHEMAS, ToolSchema
 from agentx_mandate.harness import Call, Claim, FacultyContext, Finish, HarnessAction, Think
-from agentx_mandate.skill_packs import skill_pack_fragment
+from agentx_mandate.skill_packs import domain_pack_fragment, skill_pack_fragment
 
 
 class HermesProtocolError(RuntimeError):
@@ -196,6 +196,9 @@ def _compose_system_prompt(mandate: MandateType, faculties: list[Faculty], ctx: 
     charter = mandate.charter
     lines: list[str] = [charter.goal.strip(), ""]
     fragments = [skill_pack_fragment(f.skill_pack).strip() for f in faculties]
+    domain_fragment = domain_pack_fragment(mandate.domain_pack.name).strip()
+    if domain_fragment:
+        fragments.append(domain_fragment)
     fragments = [frag for frag in fragments if frag]
     if fragments:
         lines.append("\n\n".join(fragments))

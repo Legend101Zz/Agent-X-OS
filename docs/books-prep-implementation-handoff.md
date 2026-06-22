@@ -109,7 +109,43 @@ Baseline on this branch: workspace pytest GREEN (confirmed before any edits).
       thin `outreach` faculty bound in lead-finder, PromptComposer (legacy lead-finder dispatch +
       generic path), skill_packs.py stub, mandate threaded into start(). Regression-lock tests added
       (tools + prompt byte-identical). GREEN (lead-finder byte-for-byte proven).
-- [ ] Step 3  [ ] Step 4  [ ] Step 5  [ ] Step 6  [ ] Step 7
-Files touched in steps 1-2: contracts/{toolschema,__init__,config}, kernel/{hermes_runner,run_loop},
-mandate/{harness, skill_packs(new), faculties/__init__, faculties/outreach(new), library/lead_finder},
-tests/kernel/test_hermes_runner, tests/mandate/{test_faculties,test_lead_finder_library}.
+- [x] Step 3 — run_loop unwired: sim_playbook_for(mandate) resolver (_SIM_PLAYBOOKS, default lead-finder),
+      read-result handler registry (+ ingest_document handler stashing scratchpad["transactions"]),
+      ingest_document sim-native synthetic-transactions branch. GREEN.
+- [x] Step 4 — syscall adapters: books.py (IngestDocumentAdapter PDF/Excel/CSV→rows + per-row source +
+      extraction_confidence + dedupe_key; scanned/structural-fail→error. ExportLedgerAdapter openpyxl
+      .xlsx Ledger+Review Queue+Summary, reversible_write/L1). Registered in build_phase1_registry
+      (books_intake_dir/books_output_dir params). Deps pdfplumber/pypdf/openpyxl added + mypy overrides.
+      8 tests incl. hand-rolled digital PDF + scanned + structural-bounce. GREEN (205 passed).
+- [x] Step 5 — mandate: extraction + ledger-export faculties; outreach (lead-finder draft_email seam);
+      books_prep.py MandateType with REVISED charter (P0-1 GST sentinel, P0-2 no_duplicate_commit,
+      P0-3 extraction_suspect, P2-3 per-series balance_continuity); books_prep_playbook deterministic
+      (categorise → claim clean / queue low-conf & suspect / export); indian-smb-books domain pack
+      (ledger heads + narration→vendor + GSTIN/state + §17(5) non-supply heads); skill_pack +
+      domain_pack fragments; RulesVerifier extended with `every ledger_transaction has ...`,
+      `confidence_ge_threshold`, `balance_continuity` (per (account_id, statement_period)),
+      `unique ledger_transaction dedupe_key`. Cross-batch dedup via hydration snapshot. 205/205 + 1
+      pre-existing baseline failure; mypy strict clean; lint-imports 3/0; ruff 0 new.
+      [committed]
+- [ ] Step 6  [ ] Step 7
+
+### Canonical transaction shape (shared: adapter out / sim-native / categorizer / export)
+date, narration, debit(float), credit(float), balance(float|None), ref, source{doc_id,page,line},
+account_id, statement_period, extraction_confidence(float), extraction_suspect(bool), dedupe_key.
+Categorizer ADDS: ledger_head, gst_treatment(determined|"indeterminate_from_source"), confidence,
+vendor, gstin, state, receivable_payable, missing_supporting_doc, balance_break, queued, queue_reason.
+
+### Step 5 plan (verifier + facts encoding)
+- Clean txn → ONE Fact: predicate="ledger_transaction", subject=dedupe_key, object=JSON(full row),
+  confidence=categorization conf, provenance.evidence=["doc:<id> p<page>/l<line>"].
+- Extend RulesVerifier._evaluate (thread mandate.charter.target through) with books exprs:
+  `every ledger_transaction has source|ledger_head|gst_treatment`, `... confidence_ge_threshold`,
+  `... balance_continuity` (per account_id+statement_period; break OK if row.balance_break=true),
+  `unique ledger_transaction dedupe_key`. Plus has_transactions=`claimed_facts >= 1` (existing).
+- Cross-batch dedup (P0-2): categorizer skips rows whose dedupe_key is already in snapshot.facts.
+- Register books_prep_playbook into run_loop._SIM_PLAYBOOKS["books-prep"].
+
+Files touched steps 1-4 (for `git add`): contracts/{toolschema,__init__,config}, kernel/{hermes_runner,
+run_loop}, mandate/{harness,skill_packs,faculties/__init__,faculties/outreach,library/lead_finder},
+syscall/{books(new),registry,pyproject}, pyproject.toml(mypy overrides), tests/kernel/test_hermes_runner,
+tests/mandate/{test_faculties,test_lead_finder_library}, syscall/tests/test_books_adapters(new).
