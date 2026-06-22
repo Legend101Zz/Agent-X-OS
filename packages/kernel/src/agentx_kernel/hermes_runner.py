@@ -45,19 +45,21 @@ class ChatTransport(Protocol):
 _RISK_BY_SYSCALL: dict[str, RiskClass] = {
     "lead_research_batch": "read",
     "read_url": "read",
+    "deep_research": "read",
     "score_lead": "read",
     "queue_manual_action": "read",
     "mark_outcome": "reversible_write",
     "draft_email": "external_message",
 }
 
-# The mandate-discovery mandate's three read syscalls — same names as the
-# discovery_adapters. The LLM is told these are its tools; the runner
-# passes the tool name through to the gateway as the syscall name.
+# Read-class tools whose name passes straight through to the same-named syscall
+# (the mandate-discovery F1/F4/F5 reads, plus the shared in-OS deep_research). The
+# LLM is told these are its tools; the runner forwards name + args to the gateway.
 _MANDATE_DISCOVERY_READ_TOOLS: frozenset[str] = frozenset({
     "community_source_sample",
     "competitor_search",
     "buyer_channel_discovery",
+    "deep_research",
 })
 
 
@@ -72,8 +74,9 @@ def _resolve_tool_risk_map(ctx: FacultyContext) -> dict[str, RiskClass]:
     override = ctx.target.get("tool_risk_map")
     if isinstance(override, dict):
         result: dict[str, RiskClass] = {}
+        _valid_risks = {"read", "external_message", "reversible_write", "money", "irreversible"}
         for name, risk in override.items():
-            if isinstance(name, str) and isinstance(risk, str) and risk in {"read", "external_message", "reversible_write", "money", "irreversible"}:
+            if isinstance(name, str) and isinstance(risk, str) and risk in _valid_risks:
                 result[name] = cast(RiskClass, risk)
         return result
     return _RISK_BY_SYSCALL

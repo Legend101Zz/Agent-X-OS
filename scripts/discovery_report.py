@@ -14,6 +14,7 @@ Usage::
 Output defaults to ``docs/discovery_reports/<instance_id>.html``.
 """
 
+# ruff: noqa: E501 — HTML report templates legitimately have long lines.
 from __future__ import annotations
 
 import argparse

@@ -55,6 +55,23 @@ class ResearchLead:
 
 
 @dataclass(frozen=True)
+class ResearchResult:
+    """A normalized generic web-search hit (distinct from the lead-shaped ResearchLead).
+
+    Used by the deep-research multi-hop loop, where the unit of work is "a web
+    result" (url + title + snippet) rather than "a qualified lead".
+    """
+
+    url: str
+    title: str
+    snippet: str
+    provider: str
+
+    def to_json(self) -> JsonObject:
+        return {"url": self.url, "title": self.title, "snippet": self.snippet, "provider": self.provider}
+
+
+@dataclass(frozen=True)
 class ResearchPage:
     """Normalized page content returned by read-side providers."""
 
@@ -85,6 +102,10 @@ class ResearchProvider(Protocol):
 
     async def search_leads(self, criteria: Mapping[str, Any], count: int) -> list[ResearchLead]:
         """Return normalized lead records for a lead-research intent."""
+        ...
+
+    async def search(self, query: str, count: int) -> list[ResearchResult]:
+        """Return generic web-search results for a free-text query (deep research)."""
         ...
 
     async def read_url(self, url: str) -> ResearchPage:
@@ -1009,6 +1030,12 @@ class ExaResearchProvider:
         response = client.search(query, type="auto", num_results=count, contents={"highlights": True})
         return _parse_search_results(response, provider=self.name, count=count)
 
+    async def search(self, query: str, count: int) -> list[ResearchResult]:
+        exa_module = import_module("exa_py")
+        client = exa_module.Exa(api_key=self._api_key)
+        response = client.search(query, type="auto", num_results=count, contents={"highlights": True})
+        return _parse_generic_results(response, provider=self.name, count=count)
+
     async def read_url(self, url: str) -> ResearchPage:
         exa_module = import_module("exa_py")
         client_cls = exa_module.Exa
@@ -1046,6 +1073,12 @@ class FirecrawlResearchProvider:
         )
         return _parse_search_results(response, provider=self.name, count=count)
 
+    async def search(self, query: str, count: int) -> list[ResearchResult]:
+        firecrawl_module = import_module("firecrawl")
+        client = firecrawl_module.Firecrawl(api_key=self._api_key)
+        response = client.search(query, limit=count, timeout=60_000)
+        return _parse_generic_results(response, provider=self.name, count=count)
+
     async def read_url(self, url: str) -> ResearchPage:
         firecrawl_module = import_module("firecrawl")
         client_cls = firecrawl_module.Firecrawl
@@ -1059,19 +1092,130 @@ class FirecrawlResearchProvider:
         return _parse_page(response, url=url, provider=self.name)
 
 
+class BraveSearchProvider:
+    """Brave Search API wrapper — fast, cheap, top-tier web search (no scrape).
+
+    Brave has no page-read endpoint, so ``read_url`` is a no-op marker; the
+    deep-research loop falls through to a read-capable provider (Firecrawl/Exa)
+    for content. ``search`` is Brave's strength: ``GET /res/v1/web/search`` with
+    an ``X-Subscription-Token`` header.
+    """
+
+    name = "brave"
+    _ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
+
+    def __init__(self, api_key: str) -> None:
+        self._api_key = api_key
+
+    async def health_check(self) -> bool:
+        return bool(self._api_key)
+
+    async def search(self, query: str, count: int) -> list[ResearchResult]:
+        import asyncio
+        import json
+        import urllib.parse
+        import urllib.request
+
+        url = f"{self._ENDPOINT}?" + urllib.parse.urlencode({"q": query, "count": max(1, min(count, 20))})
+        request = urllib.request.Request(
+            url,
+            headers={"Accept": "application/json", "X-Subscription-Token": self._api_key},
+        )
+
+        def _get() -> dict[str, Any]:
+            with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310 — fixed host
+                return cast(dict[str, Any], json.loads(response.read().decode("utf-8")))
+
+        data = await asyncio.to_thread(_get)
+        web = data.get("web") if isinstance(data, dict) else None
+        results = web.get("results") if isinstance(web, dict) else None
+        out: list[ResearchResult] = []
+        if isinstance(results, list):
+            for item in results[:count]:
+                if not isinstance(item, Mapping):
+                    continue
+                u = str(item.get("url") or "")
+                if not u:
+                    continue
+                out.append(
+                    ResearchResult(
+                        url=u,
+                        title=str(item.get("title") or ""),
+                        snippet=str(item.get("description") or "")[:600],
+                        provider=self.name,
+                    )
+                )
+        return out
+
+    async def search_leads(self, criteria: Mapping[str, Any], count: int) -> list[ResearchLead]:
+        results = await self.search(_criteria_to_query(criteria), count)
+        return [
+            ResearchLead(
+                id=f"brave_{idx}",
+                name=r.title or r.url,
+                url=r.url,
+                evidence=[r.snippet] if r.snippet else [f"brave result {idx}"],
+                fit_score=0.7,
+                metadata={"provider": self.name},
+            )
+            for idx, r in enumerate(results, start=1)
+        ]
+
+    async def read_url(self, url: str) -> ResearchPage:
+        # Brave has no scrape endpoint; signal "no content" so the deep-research
+        # loop falls through to a read-capable provider.
+        return ResearchPage(
+            url=url, title=None, markdown="",
+            evidence=["brave has no read_url; use firecrawl/exa"], metadata={"provider": self.name},
+        )
+
+
+def _parse_generic_results(response: object, *, provider: str, count: int) -> list[ResearchResult]:
+    """Normalize an Exa/Firecrawl search response into generic ResearchResults."""
+    out: list[ResearchResult] = []
+    for item in _raw_results(response)[:count]:
+        mapping = _to_mapping(item)
+        metadata = _to_mapping(mapping.get("metadata"))
+        url = str(mapping.get("url") or mapping.get("link") or metadata.get("sourceURL") or metadata.get("url") or "")
+        if not url:
+            continue
+        title = str(mapping.get("title") or mapping.get("name") or metadata.get("title") or "")
+        snippet = str(
+            mapping.get("snippet")
+            or mapping.get("description")
+            or mapping.get("text")
+            or metadata.get("description")
+            or ""
+        )
+        if not snippet:
+            highlights = _string_list(mapping.get("highlights"))
+            if highlights:
+                snippet = " … ".join(highlights)
+        out.append(ResearchResult(url=url, title=title, snippet=snippet[:600], provider=provider))
+    return out
+
+
 def build_configured_research_providers() -> list[ResearchProvider]:
-    """Build live provider wrappers from settings without importing provider SDKs at module import."""
+    """Build live provider wrappers from settings without importing provider SDKs at module import.
+
+    Order = Exa (semantic) → Brave (fast/cheap) → Firecrawl (search + scrape). The
+    deep-research loop fans out across all configured providers; lead/read paths
+    use the first that can serve the call.
+    """
 
     from agentx_contracts.config import get_settings
 
     settings = get_settings()
     providers: list[ResearchProvider] = []
     exa_key = settings.exa_api_key.get_secret_value() if settings.exa_api_key is not None else ""
+    brave_key = settings.brave_api_key.get_secret_value() if settings.brave_api_key is not None else ""
     firecrawl_key = (
         settings.firecrawl_api_key.get_secret_value() if settings.firecrawl_api_key is not None else ""
     )
     if exa_key:
         providers.append(ExaResearchProvider(exa_key))
+    if brave_key:
+        providers.append(BraveSearchProvider(brave_key))
     if firecrawl_key:
         providers.append(FirecrawlResearchProvider(firecrawl_key))
     return providers

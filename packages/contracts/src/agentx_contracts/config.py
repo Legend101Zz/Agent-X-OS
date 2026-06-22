@@ -43,8 +43,9 @@ class Settings(BaseSettings):
     zhipu_api_key: SecretStr | None = None
 
     # --- Research provider (Codex lane) — set at least one ---
-    exa_api_key: SecretStr | None = None
-    firecrawl_api_key: SecretStr | None = None
+    exa_api_key: SecretStr | None = None  # semantic/neural search (good for discovery)
+    brave_api_key: SecretStr | None = None  # Brave Search API (fast, cheap web search)
+    firecrawl_api_key: SecretStr | None = None  # search + scrape (page reads)
 
     # --- Eval / judge / gate (Codex lane) ---
     promptfoo_api_key: SecretStr | None = None

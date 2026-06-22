@@ -238,7 +238,10 @@ class Phase1RunInvoker:
             instance_id=continuation.instance.instance_id,
             type_ref=continuation.instance.type_ref,
         )
-        run_log.event("resumed", "run resumed from continuation after approval", {"approval_event_id": approval.event_id})
+        run_log.event(
+            "resumed", "run resumed from continuation after approval",
+            {"approval_event_id": approval.event_id},
+        )
         claimed_facts = [fact.model_copy(deep=True) for fact in continuation.claimed_facts]
         session = self._runner().start(
             context=ctx,
@@ -679,6 +682,9 @@ _MANDATE_DISCOVERY_SCRATCHPAD_KEYS: dict[str, str] = {
     "community_source_sample": "community_posts",
     "competitor_search": "moat_assessments",
     "buyer_channel_discovery": "buyer_channels",
+    # Shared in-OS deep research: the pack lands in scratchpad for the own-harness
+    # path; the live Hermes path also gets it fed back as the tool result.
+    "deep_research": "research_pack",
 }
 
 
@@ -873,7 +879,7 @@ def _describe_action(action: HarnessAction) -> tuple[str, str, JsonObject]:
                 "predicate": f.predicate,
                 "object": f.object,
                 "confidence": f.confidence,
-                "evidence": list(f.evidence)[:3] if getattr(f, "evidence", None) else [],
+                "evidence": list(f.provenance.evidence)[:3] if f.provenance else [],
             }
             for f in action.facts
         ]
@@ -918,8 +924,9 @@ def _syscall_output_summary(name: str, output: JsonObject) -> JsonObject:
     channels = output.get("buyer_channels")
     if isinstance(channels, dict):
         summary["buyer_channels_per_candidate"] = {
-            str(k): (len(v.get("channels", [])) if isinstance(v, dict) else 0)
+            str(k): (len(chans) if isinstance(chans := v.get("channels"), list) else 0)
             for k, v in channels.items()
+            if isinstance(v, dict)
         }
     leads = output.get("leads")
     if isinstance(leads, list):

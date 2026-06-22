@@ -37,7 +37,7 @@ import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 # Default location for run logs. Overridable via the AGENTX_RUN_LOG_DIR env var
 # so a deployment can point it at a mounted volume. Relative to the process CWD
@@ -97,6 +97,7 @@ class RunLog:
         self._enabled = True
         root = Path(base_dir or default_run_log_dir())
         self.path = root / _safe(instance_id) / f"{_safe(run_id)}.jsonl"
+        self._fh: TextIO | None = None
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             # Truncate any prior file for this exact run_id (a re-run is a fresh record).

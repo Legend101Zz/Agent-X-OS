@@ -15,6 +15,7 @@ from agentx_syscall.adapters import (
     ResearchLead,
     ResearchPage,
     ResearchProvider,
+    ResearchResult,
     _parse_page,
     _parse_search_results,
 )
@@ -34,6 +35,17 @@ class FakeResearchProvider:
                 url=f"https://clinic{idx}.example",
                 evidence=[f"matches {criteria['segment']}"],
                 fit_score=0.9,
+            )
+            for idx in range(1, count + 1)
+        ]
+
+    async def search(self, query: str, count: int) -> list[ResearchResult]:
+        return [
+            ResearchResult(
+                url=f"https://clinic{idx}.example",
+                title=f"Clinic {idx}",
+                snippet=f"result for {query}",
+                provider=self.name,
             )
             for idx in range(1, count + 1)
         ]

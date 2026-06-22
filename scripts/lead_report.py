@@ -14,6 +14,7 @@ Usage::
     uv run python scripts/lead_report.py --instance <id> --out docs/discovery_reports/leads_foo.html
 """
 
+# ruff: noqa: E501 — HTML report templates legitimately have long lines.
 from __future__ import annotations
 
 import argparse

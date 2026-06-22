@@ -29,7 +29,7 @@ from typing import Any
 HN_ALGOLIA_URL = "https://hn.algolia.com/api/v1/search"
 REDDIT_JSON_URL = "https://www.reddit.com/r/{subreddit}/new.json"
 PRODUCTHUNT_RSS_URL = "https://www.producthunt.com/feed"
-USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Agent-X-OS/1.0 (mandate-discovery; +https://github.com/Legend101Zz/Agent-X-OS)"
+USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Agent-X-OS/1.0 (mandate-discovery; +https://github.com/Legend101Zz/Agent-X-OS)"  # noqa: E501
 
 # Recency window: posts older than this are filtered out (the F1
 # charter rule: < 12 months unless structural_shift=true).
@@ -53,7 +53,7 @@ def _http_get_text(url: str, *, timeout: int = 30) -> str:
         headers={"User-Agent": USER_AGENT, "Accept": "application/rss+xml, application/xml"},
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
-        return resp.read().decode("utf-8", errors="replace")
+        return str(resp.read().decode("utf-8", errors="replace"))
 
 
 def search_hackernews(segment: str, *, limit: int = 30) -> list[dict[str, Any]]:
