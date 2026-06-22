@@ -7,6 +7,7 @@ The script composes the live Mongo stores, live Hermes reasoner, and syscall reg
 from __future__ import annotations
 
 import asyncio
+import os
 from datetime import UTC, datetime
 from importlib.util import find_spec
 from time import perf_counter
@@ -124,7 +125,13 @@ async def main() -> int:
         scheduler_store = MongoSchedulerStore(database)
         worker = SchedulerWorker(store=scheduler_store, invoker=invoker)
         canonical_mandate = build_lead_finder_type()
-        await control.register_mandate_type(canonical_mandate)
+        # Skip-if-exists guard: the type persists across runs, so re-registering
+        # the same id raises MandateTypeConflict. (Mirrors run_mandate_discovery.)
+        existing = await projection_store.find(c.MANDATE_TYPE, {"id": canonical_mandate.id})
+        if existing:
+            print(f"INFO MandateType {canonical_mandate.id!r} already registered; skipping re-registration")
+        else:
+            await control.register_mandate_type(canonical_mandate)
         persisted_instance = MandateInstance(
             id=instance_id,
             type_ref=f"{canonical_mandate.name}@{canonical_mandate.version}",
@@ -135,7 +142,17 @@ async def main() -> int:
         await control.instantiate_mandate(persisted_instance)
         instance = await control.instance_binding(instance_id)
         mandate = canonical_mandate.model_copy(deep=True)
-        mandate.charter.target = dict(DOGFOOD_TARGET)
+        # Target is overridable via env so the same script can validate a
+        # mandate-discovery pick (its target segment becomes the lead-finder ICP).
+        target = dict(DOGFOOD_TARGET)
+        if os.environ.get("LEAD_FINDER_ICP", "").strip():
+            target["icp"] = os.environ["LEAD_FINDER_ICP"].strip()
+        if os.environ.get("LEAD_FINDER_LOCATION", "").strip():
+            target["location"] = os.environ["LEAD_FINDER_LOCATION"].strip()
+        if os.environ.get("LEAD_FINDER_COUNT", "").strip().isdigit():
+            target["count"] = int(os.environ["LEAD_FINDER_COUNT"].strip())
+        print(f"LEAD_FINDER_TARGET={target}")
+        mandate.charter.target = dict(target)
 
         pending_due = await database[c.SCHEDULER_WORK].count_documents(
             {"status": "pending", "available_at": {"$lte": datetime.now(UTC)}}

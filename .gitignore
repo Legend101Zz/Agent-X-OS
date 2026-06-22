@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 
+# --- Per-run harness logs (see scripts/view_run.py) ---
+run_logs/
+
 # --- Python ---
 __pycache__/
 *.py[cod]

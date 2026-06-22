@@ -16,6 +16,7 @@ from agentx_syscall.adapters import (
     SendEmailAdapter,
     build_configured_research_providers,
 )
+from agentx_syscall.deep_research_adapter import DeepResearchAdapter
 
 
 class Phase1SyscallRegistry:
@@ -66,6 +67,9 @@ def build_phase1_registry(
     registry = Phase1SyscallRegistry(terminal_fallback=HumanTaskAdapter(store=store))
     registry.register(LeadResearchBatchAdapter(providers=providers))
     registry.register(ReadUrlAdapter(providers=providers))
+    # In-OS deep research: bounded multi-hop fan-out over the configured providers
+    # (Exa + Brave + Firecrawl). Read-class, L0 — no LLM, returns a cited pack.
+    registry.register(DeepResearchAdapter(providers=providers))
     registry.register(DraftEmailAdapter())
     # Phase-3 (HERMES_BUILD_PLAN §Phase 3 — G10): Creator's draft_candidate_type syscall.
     # Draft-only; never registers a mandate_type (invariant #7 — promote is Phase 4).

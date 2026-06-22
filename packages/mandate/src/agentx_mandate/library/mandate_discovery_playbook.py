@@ -695,11 +695,21 @@ def _synthesize_pain_signals_from_posts(
 
     Each signal is shaped to PASS the F2 deterministic gate
     (``filter_pain_signals``) — severity/frequency above the bar, with a
-    real ``exact_quotes[].source_url + author`` pair (the no-fabrication
-    rule). Topic + who_has_problem are derived from the post's
-    ``topic`` and ``who_has_problem`` fields when present; otherwise
-    they fall back to the post's ``source`` (e.g. "reddit") and a generic
-    ICP label.
+    real ``exact_quotes[].source_url`` (the no-fabrication rule). Topic +
+    who_has_problem are derived from the post's ``topic`` and
+    ``who_has_problem`` fields when present; otherwise they fall back to the
+    post's ``source`` (e.g. "reddit") and a generic ICP label.
+
+    Author handling: Firecrawl *search* results don't carry a per-post author
+    handle, so we label the quote's author by its source platform (e.g.
+    "reddit (community post)") when no handle is present. This is honest, not
+    fabricated — the ``source_url`` and ``body_text`` are the real evidence;
+    only the byline is a platform label.
+
+    This deterministic synthesis cannot do *semantic* clustering — that is the
+    hermes (LLM) harness's job. When the unlabelled posts don't carry topics,
+    the downstream cluster gate will honestly find too few diverse clusters and
+    the run parks, signalling "run this segment through the LLM harness".
     """
     out: list[dict[str, object]] = []
     for post in posts:
@@ -710,10 +720,12 @@ def _synthesize_pain_signals_from_posts(
         body = post.get("body_text")
         if not (isinstance(url, str) and url.strip()):
             continue
+        source = str(post.get("source", "") or "unknown")
         if not (isinstance(author, str) and author.strip()):
-            continue
+            # Firecrawl search results have no author handle — label by source.
+            author = f"{source} (community post)"
         topic = str(post.get("topic", "") or "manual_recurring_workflow")
-        who = str(post.get("who_has_problem", "") or "Series A SaaS operator")
+        who = str(post.get("who_has_problem", "") or "small business operator")
         body_text = str(body) if isinstance(body, str) else ""
         signal: dict[str, object] = {
             # F2 gate requirements

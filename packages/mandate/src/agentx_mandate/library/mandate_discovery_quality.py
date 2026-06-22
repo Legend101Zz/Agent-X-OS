@@ -42,7 +42,8 @@ PAIN_FREQUENCY_MIN: int = 2  # 1-5 scale; <2 is "happens once a year"
 
 # F2 cluster gate: each cluster must have at least this many distinct sources.
 # A mono-source mandate is biased — the F1 sampling rule (>=4 distinct community
-# sources) exists to feed this gate.
+# sources) exists to feed this gate. A real pain cluster should be corroborated
+# across >=2 distinct community sources, not one biased subreddit.
 CLUSTER_MIN_DISTINCT_SOURCES: int = 2
 
 # F3 candidate gate: drop if input==output (transformation, not process),
@@ -232,6 +233,12 @@ def enforce_cluster_diversity(
     backed by 2+ distinct community sources (Reddit + HN + X + a forum, etc.).
     The hard cap (>=4 sources overall for the F1 sampling rule) is upstream;
     this is the per-cluster enforcement.
+
+    NOTE: this gate is part of the *deterministic* own-harness path. Real
+    semantic clustering of unlabelled community posts into diverse pain themes
+    is an LLM job (the hermes harness); the deterministic path is an honest
+    smoke test that parks when it cannot find >=3 diverse clusters rather than
+    fabricating single-source ones.
     """
     surviving: list[dict[str, Any]] = []
     for cluster in clusters:

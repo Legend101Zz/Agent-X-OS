@@ -24,6 +24,7 @@ from agentx_mandate.library.mandate_discovery_faculties.f6_portfolio_builder imp
 
 from . import (
     conversation,
+    deep_research,
     enrichment,
     escalation,
     judgment,
@@ -36,6 +37,7 @@ Proposer = Callable[[FacultyContext], list[HarnessAction]]
 
 FACULTY_LIBRARY: dict[str, Faculty] = {
     research.FACULTY.name: research.FACULTY,
+    deep_research.FACULTY.name: deep_research.FACULTY,
     enrichment.FACULTY.name: enrichment.FACULTY,
     judgment.FACULTY.name: judgment.FACULTY,
     memory_craft.FACULTY.name: memory_craft.FACULTY,
@@ -58,6 +60,7 @@ FACULTY_LIBRARY: dict[str, Faculty] = {
 
 _PROPOSERS: dict[str, Proposer] = {
     research.FACULTY.name: research.propose,
+    deep_research.FACULTY.name: deep_research.propose,
     enrichment.FACULTY.name: enrichment.propose,
     judgment.FACULTY.name: judgment.propose,
     memory_craft.FACULTY.name: memory_craft.propose,

@@ -45,19 +45,21 @@ class ChatTransport(Protocol):
 _RISK_BY_SYSCALL: dict[str, RiskClass] = {
     "lead_research_batch": "read",
     "read_url": "read",
+    "deep_research": "read",
     "score_lead": "read",
     "queue_manual_action": "read",
     "mark_outcome": "reversible_write",
     "draft_email": "external_message",
 }
 
-# The mandate-discovery mandate's three read syscalls — same names as the
-# discovery_adapters. The LLM is told these are its tools; the runner
-# passes the tool name through to the gateway as the syscall name.
+# Read-class tools whose name passes straight through to the same-named syscall
+# (the mandate-discovery F1/F4/F5 reads, plus the shared in-OS deep_research). The
+# LLM is told these are its tools; the runner forwards name + args to the gateway.
 _MANDATE_DISCOVERY_READ_TOOLS: frozenset[str] = frozenset({
     "community_source_sample",
     "competitor_search",
     "buyer_channel_discovery",
+    "deep_research",
 })
 
 
@@ -72,8 +74,9 @@ def _resolve_tool_risk_map(ctx: FacultyContext) -> dict[str, RiskClass]:
     override = ctx.target.get("tool_risk_map")
     if isinstance(override, dict):
         result: dict[str, RiskClass] = {}
+        _valid_risks = {"read", "external_message", "reversible_write", "money", "irreversible"}
         for name, risk in override.items():
-            if isinstance(name, str) and isinstance(risk, str) and risk in {"read", "external_message", "reversible_write", "money", "irreversible"}:
+            if isinstance(name, str) and isinstance(risk, str) and risk in _valid_risks:
                 result[name] = cast(RiskClass, risk)
         return result
     return _RISK_BY_SYSCALL
@@ -342,7 +345,7 @@ class HermesSession:
                 {
                     "role": "tool",
                     "tool_call_id": self._pending_call_id,
-                    "content": json.dumps(
+                    "content": _bounded_tool_content(
                         {
                             "status": observation.status,
                             "fulfilled_by": observation.fulfilled_by,
@@ -364,7 +367,7 @@ class HermesSession:
         response = await self.transport.complete_chat(
             messages=self._messages, tools=_resolve_tools(self.ctx)
         )
-        message = _first_message(response)
+        message = _sanitize_message_tool_calls(_first_message(response))
         self._messages.append(message)  # preserve the full assistant turn (incl. reasoning) — interleaved thinking
         self.cursor += 1
 
@@ -516,6 +519,38 @@ def _first_message(response: JsonObject) -> JsonObject:
     return message
 
 
+def _sanitize_message_tool_calls(message: JsonObject) -> JsonObject:
+    """Normalise every tool_call's ``function.arguments`` to a valid JSON string.
+
+    MiniMax truncates a tool_call's arguments when generation hits max_tokens,
+    producing an invalid JSON string. Re-submitting that assistant message makes
+    MiniMax reject the ENTIRE next request with HTTP 400 ("invalid function
+    arguments json string, tool_call_id: …"), crashing the run. We rewrite each
+    arguments field to canonical JSON (or ``{}`` if unparseable) so the
+    conversation history is always replayable. Mutates and returns ``message``.
+    """
+    tool_calls = message.get("tool_calls")
+    if not isinstance(tool_calls, list):
+        return message
+    for tc in tool_calls:
+        if not isinstance(tc, dict):
+            continue
+        fn = tc.get("function")
+        if not isinstance(fn, dict):
+            continue
+        raw = fn.get("arguments")
+        if isinstance(raw, str):
+            try:
+                fn["arguments"] = json.dumps(json.loads(raw))
+            except (json.JSONDecodeError, ValueError):
+                fn["arguments"] = "{}"
+        elif isinstance(raw, dict):
+            fn["arguments"] = json.dumps(raw)
+        elif raw is None:
+            fn["arguments"] = "{}"
+    return message
+
+
 def _parse_tool_call(tool_call: JsonValue) -> tuple[str, str, JsonObject]:
     call_id = _tool_call_id(tool_call)
     name = ""
@@ -547,6 +582,43 @@ def _tool_call_id(tool_call: JsonValue) -> str:
 
 def _json_obj(value: JsonValue | None) -> JsonObject:
     return value if isinstance(value, dict) else {}
+
+
+# A syscall result is fed back into the LLM's message history every step. Large
+# read payloads (an F1 community-source sample is dozens of posts × long
+# body_text) accumulate across steps until the request exceeds MiniMax's context
+# window and the API returns HTTP 400. The kernel's receipt store keeps the FULL
+# output; the LLM only needs a bounded, skimmable view to reason over.
+_TOOL_STR_CLIP = 320  # max chars per string field shown to the LLM
+_TOOL_LIST_CLIP = 25  # max items per list shown to the LLM
+_TOOL_CONTENT_MAX = 16_000  # hard cap on the serialized tool message (chars)
+
+
+def _shrink_for_context(value: object, *, depth: int = 0) -> object:
+    """Recursively clip strings/lists so a tool payload can't blow the context window."""
+    if isinstance(value, str):
+        return value if len(value) <= _TOOL_STR_CLIP else value[:_TOOL_STR_CLIP] + "…"
+    if isinstance(value, dict):
+        if depth >= 6:
+            return {"…": f"{len(value)} keys"}
+        return {str(k): _shrink_for_context(v, depth=depth + 1) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        if depth >= 6:
+            return f"[{len(value)} items]"
+        clipped = [_shrink_for_context(v, depth=depth + 1) for v in list(value)[:_TOOL_LIST_CLIP]]
+        if len(value) > _TOOL_LIST_CLIP:
+            clipped.append(f"…(+{len(value) - _TOOL_LIST_CLIP} more items omitted)")
+        return clipped
+    return value
+
+
+def _bounded_tool_content(payload: dict[str, object]) -> str:
+    """Serialize a tool result for the LLM, bounded in size (per-field + total)."""
+    shrunk = _shrink_for_context(payload)
+    text = json.dumps(shrunk, default=str)
+    if len(text) > _TOOL_CONTENT_MAX:
+        text = text[:_TOOL_CONTENT_MAX] + ' …"(truncated for context budget)"'
+    return text
 
 
 def _as_list(value: JsonValue | None) -> list[str]:
