@@ -10,15 +10,15 @@ Validates the design's two contract promises for v0:
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 
 import pytest
-from agentx_contracts.mandate import MandateInstance
+from agentx_mandate.library.books_prep import build_books_prep_type
+from agentx_mandate.library.lead_finder import build_lead_finder_type
 from httpx import ASGITransport, AsyncClient
 
 from agentx_api.app import _ensure_canonical_mandate_registered, create_app
-from agentx_mandate.library.books_prep import build_books_prep_type
-from agentx_mandate.library.lead_finder import build_lead_finder_type
 
 TEST_TOKEN = "test-operator-token-books-catalog"
 
@@ -200,9 +200,6 @@ def test_build_books_prep_type_mirrors_lead_finder_charter_shape() -> None:
 def test_canonical_seeding_is_idempotent() -> None:
     """Invoking the seed helper twice (or against a catalog that already has the canonical)
     MUST be a no-op. Otherwise a hot-reload or a repeated first-request would 500."""
-
-    import asyncio
-    from agentx_api.app import create_app
 
     async def run() -> None:
         app = create_app(use_mongo=False, seed_demo=False, operator_token=TEST_TOKEN, start_worker=False)
