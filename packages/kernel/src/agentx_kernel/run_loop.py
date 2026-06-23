@@ -85,6 +85,7 @@ class Phase1RunInvoker:
     verifier: RulesVerifier
     continuations: RunContinuationStore
     runner: HarnessRunner | None = None
+    live_runner: HarnessRunner | None = None  # model-driven harness, used ONLY for mode="live"
     max_steps: int = 24
     # Where per-run JSONL logs are written. None → enabled at the default dir
     # (AGENTX_RUN_LOG_DIR or ./run_logs). Set to "" to disable run logging.
@@ -174,7 +175,7 @@ class Phase1RunInvoker:
         )
         claimed_facts: list[Fact] = []
 
-        runner = self._runner(mandate)
+        runner = self._runner(mandate, mode)
         session = runner.start(context=ctx, faculties=faculties, cursor=0, mandate=mandate)
         return await self._drive(
             mandate=mandate,
@@ -245,7 +246,7 @@ class Phase1RunInvoker:
             {"approval_event_id": approval.event_id},
         )
         claimed_facts = [fact.model_copy(deep=True) for fact in continuation.claimed_facts]
-        session = self._runner(continuation.mandate).start(
+        session = self._runner(continuation.mandate, continuation.mode).start(
             context=ctx,
             faculties=faculties,
             cursor=continuation.harness_cursor,
@@ -303,9 +304,13 @@ class Phase1RunInvoker:
             run_log=run_log,
         )
 
-    def _runner(self, mandate: MandateType) -> HarnessRunner:
-        # Live runs use the injected Hermes runner (mandate-driven tools/prompt). Sim runs use the
-        # deterministic ``own`` double following the mandate's playbook (lead-finder by default).
+    def _runner(self, mandate: MandateType, mode: RunMode) -> HarnessRunner:
+        # mode="live" + a configured model runner → drive the real model.
+        # Otherwise (sim, OR live with no model configured) fall back to the explicitly-injected
+        # runner if present (tests/scripts), else the deterministic OwnHarness playbook. Sim NEVER
+        # touches a model → no keys, reproducible.
+        if mode == "live" and self.live_runner is not None:
+            return self.live_runner
         if self.runner is not None:
             return self.runner
         return OwnHarness(playbook=sim_playbook_for(mandate))

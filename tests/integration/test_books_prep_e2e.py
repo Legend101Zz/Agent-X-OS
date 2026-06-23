@@ -95,6 +95,21 @@ async def test_books_prep_sim_pipeline_settles_with_export_artifact(tmp_path: Pa
     workbook = load_workbook(str(xlsx_files[0]))
     assert set(workbook.sheetnames) == {"Ledger", "Review Queue", "Summary"}
 
+    # Flag #3: the export's output.path is readable off the settled SyscallSettled event (which the
+    # api surfaces via syscall_trace / GET /journal). The BFF reads this to stream the .xlsx.
+    from agentx_contracts.journal import SyscallSettled
+
+    events = await invoker.journal.read_run(result.run_id)
+    export_settled = next(
+        e for e in events
+        if isinstance(e, SyscallSettled) and e.syscall == "export_ledger" and e.status == "ok"
+    )
+    settled_path = export_settled.output["path"]
+    assert isinstance(settled_path, str)
+    assert Path(settled_path) == xlsx_files[0]  # the path on the event IS the file that was written
+    assert Path(settled_path).parent == out_dir
+    assert Path(settled_path).exists()
+
 
 @pytest.mark.asyncio
 async def test_books_prep_sim_claim_event_carries_a_ledger_transaction_fact(tmp_path: Path) -> None:

@@ -76,6 +76,12 @@ class Settings(BaseSettings):
     agentx_cors_origins: str = ""  # comma-separated; empty = same-origin only (browser will block cross-origin)
     agentx_operator_token: SecretStr | None = None  # bearer required for /commands/*
 
+    # --- books-prep shared storage (product app shares these dirs with the engine) ---
+    # Empty string → adapters fall back to their None default (cwd for output; no
+    # intake resolution for bare doc_ids). Set both to absolute paths in production.
+    books_intake_dir: str = ""
+    books_output_dir: str = ""
+
     # --- Runtime ---
     agentx_env: Literal["dev", "test", "prod"] = "dev"
 
