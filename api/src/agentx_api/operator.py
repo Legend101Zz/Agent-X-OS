@@ -30,6 +30,8 @@ from agentx_contracts.journal import ApprovalResolved
 from agentx_contracts.mandate import InstanceBinding, MandateType
 from agentx_contracts.protocols import SyscallRegistry
 from agentx_contracts.trigger import Trigger
+from agentx_kernel.books_review import BooksReviewResolver
+from agentx_kernel.bootstrap import build_books_review_resolver
 from agentx_kernel.control import (
     ApprovalEnqueuer,
     KernelControl,
@@ -141,6 +143,7 @@ class OperatorRuntime:
     invoker: Phase1RunInvoker
     worker: SchedulerWorker
     control: KernelControl
+    review_resolver: BooksReviewResolver
     swarm_runner: SwarmRunner
     scheduler_driver: OperatorSchedulerDriver
     runner: HarnessRunner | None
@@ -346,6 +349,13 @@ def _compose(
         projection_store=projection_store,
         continuations=continuations,
     )
+    # Per-row CA review resolution (books-prep Flag #1): shares the SAME journal + projection store
+    # as the run-loop, so a CA-approved row commits to the same heap the dashboard reads and the
+    # gym case lands in the same eval_case projection.
+    review_resolver = build_books_review_resolver(
+        journal=journal,
+        projection_store=projection_store,
+    )
     # KernelControl implements ApprovalEnqueuer/TriggerEnqueuer via duck-typed hooks (we extend
     # resolve_approval and enqueue_trigger to call them). The driver implements the Protocols.
     # These attributes are read inside the kernel's resolve_approval / enqueue_trigger methods
@@ -400,6 +410,7 @@ def _compose(
         worker=worker,
         watch_maturation_worker=watch_maturation_worker,
         control=control,
+        review_resolver=review_resolver,
         swarm_runner=swarm_runner,
         scheduler_driver=scheduler_driver,
         runner=runner,

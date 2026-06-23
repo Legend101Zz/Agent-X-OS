@@ -70,6 +70,15 @@ Baseline on this branch: workspace pytest GREEN (confirmed before any edits).
    Then end-to-end: instantiate books-prep@0.1.0 → sample bank PDF → trigger → SSE journal → approve
    export → inspect .xlsx + review queue.
 
+## Follow-up engine task (spun out of app Step 4 — Flag #1)
+Per-row CA review resolution (approve/edit/reject a single flagged queue row → commit to books +
+feed the gym) is **NOT supported today**: `queue_manual_action` is L0/read (`gateway.py:45`) so
+flagged rows never park and have no resolution command; only the run-level `export_ledger` park is
+approvable. This is a separate **kernel + mandate** task, designed as a triggered resolution
+micro-run (NOT a per-row park, to avoid the frozen `packages/contracts` seam). Full spec + done-when
+tests: **`docs/books-prep-per-row-review-engine-handoff.md`**. The app's read endpoints
+(ledger / timeline / download / read-only queue) are unblocked and proceed in parallel.
+
 ## Key files / line anchors (verify, they drift)
 - runner: `packages/kernel/src/agentx_kernel/hermes_runner.py` (_TOOLS:54, _RISK_BY_SYSCALL:45,
   _system_prompt:170, _user_prompt:221, _to_action:330, _call:371)

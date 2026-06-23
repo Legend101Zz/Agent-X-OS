@@ -75,6 +75,10 @@ class DashboardState:
         return self.runtime.control
 
     @property
+    def review_resolver(self) -> Any:
+        return self.runtime.review_resolver
+
+    @property
     def registry(self) -> Any:
         return self.runtime.registry
 

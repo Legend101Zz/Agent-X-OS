@@ -30,6 +30,7 @@ Endpoints (Phase 1 dashboard operability):
     POST /commands/approve
     POST /commands/reject
     POST /commands/set-ring
+    POST /commands/resolve-manual-task        (books-prep Flag #1 — per-row CA review resolution)
 
 Lifespan:
   - Compose OperatorRuntime once via ``build_runtime``.
@@ -172,6 +173,23 @@ class EditApprovalCommand(ApprovalCommand):
 class SetRingCommand(BaseModel):
     instance_id: str
     ring: Ring
+    actor: str = "manager:dashboard"
+
+
+class ResolveManualTaskCommand(BaseModel):
+    """``POST /commands/resolve-manual-task`` body — a CA approves/edits/rejects ONE flagged row.
+
+    The flagged transaction row is NOT sent by the client: the server looks it up from the
+    manual-queue card (``task_id``) so the client can never tamper with the source-of-truth bank
+    columns. ``edits`` (edit only) is further hard-limited to ``ledger_head`` / ``gst_treatment`` by
+    the engine resolver's allow-list. Resolution is idempotent: re-submitting the same row returns
+    ``already_resolved=true`` and re-commits nothing.
+    """
+
+    instance_id: str
+    task_id: str
+    decision: ApprovalDecision
+    edits: JsonObject | None = None
     actor: str = "manager:dashboard"
 
 
@@ -1092,6 +1110,89 @@ def _install_routes(app: FastAPI) -> None:
             "scorecard": report.scorecard.model_dump(mode="json"),
             "gate_decision": report.gate_decision.model_dump(mode="json"),
             "eval_case_id": eval_case.id,
+        }
+
+    @app.post(
+        "/commands/resolve-manual-task",
+        dependencies=[Depends(_require_command_auth)],
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    async def resolve_manual_task(
+        command: ResolveManualTaskCommand, request: Request
+    ) -> dict[str, Any]:
+        """Per-row CA review resolution (books-prep Flag #1).
+
+        A CA approves / edits / rejects ONE flagged transaction row off the review queue. The
+        server looks up the flagged row from the manual-queue card (so the bank columns can't be
+        tampered with), then runs the engine's resolution micro-run via ``BooksReviewResolver``:
+
+          - approve → commit the row as a ``ledger_transaction`` Fact (original category)
+          - edit    → apply the CA's corrected ledger_head/gst_treatment, then commit
+          - reject  → commit no Fact; the rejection is journaled for audit
+
+        Every decision is recorded as a real gym ``EvalCase``. The card is closed (``mark_outcome``)
+        so it leaves the open queue. Idempotent: a repeat resolve returns ``already_resolved=true``.
+        """
+        state = _state(request)
+        # The Mongo repo returns None for a missing id; the in-memory store raises KeyError. Treat
+        # both as not-found so the route is backend-agnostic.
+        try:
+            task = state.manual_tasks.get(command.task_id)
+        except KeyError:
+            task = None
+        if task is None:
+            raise HTTPException(status_code=404, detail=f"no manual task: {command.task_id}")
+        if task.instance_id != command.instance_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"task {command.task_id} belongs to instance {task.instance_id}, "
+                    f"not {command.instance_id}"
+                ),
+            )
+        # Only a books-prep transaction-review card is resolvable here (the queue also carries
+        # lead-review and other manual tasks, which this route must not touch).
+        if task.request_name != "queue_manual_action" or task.args.get("action") != "review_transaction":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="manual task is not a books-prep transaction review (action != review_transaction)",
+            )
+        row = task.args.get("transaction")
+        if not isinstance(row, dict):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="manual task carries no transaction row to resolve",
+            )
+        if command.decision == "edit" and not command.edits:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="decision=edit requires a non-empty edits object (ledger_head / gst_treatment)",
+            )
+
+        binding = await state.control.instance_binding(command.instance_id)
+        resolution = await state.review_resolver.resolve(
+            instance=binding,
+            row=cast(JsonObject, row),
+            decision=command.decision,
+            edits=command.edits,
+            actor=command.actor,
+            now=datetime.now(UTC),
+        )
+
+        # Close the card so it leaves the open review queue (idempotent — safe on a repeat resolve).
+        try:
+            state.manual_tasks.mark_outcome(
+                command.task_id,
+                command.decision,
+                {"dedupe_key": resolution.dedupe_key, "run_id": resolution.run_id},
+            )
+        except KeyError:
+            pass
+
+        return {
+            "supported": True,
+            "status": "applied",
+            **resolution.model_dump(mode="json"),
         }
 
     @app.post(
