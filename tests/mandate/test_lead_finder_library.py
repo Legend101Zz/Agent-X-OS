@@ -13,6 +13,8 @@ def test_build_lead_finder_type_assembles_phase1_faculties_and_checkable_rules()
         "judgment",
         "memory-craft",
         "escalation",
+        # thin faculty owning the draft_email tool-manifest seam (generalized runner derives the tool)
+        "outreach",
     ]
     rules = [condition for condition in mandate.charter.postconditions if condition.rung == "rules"]
     assert [condition.expr for condition in rules] == [

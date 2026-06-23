@@ -1,7 +1,13 @@
 """Kernel-side Hermes/Minimax live client boundary.
 
-MiniMax exposes an OpenAI-compatible ``/v1/chat/completions`` API. This client stays in the kernel
-because it holds API credentials; mandate pods never import it.
+MiniMax exposes an OpenAI-compatible ``/v1/chat/completions`` API, and Gemini exposes the same shape
+on its own OpenAI-compat base. Either backend satisfies the runner's ``ChatTransport`` Protocol
+(same request/response schema), so the toggle is just a transport/model swap at construction time —
+no runner rewrite. This module keeps the factory: ``build_faculty_transport(settings)`` returns a
+``HermesClient`` pointing at Gemini when ``use_gemini`` is true AND a key is present, otherwise the
+canonical MiniMax client (default off → nothing changes).
+
+The client stays in the kernel because it holds API credentials; mandate pods never import it.
 """
 
 from __future__ import annotations
@@ -20,29 +26,47 @@ from .errors import ConfigError
 
 
 class HermesClient:
-    """Minimal async wrapper over the MiniMax OpenAI-compatible chat completions endpoint."""
+    """Minimal async wrapper over an OpenAI-compatible chat completions endpoint (Minimax OR Gemini).
 
-    def __init__(self, *, base_url: str, api_key: SecretStr, model_id: str) -> None:
+    The constructor is deliberately backend-agnostic — the only things that change between MiniMax
+    and Gemini are the ``base_url``, ``api_key``, and ``model_id`` (the request/response shape and
+    the ``complete_chat`` semantics are identical). The factory ``build_faculty_transport`` resolves
+    those three fields from ``Settings`` based on the ``use_gemini`` toggle.
+    """
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        api_key: SecretStr,
+        model_id: str,
+        provider: str = "minimax",
+    ) -> None:
         if not base_url:
             raise ConfigError("FACULTY_MODEL_BASE_URL is required for Hermes")
         if not model_id:
             raise ConfigError("FACULTY_MODEL_ID is required for Hermes")
         if not api_key.get_secret_value():
-            raise ConfigError("MINIMAX_API_KEY is required for Hermes")
+            raise ConfigError("model API key is required for Hermes")
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
         self._model_id = model_id
+        self._provider = provider
+
+    @property
+    def provider(self) -> str:
+        """``"minimax"`` or ``"gemini"`` — useful for logs/health, not for behaviour."""
+        return self._provider
 
     @classmethod
     def from_settings(cls, settings: Settings | None = None) -> HermesClient:
-        loaded = settings or get_settings()
-        if loaded.minimax_api_key is None:
-            raise ConfigError("MINIMAX_API_KEY is required for Hermes")
-        return cls(
-            base_url=loaded.faculty_model_base_url,
-            api_key=loaded.minimax_api_key,
-            model_id=loaded.faculty_model_id,
-        )
+        """Backwards-compatible factory — routes to Gemini when ``use_gemini`` is true, else Minimax.
+
+        Existing call sites (``HermesClient.from_settings()``) keep working unchanged: with
+        ``use_gemini=False`` (the default) the behaviour is identical to the legacy MiniMax-only
+        client. Use ``build_faculty_transport`` directly when the caller wants the new explicit name.
+        """
+        return build_faculty_transport(settings)
 
     @property
     def chat_completions_url(self) -> str:
@@ -144,3 +168,33 @@ def _extract_content(response: dict[str, object]) -> str:
     if not isinstance(content, str):
         raise RuntimeError("Hermes message did not include text content")
     return content
+
+
+def build_faculty_transport(settings: Settings | None = None) -> HermesClient:
+    """The kernel-side factory: build the faculty-model transport from ``Settings``.
+
+    Routes by ``settings.use_gemini`` (added in step 1 of the books-prep build, design §5):
+      * ``use_gemini=True`` AND ``gemini_api_key`` AND ``gemini_base_url`` AND ``gemini_model_id``
+        → ``HermesClient`` pointed at Gemini's OpenAI-compat endpoint.
+      * Anything else (default) → the canonical MiniMax client (no behaviour change).
+
+    This is the one switch a future CLI flag / env var flips to satisfy the hackathon's
+    "≥1 Gemini call in production" requirement. Multimodal (scanned docs) is a FUTURE transport
+    extension (image parts) — out of v0 scope; the interface today is text-only.
+    """
+    loaded = settings or get_settings()
+    if loaded.use_gemini and loaded.gemini_api_key and loaded.gemini_base_url and loaded.gemini_model_id:
+        return HermesClient(
+            base_url=loaded.gemini_base_url,
+            api_key=loaded.gemini_api_key,
+            model_id=loaded.gemini_model_id,
+            provider="gemini",
+        )
+    if loaded.minimax_api_key is None:
+        raise ConfigError("MINIMAX_API_KEY is required for Hermes (Gemini toggle is off or incomplete)")
+    return HermesClient(
+        base_url=loaded.faculty_model_base_url,
+        api_key=loaded.minimax_api_key,
+        model_id=loaded.faculty_model_id,
+        provider="minimax",
+    )

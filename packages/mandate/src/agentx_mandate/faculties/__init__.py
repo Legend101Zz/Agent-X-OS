@@ -27,8 +27,11 @@ from . import (
     deep_research,
     enrichment,
     escalation,
+    extraction,
     judgment,
+    ledger_export,
     memory_craft,
+    outreach,
     research,
     scheduling,
 )
@@ -42,11 +45,22 @@ FACULTY_LIBRARY: dict[str, Faculty] = {
     judgment.FACULTY.name: judgment.FACULTY,
     memory_craft.FACULTY.name: memory_craft.FACULTY,
     escalation.FACULTY.name: escalation.FACULTY,
+    # Thin outreach faculty: carries the lead-finder draft_email tool-manifest seam (the generalized
+    # Hermes runner derives draft_email from this binding rather than hard-coding it).
+    outreach.FACULTY.name: outreach.FACULTY,
+    # books-prep thin faculties: extraction (ingest_document) + ledger-export (export_ledger,
+    # queue_manual_action) — the document-prep tool-manifest seams.
+    extraction.FACULTY.name: extraction.FACULTY,
+    ledger_export.FACULTY.name: ledger_export.FACULTY,
     # Phase-3 (Creator, BLUEPRINT §5): interview + cadence — the kernel-side seams a Creator
     # needs to emit draft candidate MandateTypes. memory-craft + escalation are shared with the
     # lead-finder so the same escalation + provenance story holds for drafts too.
     conversation.FACULTY.name: conversation.FACULTY,
     scheduling.FACULTY.name: scheduling.FACULTY,
+    # books-prep thin faculties: extraction (ingest_document) + ledger-export (export_ledger,
+    # queue_manual_action) — the document-prep tool-manifest seams.
+    extraction.FACULTY.name: extraction.FACULTY,
+    ledger_export.FACULTY.name: ledger_export.FACULTY,
     # Phase-12 (mandate-discovery): the F1-F6 discovery faculties. The F7 escalation is
     # already in the library above (shared with lead-finder + creator). We re-export
     # the Faculty objects here so the mandate-discovery playbook's propose() lookups work.
@@ -65,8 +79,13 @@ _PROPOSERS: dict[str, Proposer] = {
     judgment.FACULTY.name: judgment.propose,
     memory_craft.FACULTY.name: memory_craft.propose,
     escalation.FACULTY.name: escalation.propose,
+    outreach.FACULTY.name: outreach.propose,
+    extraction.FACULTY.name: extraction.propose,
+    ledger_export.FACULTY.name: ledger_export.propose,
     conversation.FACULTY.name: conversation.propose,
     scheduling.FACULTY.name: scheduling.propose,
+    extraction.FACULTY.name: extraction.propose,
+    ledger_export.FACULTY.name: ledger_export.propose,
     F1_COMMUNITY_SOURCE.name: f1_propose,
     F2_PAIN_EXTRACTION.name: f2_propose,
     F3_DEMAND_CLUSTERING.name: f3_propose,

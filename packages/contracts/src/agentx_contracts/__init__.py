@@ -87,6 +87,7 @@ from .syscall import (
     SyscallTestCase,
     VerifyOutcome,
 )
+from .toolschema import TOOL_SCHEMAS, ToolSchema, tool_schema_for
 from .trigger import DeadlineTrigger, MessageTrigger, SpawnTrigger, Trigger
 from .verification import (
     CriterionResult,
@@ -166,6 +167,10 @@ __all__ = [
     "SyscallResult",
     "SyscallTestCase",
     "VerifyOutcome",
+    # tool-schema registry (harness generalization seam)
+    "TOOL_SCHEMAS",
+    "ToolSchema",
+    "tool_schema_for",
     # mandate
     "Charter",
     "ChannelBinding",

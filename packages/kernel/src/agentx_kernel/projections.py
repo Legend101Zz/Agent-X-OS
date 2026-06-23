@@ -90,6 +90,7 @@ class TraceProjector(_BaseProjector):
                     "id": event.event_id, "run_id": event.run_id, "instance_id": event.instance_id,
                     "kind": "settled", "syscall": event.syscall, "status": event.status,
                     "fulfilled_by": event.fulfilled_by, "maturity_used": event.maturity_used,
+                    "output": event.output,
                     "seq": event.seq, "ts": event.ts.isoformat(),
                 },
             )

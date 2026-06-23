@@ -308,7 +308,11 @@ def _compose(
         projection_store=projection_store,
         send_email_transport=send_email_transport,
     )
-    registry = build_phase1_registry(send_email_adapters=send_email_adapters)
+    registry = build_phase1_registry(
+        send_email_adapters=send_email_adapters,
+        books_intake_dir=settings.books_intake_dir or None,
+        books_output_dir=settings.books_output_dir or None,
+    )
     gateway = Gateway(
         journal=journal,
         vault=vault,
@@ -319,6 +323,11 @@ def _compose(
     settlement = SettlementCommitter(journal=journal, projections=projections)
     verifier = RulesVerifier()
     runner: HarnessRunner | None = runner_factory() if callable(runner_factory) else None
+    live_runner = _resolve_live_runner(settings)
+    logger.info(
+        "live model runner: %s",
+        "configured" if live_runner else "absent (live will use deterministic harness)",
+    )
     invoker = Phase1RunInvoker(
         journal=journal,
         projections=projections,
@@ -328,6 +337,7 @@ def _compose(
         verifier=verifier,
         continuations=continuations,
         runner=runner,
+        live_runner=live_runner,
     )
     scheduler_driver = OperatorSchedulerDriver(scheduler_store)
     control = KernelControl(
@@ -407,6 +417,23 @@ def _replace_adapter_stores(registry: SyscallRegistry, durable: ManualTaskReposi
             # The adapters carry their _store as a plain attribute set in __init__; mypy sees it
             # as missing on the Adapter Protocol. Use vars() so the assignment is type-safe.
             vars(adapter)["_store"] = durable
+
+
+def _resolve_live_runner(settings: Settings) -> Any | None:
+    """Build the model-driven HarnessRunner from faculty-model env, or None.
+
+    Returns None (→ live degrades to the deterministic OwnHarness) when neither the Gemini toggle nor
+    a MiniMax key is usable. Never raises: a missing-key ConfigError from build_faculty_transport is
+    swallowed so the api boots without a model in dev/sim.
+    """
+    try:
+        from agentx_kernel.hermes import build_faculty_transport
+        from agentx_kernel.hermes_runner import HermesRunner
+
+        transport = build_faculty_transport(settings)  # raises ConfigError if no usable keys
+    except Exception:  # noqa: BLE001 — no model configured is a valid (sim-only) state
+        return None
+    return HermesRunner(transport=transport)
 
 
 def _resolve_live_email_transport(supplied: Any | None) -> Any | None:

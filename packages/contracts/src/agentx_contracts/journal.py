@@ -70,6 +70,9 @@ class SyscallSettled(_JournalBase):
     fulfilled_by: str
     """Adapter name, or "human_task" when it landed in the manual queue."""
     maturity_used: MaturityLevel
+    output: JsonObject = Field(default_factory=dict)
+    """The adapter's SyscallResult.output (e.g. export_ledger's {path, filename, ...}).
+    Default {} keeps old rows valid and write-free syscalls cheap."""
 
 
 class RunParked(_JournalBase):

@@ -168,6 +168,7 @@ class Gateway:
                     status=result.status,
                     fulfilled_by=result.fulfilled_by,
                     maturity_used=result.maturity_used,
+                    output=result.output,
                 )
             ),
         )
@@ -247,6 +248,7 @@ class Gateway:
                         status=receipt.result.status,
                         fulfilled_by=receipt.result.fulfilled_by,
                         maturity_used=receipt.result.maturity_used,
+                        output=receipt.result.output,
                     )
                 )
             )

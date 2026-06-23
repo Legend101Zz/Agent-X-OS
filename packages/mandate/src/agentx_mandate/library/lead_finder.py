@@ -52,6 +52,10 @@ def build_lead_finder_type() -> MandateType:
             FacultyBinding(faculty_name="judgment"),
             FacultyBinding(faculty_name="memory-craft"),
             FacultyBinding(faculty_name="escalation"),
+            # Thin: owns the draft_email tool-manifest seam so the generalized Hermes runner derives
+            # the draft_email tool from this binding. Bound LAST so the union of faculty tool_manifests
+            # yields [lead_research_batch, read_url, draft_email] — byte-identical to the legacy tool set.
+            FacultyBinding(faculty_name="outreach"),
         ],
         domain_pack=DomainPackRef(name="indian-smb-leads", version="0.1.0"),
         verification=VerificationSuite(),

@@ -32,14 +32,23 @@ def test_faculty_library_contains_phase1_phase3_and_phase12_faculties() -> None:
     # Phase-3 (Creator, BLUEPRINT §5): conversation, scheduling
     # Phase-12 (mandate-discovery, HERMES_BUILD_PLAN §Phase 12): the 6 F1-F6 faculties
     #   (F7 escalation is the shared library entry above).
+    # Phase-13/14 (PR #8): deep_research — used by mandate-discovery's live-mode research path.
+    # books-prep thin faculties (Phase 7): extraction + ledger-export
     expected = {
         "research",
         "enrichment",
         "judgment",
         "memory-craft",
         "escalation",
+        "outreach",
+        # books-prep thin faculties (document prep)
+        "extraction",
+        "ledger-export",
         "conversation",
         "scheduling",
+        "deep_research",
+        "extraction",
+        "ledger-export",
         "mandate_discovery_community_source",
         "mandate_discovery_pain_extraction",
         "mandate_discovery_demand_clustering",
