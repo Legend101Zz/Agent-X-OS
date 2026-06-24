@@ -152,6 +152,11 @@ class WatchMaturationWorker:
                 deadline = datetime.fromisoformat(deadline_raw)
             except ValueError:
                 continue
+            # Stored deadlines may be persisted naive (no tz offset); the worker scans with an
+            # aware ``now`` (``datetime.now(UTC)``). Normalize to UTC-aware so the comparison
+            # below never raises ``can't compare offset-naive and offset-aware datetimes``.
+            if deadline.tzinfo is None:
+                deadline = deadline.replace(tzinfo=UTC)
             if deadline > now:
                 continue
             # Has a WatchFired already been appended? (Defensive — usually the projection flips

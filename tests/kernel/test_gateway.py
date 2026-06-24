@@ -115,6 +115,22 @@ async def test_adapter_exception_becomes_an_error_result_not_an_uncaught_crash()
     assert [event.kind for event in await journal.read_run("run_1")] == ["syscall_attempted", "syscall_settled"]
 
 
+async def test_error_reason_is_journaled_into_settled_output_for_the_http_seam() -> None:
+    # SyscallSettled (frozen contract) has no `error` field; without surfacing it in `output`, an
+    # erroring syscall crosses the HTTP seam as output={} with no cause (the books-prep queue bug).
+    registry = StubRegistry(RaisingAdapter())
+    journal = InMemoryJournalStore()
+
+    await Gateway(journal=journal, vault=InMemoryVault(), registry=registry).invoke(
+        _req("lead_research_batch"),
+        _ctx(ring="L0"),
+    )
+
+    settled = next(e for e in await journal.read_run("run_1") if e.kind == "syscall_settled")
+    assert settled.status == "error"
+    assert "missing string arg: url" in str(settled.output.get("error", ""))
+
+
 async def test_ring_check_parks_before_registry_resolution() -> None:
     adapter = StubAdapter()
     registry = StubRegistry(adapter)

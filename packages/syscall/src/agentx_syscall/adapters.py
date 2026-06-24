@@ -155,7 +155,7 @@ class ManualTaskStore:
         self._tasks: dict[str, ManualTask] = {}
         self._order: list[str] = []
 
-    def enqueue(self, req: SyscallRequest, *, source_adapter: str) -> ManualTask:
+    async def enqueue(self, req: SyscallRequest, *, source_adapter: str) -> ManualTask:
         existing = self._find_by_idempotency(req.idempotency_key)
         if existing is not None:
             return existing
@@ -175,16 +175,16 @@ class ManualTaskStore:
         self._order.append(task.id)
         return task
 
-    def mark_outcome(self, task_id: str, outcome: str, detail: JsonObject | None = None) -> ManualTask:
+    async def mark_outcome(self, task_id: str, outcome: str, detail: JsonObject | None = None) -> ManualTask:
         task = self._tasks[task_id]
         task.outcome = outcome
         task.outcome_detail = dict(detail or {})
         return task
 
-    def get(self, task_id: str) -> ManualTask:
+    async def get(self, task_id: str) -> ManualTask:
         return self._tasks[task_id]
 
-    def list_open(self) -> list[ManualTask]:
+    async def list_open(self) -> list[ManualTask]:
         return [self._tasks[task_id] for task_id in self._order if self._tasks[task_id].outcome is None]
 
     def _find_by_idempotency(self, idempotency_key: str) -> ManualTask | None:
@@ -452,7 +452,7 @@ class QueueManualActionAdapter(_AdapterBase):
         )
 
     async def execute(self, req: SyscallRequest, cred: Credential | None) -> SyscallResult:
-        task = self._store.enqueue(req, source_adapter=self.name)
+        task = await self._store.enqueue(req, source_adapter=self.name)
         return _manual_result(req=req, task=task, fulfilled_by=self.name)
 
 
@@ -483,7 +483,7 @@ class MarkOutcomeAdapter(_AdapterBase):
         outcome = _str_arg(req.args, "outcome")
         detail = _mapping_arg(req.args, "detail", default={})
         try:
-            task = self._store.mark_outcome(task_id, outcome, dict(detail))
+            task = await self._store.mark_outcome(task_id, outcome, dict(detail))
         except KeyError:
             return _error_result(req, self.name, self.maturity_level, f"manual task not found: {task_id}")
         return SyscallResult(
@@ -998,11 +998,11 @@ class HumanTaskAdapter(_AdapterBase):
         return True
 
     async def execute(self, req: SyscallRequest, cred: Credential | None) -> SyscallResult:
-        task = self._store.enqueue(req, source_adapter=self.name)
+        task = await self._store.enqueue(req, source_adapter=self.name)
         return _manual_result(req=req, task=task, fulfilled_by=self.name)
 
     async def dry_run(self, req: SyscallRequest) -> SyscallResult:
-        task = self._store.enqueue(req, source_adapter=self.name)
+        task = await self._store.enqueue(req, source_adapter=self.name)
         return _manual_result(req=req, task=task, fulfilled_by=self.name)
 
 

@@ -35,13 +35,13 @@ class ManualTaskRepository(Protocol):
     - :class:`MongoManualTaskRepository` — the production API and worker.
     """
 
-    def enqueue(self, req: SyscallRequest, *, source_adapter: str) -> ManualTask: ...
+    async def enqueue(self, req: SyscallRequest, *, source_adapter: str) -> ManualTask: ...
 
-    def mark_outcome(self, task_id: str, outcome: str, detail: JsonObject | None = None) -> ManualTask: ...
+    async def mark_outcome(self, task_id: str, outcome: str, detail: JsonObject | None = None) -> ManualTask: ...
 
-    def get(self, task_id: str) -> ManualTask | None: ...
+    async def get(self, task_id: str) -> ManualTask | None: ...
 
-    def list_open(self) -> list[ManualTask]: ...
+    async def list_open(self) -> list[ManualTask]: ...
 
     async def aclose(self) -> None: ...
 
@@ -53,7 +53,7 @@ class InMemoryManualTaskRepository:
         self._tasks: dict[str, ManualTask] = {}
         self._order: list[str] = []
 
-    def enqueue(self, req: SyscallRequest, *, source_adapter: str) -> ManualTask:
+    async def enqueue(self, req: SyscallRequest, *, source_adapter: str) -> ManualTask:
         existing = self._find_by_idempotency(req.idempotency_key)
         if existing is not None:
             return _copy_task(existing)
@@ -72,17 +72,17 @@ class InMemoryManualTaskRepository:
         self._order.append(task.id)
         return _copy_task(task)
 
-    def mark_outcome(self, task_id: str, outcome: str, detail: JsonObject | None = None) -> ManualTask:
+    async def mark_outcome(self, task_id: str, outcome: str, detail: JsonObject | None = None) -> ManualTask:
         task = self._tasks[task_id]
         task.outcome = outcome
         task.outcome_detail = dict(detail or {})
         return _copy_task(task)
 
-    def get(self, task_id: str) -> ManualTask | None:
+    async def get(self, task_id: str) -> ManualTask | None:
         task = self._tasks.get(task_id)
         return _copy_task(task) if task is not None else None
 
-    def list_open(self) -> list[ManualTask]:
+    async def list_open(self) -> list[ManualTask]:
         return [_copy_task(self._tasks[task_id]) for task_id in self._order if self._tasks[task_id].outcome is None]
 
     async def aclose(self) -> None:
@@ -153,8 +153,8 @@ class MongoManualTaskRepository:
         doc["_id"] = task.idempotency_key
         return doc
 
-    def enqueue(self, req: SyscallRequest, *, source_adapter: str) -> ManualTask:
-        existing_doc = self._collection.find_one({"idempotency_key": req.idempotency_key})
+    async def enqueue(self, req: SyscallRequest, *, source_adapter: str) -> ManualTask:
+        existing_doc = await self._collection.find_one({"idempotency_key": req.idempotency_key})
         if existing_doc is not None:
             return self._doc_to_task(existing_doc)
         task = ManualTask(
@@ -167,25 +167,27 @@ class MongoManualTaskRepository:
             source_adapter=source_adapter,
             created_at=datetime.now(UTC),
         )
-        self._collection.insert_one(self._task_to_doc(task))
+        await self._collection.insert_one(self._task_to_doc(task))
         return task
 
-    def mark_outcome(self, task_id: str, outcome: str, detail: JsonObject | None = None) -> ManualTask:
-        self._collection.update_one(
-            {"_id": task_id},
+    async def mark_outcome(self, task_id: str, outcome: str, detail: JsonObject | None = None) -> ManualTask:
+        # Callers look tasks up by ``task.id`` (e.g. "manual:<idem>"), which is the ``id`` field; the
+        # document ``_id`` is the idempotency_key, so we must NOT query by ``_id`` here.
+        await self._collection.update_one(
+            {"id": task_id},
             {"$set": {"outcome": outcome, "outcome_detail": dict(detail or {})}},
         )
-        doc = self._collection.find_one({"_id": task_id})
+        doc = await self._collection.find_one({"id": task_id})
         if doc is None:
             raise KeyError(task_id)
         return self._doc_to_task(doc)
 
-    def get(self, task_id: str) -> ManualTask | None:
-        doc = self._collection.find_one({"_id": task_id})
+    async def get(self, task_id: str) -> ManualTask | None:
+        doc = await self._collection.find_one({"id": task_id})
         return self._doc_to_task(doc) if doc is not None else None
 
-    def list_open(self) -> list[ManualTask]:
-        docs = list(self._collection.find({"outcome": None}))
+    async def list_open(self) -> list[ManualTask]:
+        docs = await self._collection.find({"outcome": None}).to_list(length=None)
         return [self._doc_to_task(doc) for doc in docs]
 
     async def aclose(self) -> None:

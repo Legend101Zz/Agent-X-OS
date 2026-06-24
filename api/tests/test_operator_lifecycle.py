@@ -285,10 +285,10 @@ async def test_manual_queue_durable_across_runtime_recomposition() -> None:
         ring="L1",
         risk_class="reversible_write",
     )
-    task_a = repo.enqueue(req, source_adapter="queue_manual_action")
-    task_b = repo.enqueue(req, source_adapter="queue_manual_action")
+    task_a = await repo.enqueue(req, source_adapter="queue_manual_action")
+    task_b = await repo.enqueue(req, source_adapter="queue_manual_action")
     assert task_a.id == task_b.id  # idempotent
-    assert len(repo.list_open()) == 1
+    assert len(await repo.list_open()) == 1
 
 
 async def test_live_worker_pumps_a_full_lifecycle_without_script_glue() -> None:

@@ -570,17 +570,17 @@ class _ManualTaskStoreAdapter:
     def __init__(self, store: ManualTaskStore) -> None:
         self._store = store
 
-    def enqueue(self, req: Any, *, source_adapter: str) -> Any:
-        return self._store.enqueue(req, source_adapter=source_adapter)
+    async def enqueue(self, req: Any, *, source_adapter: str) -> Any:
+        return await self._store.enqueue(req, source_adapter=source_adapter)
 
-    def mark_outcome(self, task_id: str, outcome: str, detail: Any = None) -> Any:
-        return self._store.mark_outcome(task_id, outcome, detail)
+    async def mark_outcome(self, task_id: str, outcome: str, detail: Any = None) -> Any:
+        return await self._store.mark_outcome(task_id, outcome, detail)
 
-    def get(self, task_id: str) -> Any:
-        return self._store.get(task_id)
+    async def get(self, task_id: str) -> Any:
+        return await self._store.get(task_id)
 
-    def list_open(self) -> list[Any]:
-        return self._store.list_open()
+    async def list_open(self) -> list[Any]:
+        return await self._store.list_open()
 
     async def aclose(self) -> None:
         return None

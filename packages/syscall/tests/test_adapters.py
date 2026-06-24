@@ -166,7 +166,7 @@ async def test_queue_manual_action_and_mark_outcome_share_store() -> None:
 
     assert queued.status == "queued_manual"
     assert marked.status == "ok"
-    assert store.get(task_id).outcome == "booked"
+    assert (await store.get(task_id)).outcome == "booked"
 
 
 @pytest.mark.asyncio
@@ -180,7 +180,7 @@ async def test_human_task_adapter_is_bottom_rung_for_every_intent() -> None:
 
     assert result.status == "queued_manual"
     assert result.fulfilled_by == "human_task"
-    assert result.output["task_id"] in {task.id for task in store.list_open()}
+    assert result.output["task_id"] in {task.id for task in await store.list_open()}
 
 
 def test_firecrawl_v2_search_and_page_metadata_are_normalized() -> None:

@@ -57,7 +57,7 @@ async def _seed_books_instance_and_task(app: Any) -> str:
             heap_region_id="heap_books_api",
         )
     )
-    task = state.manual_tasks.enqueue(
+    task = await state.manual_tasks.enqueue(
         SyscallRequest(
             name="queue_manual_action",
             args={"action": "review_transaction", "reason": "low conf", "transaction": _flagged_row()},

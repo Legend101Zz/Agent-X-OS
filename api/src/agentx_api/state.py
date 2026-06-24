@@ -347,7 +347,7 @@ async def _maybe_seed_demo(state: DashboardState) -> None:
     # Seed one open manual task to demonstrate the durable queue endpoint.
     from agentx_contracts import SyscallRequest as _SyscallRequest
 
-    state.manual_tasks.enqueue(
+    await state.manual_tasks.enqueue(
         _SyscallRequest(
             name="queue_manual_action",
             args={"action": "review_lead", "lead_id": "lead_nova", "reason": "Need owner context before outreach."},
@@ -405,7 +405,7 @@ async def system_overview(state: DashboardState) -> dict[str, Any]:
             "live_runs": sum(1 for run in runs if run["state"] in {"created", "running", "verifying"}),
             "parked_awaiting_approval": sum(1 for run in runs if run["state"] == "parked"),
             "settled": sum(1 for run in runs if run["state"] == "settled"),
-            "manual_queue": len(state.manual_tasks.list_open()),
+            "manual_queue": len(await state.manual_tasks.list_open()),
         },
         "rings": dict(rings),
         "pnl": {"total": total, "currency": "INR"},
@@ -636,7 +636,7 @@ async def approval_cards(state: DashboardState, *, instance_id: str | None = Non
 
 async def capability_rows(state: DashboardState) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    open_tasks = state.manual_tasks.list_open()
+    open_tasks = await state.manual_tasks.list_open()
     for adapter in state.registry.adapters():
         health = await adapter.health_check()
         queue_volume = sum(
@@ -659,8 +659,8 @@ async def capability_rows(state: DashboardState) -> list[dict[str, Any]]:
     return rows
 
 
-def manual_queue(state: DashboardState) -> list[dict[str, Any]]:
-    return [task.to_json() for task in state.manual_tasks.list_open()]
+async def manual_queue(state: DashboardState) -> list[dict[str, Any]]:
+    return [task.to_json() for task in await state.manual_tasks.list_open()]
 
 
 # ---- Economy / P&L projections (BLUEPRINT §8 row 2) ----------------------------

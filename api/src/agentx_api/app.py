@@ -694,7 +694,7 @@ def _install_routes(app: FastAPI) -> None:
 
     @app.get("/manual-queue")
     async def get_manual_queue(request: Request) -> dict[str, Any]:
-        return {"items": manual_queue(_state(request))}
+        return {"items": await manual_queue(_state(request))}
 
     @app.get("/core-gaps")
     async def get_core_gaps() -> dict[str, Any]:
@@ -1137,7 +1137,7 @@ def _install_routes(app: FastAPI) -> None:
         # The Mongo repo returns None for a missing id; the in-memory store raises KeyError. Treat
         # both as not-found so the route is backend-agnostic.
         try:
-            task = state.manual_tasks.get(command.task_id)
+            task = await state.manual_tasks.get(command.task_id)
         except KeyError:
             task = None
         if task is None:
@@ -1181,7 +1181,7 @@ def _install_routes(app: FastAPI) -> None:
 
         # Close the card so it leaves the open review queue (idempotent — safe on a repeat resolve).
         try:
-            state.manual_tasks.mark_outcome(
+            await state.manual_tasks.mark_outcome(
                 command.task_id,
                 command.decision,
                 {"dedupe_key": resolution.dedupe_key, "run_id": resolution.run_id},

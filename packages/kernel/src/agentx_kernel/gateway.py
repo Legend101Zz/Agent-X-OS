@@ -12,6 +12,7 @@ from typing import cast
 
 from agentx_contracts.enums import Ring, RiskClass
 from agentx_contracts.journal import RunParked, SyscallAttempted, SyscallSettled
+from agentx_contracts.jsontypes import JsonObject
 from agentx_contracts.protocols import SyscallRegistry
 from agentx_contracts.syscall import GatewayContext, RuleVerdict, SyscallRequest, SyscallResult
 
@@ -59,6 +60,20 @@ _RING_ORDER: dict[Ring, int] = {"L0": 0, "L1": 1, "L2": 2, "L3": 3, "L4": 4}
 
 def policy_for(intent: str) -> SyscallPolicy:
     return _POLICY.get(intent, SyscallPolicy(required_ring="L0", risk_class="read"))
+
+
+def _settled_output(result: SyscallResult) -> JsonObject:
+    """Audit-row output for the journal.
+
+    ``SyscallSettled`` (frozen contract) carries no ``error`` field, so an erroring syscall would
+    otherwise land in the journal — and cross the HTTP seam — as ``output={}`` with no cause. The
+    ``output`` field is a free-form ``JsonObject``; when the result is an error and carries a reason,
+    surface it under ``error`` (without clobbering any real output the adapter produced).
+    """
+    output: JsonObject = dict(result.output)
+    if result.status == "error" and result.error and "error" not in output:
+        output["error"] = result.error
+    return output
 
 
 def _allow_channel(_req: SyscallRequest, _ctx: GatewayContext) -> RuleVerdict:
@@ -168,7 +183,7 @@ class Gateway:
                     status=result.status,
                     fulfilled_by=result.fulfilled_by,
                     maturity_used=result.maturity_used,
-                    output=result.output,
+                    output=_settled_output(result),
                 )
             ),
         )
@@ -248,7 +263,7 @@ class Gateway:
                         status=receipt.result.status,
                         fulfilled_by=receipt.result.fulfilled_by,
                         maturity_used=receipt.result.maturity_used,
-                        output=receipt.result.output,
+                        output=_settled_output(receipt.result),
                     )
                 )
             )
