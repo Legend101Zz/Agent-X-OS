@@ -10,7 +10,13 @@ from pathlib import Path
 from typing import Any, cast
 
 from agentx_contracts import JsonObject, SyscallRequest, SyscallResult
-from agentx_syscall.books import ExportLedgerAdapter, IngestDocumentAdapter
+from agentx_syscall.books import (
+    ExportLedgerAdapter,
+    IngestDocumentAdapter,
+    _leading_date,
+    _parse_pdf_line,
+    _statement_period,
+)
 from openpyxl import Workbook, load_workbook
 
 
@@ -134,6 +140,64 @@ async def test_ingest_digital_pdf_extracts_rows_and_resolves_debit_credit_from_b
     assert txns[1]["debit"] == 1800.0 and txns[1]["extraction_confidence"] == 1.0
     assert txns[2]["debit"] == 12000.0
     assert txns[0]["source"]["doc_id"] == "stmt.pdf"
+
+
+def test_parse_pdf_line_accepts_dd_mon_yy_dates_with_doubled_value_date() -> None:
+    # Standard Chartered-style line: transaction date + value date, both spelled-month.
+    row = _parse_pdf_line(
+        "17 Jun 19 16 Jun 19 ATM WITHDRAWAL SELF-SWITCH 1,500.00 112,953.65", page=1, line_no=7
+    )
+    assert row is not None
+    assert row["date"] == "17 Jun 19"
+    assert row["_pdf_amount"] == 1500.0
+    assert row["balance"] == 112953.65
+    # the second (value) date falls into narration, same as doubled numeric dates
+    assert row["narration"] == "16 Jun 19 ATM WITHDRAWAL SELF-SWITCH"
+
+
+def test_leading_date_accepts_spelled_month_and_numeric_and_rejects_non_dates() -> None:
+    assert _leading_date(["16", "Jun", "19", "rest"]) == ("16 Jun 19", 3)
+    assert _leading_date(["16", "june", "2019", "rest"]) == ("16 june 2019", 3)
+    assert _leading_date(["16/06/2019", "rest"]) == ("16/06/2019", 1)
+    assert _leading_date(["Page", "1", "of"]) == (None, 0)
+    assert _leading_date(["16", "Foo", "19"]) == (None, 0)
+
+
+def test_statement_period_parses_spelled_month_dates() -> None:
+    assert _statement_period("16 Jun 19") == "2019-06"
+    assert _statement_period("16 Jun 2019") == "2019-06"
+    assert _statement_period("16/06/2019") == "2019-06"
+
+
+async def test_ingest_digital_pdf_with_dd_mon_yy_dates_extracts_rows(tmp_path: Path) -> None:
+    _make_pdf(
+        tmp_path / "sc_stmt.pdf",
+        [
+            "Statement of Account XXXX5678",
+            "16 Jun 19 16 Jun 19 BALANCE FORWARD 114,453.65",
+            "17 Jun 19 16 Jun 19 ATM WITHDRAWAL SELF-SWITCH 1,500.00 112,953.65",
+        ],
+    )
+    adapter = IngestDocumentAdapter(intake_dir=tmp_path)
+    result = await adapter.execute(_req("ingest_document", {"doc_id": "sc_stmt.pdf"}), None)
+
+    assert result.status == "ok", result.error
+    txns = _txns(result)
+    assert len(txns) == 2
+    assert txns[0]["date"] == "16 Jun 19" and txns[0]["statement_period"] == "2019-06"
+    assert txns[1]["debit"] == 1500.0 and txns[1]["extraction_confidence"] == 1.0
+
+
+async def test_ingest_digital_pdf_with_unrecognized_layout_reports_layout_not_scanned(tmp_path: Path) -> None:
+    # Digital text is present but no line parses as a transaction → the error must say "layout",
+    # not mislabel the document as scanned/image.
+    _make_pdf(tmp_path / "odd.pdf", ["Page 1 of 4", "Account Summary", "Totals 12,345.00"])
+    adapter = IngestDocumentAdapter(intake_dir=tmp_path)
+    result = await adapter.execute(_req("ingest_document", {"doc_id": "odd.pdf"}), None)
+
+    assert result.status == "error"
+    assert "layout not recognized" in (result.error or "")
+    assert "scanned" not in (result.error or "")
 
 
 async def test_ingest_scanned_pdf_returns_error_for_human_queue(tmp_path: Path) -> None:

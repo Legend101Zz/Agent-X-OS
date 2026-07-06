@@ -48,6 +48,10 @@ class _UnsupportedDocument(RuntimeError):
     """The document's extension is not a v0-supported format."""
 
 
+class _UnrecognizedLayout(RuntimeError):
+    """The document has digital text, but no line parsed as a transaction (unsupported layout)."""
+
+
 # --- raw row extraction (per format) ----------------------------------------------------
 
 
@@ -170,7 +174,11 @@ def _extract_xlsx(path: Path) -> list[dict[str, Any]]:
 
 
 def _extract_pdf(path: Path) -> list[dict[str, Any]]:
-    """Extract transactions from a digital-text PDF. Empty (no extractable text) → [] (scanned)."""
+    """Extract transactions from a digital-text PDF.
+
+    No extractable text at all → [] (scanned/image or empty). Text present but zero lines parse →
+    ``_UnrecognizedLayout``, so the caller reports an unsupported layout instead of a scanned document.
+    """
     import pdfplumber
 
     raw: list[dict[str, Any]] = []
@@ -189,6 +197,11 @@ def _extract_pdf(path: Path) -> list[dict[str, Any]]:
         any_text = _pdf_has_text(path)
         if not any_text:
             return []
+    if not raw:
+        raise _UnrecognizedLayout(
+            "digital text present but statement layout not recognized "
+            "(unsupported date/column format); route to manual queue"
+        )
     return raw
 
 
@@ -208,8 +221,8 @@ def _parse_pdf_line(text_line: str, *, page: int, line_no: int) -> dict[str, Any
     tokens = text_line.split()
     if len(tokens) < 3:
         return None
-    date = tokens[0]
-    if not _looks_like_date(date):
+    date, date_tokens = _leading_date(tokens)
+    if date is None:
         return None
     numbers: list[tuple[int, float]] = []
     for index, token in enumerate(tokens):
@@ -221,7 +234,7 @@ def _parse_pdf_line(text_line: str, *, page: int, line_no: int) -> dict[str, Any
     balance = numbers[-1][1]
     amount = numbers[-2][1] if len(numbers) >= 2 else 0.0
     narration_end = numbers[0][0] if numbers else len(tokens)
-    narration = " ".join(tokens[1:narration_end]).strip()
+    narration = " ".join(tokens[date_tokens:narration_end]).strip()
     return {
         "date": date,
         "narration": narration,
@@ -241,13 +254,42 @@ def _looks_like_date(token: str) -> bool:
     return len(parts) == 3 and all(part.isdigit() for part in parts) and 1 <= len(parts[0]) <= 4
 
 
+_MONTH_TOKENS = frozenset(
+    {
+        "jan", "january", "feb", "february", "mar", "march", "apr", "april", "may",
+        "jun", "june", "jul", "july", "aug", "august", "sep", "sept", "september",
+        "oct", "october", "nov", "november", "dec", "december",
+    }
+)
+
+
+def _leading_date(tokens: list[str]) -> tuple[str | None, int]:
+    """Return (date string, tokens consumed) for a leading date, or (None, 0).
+
+    Accepts a single numeric token (``16/06/19``, ``16-06-2019``) or the spelled-month form
+    ``16 Jun 19`` / ``16 June 2019`` spanning three tokens.
+    """
+    if _looks_like_date(tokens[0]):
+        return tokens[0], 1
+    if (
+        len(tokens) >= 3
+        and tokens[0].isdigit()
+        and 1 <= len(tokens[0]) <= 2
+        and tokens[1].lower() in _MONTH_TOKENS
+        and tokens[2].isdigit()
+        and len(tokens[2]) in (2, 4)
+    ):
+        return " ".join(tokens[:3]), 3
+    return None, 0
+
+
 # --- post-processing: source, extraction confidence, dedupe ------------------------------
 
 
 def _statement_period(date: str) -> str:
     """Best-effort YYYY-MM for the (account, period) continuity scope; 'unknown' if undateable."""
     normalized = date.strip().replace(".", "/").replace("-", "/")
-    for fmt in ("%d/%m/%Y", "%Y/%m/%d", "%d/%m/%y", "%m/%d/%Y"):
+    for fmt in ("%d/%m/%Y", "%Y/%m/%d", "%d/%m/%y", "%m/%d/%Y", "%d %b %Y", "%d %b %y", "%d %B %Y", "%d %B %y"):
         try:
             return datetime.strptime(normalized, fmt).strftime("%Y-%m")
         except ValueError:
@@ -395,6 +437,9 @@ class IngestDocumentAdapter(_AdapterBase):
         try:
             raw_rows = _extract_rows(path)
         except _UnsupportedDocument as exc:
+            return _error_result(req, self.name, self.maturity_level, str(exc))
+        except _UnrecognizedLayout as exc:
+            # Digital text exists but no line parsed → unsupported layout, still human queue (P0-3).
             return _error_result(req, self.name, self.maturity_level, str(exc))
         if not raw_rows:
             # No extractable transactions → scanned/image PDF or empty doc → human queue (P0-3 / non-goal).
