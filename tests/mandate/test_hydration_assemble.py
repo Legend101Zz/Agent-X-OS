@@ -57,6 +57,24 @@ def test_assemble_ranks_facts_by_relevance_confidence_and_recency() -> None:
     assert [fact.id for fact in snapshot.facts] == ["fresh_relevant", "fresh_irrelevant", "stale_relevant"]
 
 
+def test_assemble_handles_naive_fact_timestamps() -> None:
+    """Facts reloaded from Mongo come back tz-naive; ranking must not crash on them."""
+    naive = _fact("naive", subject="lead_1", confidence=0.8, created_at=datetime(2026, 6, 1))
+    aware = _fact("aware", subject="lead_1", confidence=0.8, created_at=NOW)
+
+    snapshot = assemble(
+        facts=[naive, aware],
+        thread=_thread(),
+        recent_journal=[],
+        skill_pack_refs=["skill_pack:lead-finder/research@0.1.0"],
+        domain_pack=DomainPackRef(name="dental", version="0.1.0"),
+        now=NOW,
+    )
+
+    # The aware/fresh fact outranks the naive/older one (naive treated as UTC).
+    assert [fact.id for fact in snapshot.facts] == ["aware", "naive"]
+
+
 def test_assemble_freezes_snapshot_and_deep_copies_inputs() -> None:
     fact = _fact("f1", subject="lead_1", confidence=0.8, created_at=NOW)
     thread = _thread()

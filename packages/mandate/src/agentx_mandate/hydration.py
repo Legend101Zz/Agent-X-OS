@@ -7,15 +7,24 @@ The kernel owns I/O. This module only ranks already-loaded memory and returns th
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 
 from agentx_contracts.journal import JournalEvent
 from agentx_contracts.mandate import DomainPackRef, HydrationSnapshot
 from agentx_contracts.memory import Fact, Thread
 
 
+def _as_aware(stamp: datetime) -> datetime:
+    """Treat a naive fact timestamp as UTC.
+
+    Facts reloaded from Mongo come back tz-naive (PyMongo returns naive UTC unless the
+    client is tz-aware), while ``now`` is tz-aware. Normalize so the subtraction is safe.
+    """
+    return stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=UTC)
+
+
 def _recency_weight(fact: Fact, now: datetime) -> float:
-    stamp = fact.updated_at or fact.created_at
+    stamp = _as_aware(fact.updated_at or fact.created_at)
     age_seconds = max((now - stamp).total_seconds(), 0.0)
     age_days = age_seconds / 86_400
     return 1.0 / (1.0 + age_days)
