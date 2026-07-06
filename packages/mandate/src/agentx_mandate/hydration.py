@@ -52,6 +52,7 @@ def assemble(
     now: datetime,
 ) -> HydrationSnapshot:
     """Rank loaded memory and freeze the per-run working set."""
+    now = _as_aware(now)
     ranked = sorted(
         facts,
         key=lambda fact: (-_rank_score(fact, thread, now), fact.id),
