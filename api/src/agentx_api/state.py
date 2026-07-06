@@ -158,7 +158,10 @@ def create_state(
     if should_use_mongo:
         from pymongo import AsyncMongoClient
 
-        client = AsyncMongoClient(uri)
+        # tz_aware=True so datetimes decoded from Mongo carry UTC tzinfo. Without it PyMongo
+        # returns naive datetimes, which then blow up any subtraction against an aware ``now``
+        # (e.g. trigger.ts vs fact stamps in mandate hydration ranking).
+        client = AsyncMongoClient(uri, tz_aware=True)
         database = client[settings.mongodb_db_name]
     runtime = build_runtime(
         settings=settings,
